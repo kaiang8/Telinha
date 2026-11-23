@@ -1,0 +1,302 @@
+﻿﻿=====================================================================
+  TELINHA - seu "Discord" particular para compartilhar a tela
+=====================================================================
+
+O que tem:
+
+  - Canais de texto: histórico, menções (@nome, @todos), links,
+    imagens por link, **negrito**, *itálico*, `código` e o aviso de
+    "fulano está digitando...".
+  - Salas de tela: entre na sala e clique em "Compartilhar tela".
+    Todo mundo na sala vê. Várias pessoas podem transmitir ao mesmo
+    tempo.
+  - Sem microfone. Se quiser, dá para mandar o som da aba ou do
+    sistema junto com a tela.
+  - Qualidade: 720p, 1080p 30 fps, 1080p 60 fps ou "texto nítido".
+  - Destacar uma transmissão, tela cheia, janela flutuante e volume
+    separado para cada transmissão.
+  - Chat dentro de cada sala.
+  - PAINEL DE ADMIN e COMANDOS NO CHAT: expulsar, banir, silenciar,
+    encerrar transmissões, apagar mensagens, limpar canais, criar,
+    renomear e apagar canais, trocar o nome e a senha do servidor,
+    trancar a entrada, mandar avisos e dar admin para outras pessoas.
+
+Só precisa do Node.js 18 ou mais novo (https://nodejs.org).
+
+
+=====================================================================
+1. TESTAR NO SEU COMPUTADOR
+=====================================================================
+
+ATENÇÃO: não abra o index.html direto da pasta (aparece o erro
+"Failed to fetch"). O site sempre precisa ser aberto pelo servidor.
+
+No Windows:
+
+  1) Dê dois cliques em iniciar.bat (fica na mesma pasta do
+     server.js). Se o Windows avisar, clique em "Mais informações" e
+     depois em "Executar assim mesmo".
+  2) Ele pede uma senha de entrada. Para testar, é só apertar Enter.
+  3) O navegador abre sozinho em http://localhost:3000
+  4) Deixe a janela preta aberta. Fechar essa janela desliga o site.
+
+Na janela preta aparece a SENHA DE ADMIN, gerada automaticamente na
+primeira vez. Na tela de entrada, clique em "Sou admin" e digite essa
+senha. Depois dá para trocar a senha no painel.
+
+No Mac ou no Linux, rode "node server.js" num terminal dentro da
+pasta.
+
+
+=====================================================================
+2. COLOCAR NO AR 24 HORAS, SEM DEPENDER DO SEU PC (grátis)
+=====================================================================
+
+Você vai usar três serviços gratuitos:
+
+  - GitHub: guarda os arquivos do site.
+  - Render: roda o site na nuvem e dá um endereço fixo, tipo
+    https://telinha-xxxx.onrender.com
+  - Upstash: banco de dados que guarda mensagens, canais, banimentos e
+    configurações. Sem ele, tudo isso se perde sempre que o Render
+    reinicia o site.
+
+Leva uns 15 minutos na primeira vez.
+
+---------------------------------------------------------------------
+PASSO 1 - Upstash (onde os dados ficam guardados)
+---------------------------------------------------------------------
+
+  1) Crie uma conta em https://upstash.com (não pede cartão).
+  2) Clique em "Create Database" e escolha Redis.
+     Nome: telinha
+     Região: uma nos EUA, de preferência US East (N. Virginia)
+     Plano: Free
+  3) Na página do banco, procure a seção "REST API" e copie os dois
+     valores abaixo. Guarde num bloco de notas, porque vai usar no
+     passo 3:
+       UPSTASH_REDIS_REST_URL    (começa com https://)
+       UPSTASH_REDIS_REST_TOKEN  (um código grande)
+
+---------------------------------------------------------------------
+PASSO 2 - GitHub (onde ficam os arquivos)
+---------------------------------------------------------------------
+
+  1) Crie uma conta em https://github.com
+  2) Clique no "+" lá em cima e depois em "New repository".
+     Nome: telinha
+     Marque "Private" (assim só você vê o código).
+     Clique em "Create repository".
+  3) Na página que aparece, clique no link "uploading an existing
+     file".
+  4) Abra a pasta telinha no seu PC (a que tem o server.js), selecione
+     TUDO o que está dentro dela e arraste para a página do GitHub.
+     O server.js precisa ficar na "raiz", e não dentro de outra pasta.
+     NÃO envie o arquivo data.json, se ele existir. É o banco de
+     dados dos seus testes locais.
+  5) Clique em "Commit changes".
+
+---------------------------------------------------------------------
+PASSO 3 - Render (onde o site roda)
+---------------------------------------------------------------------
+
+  1) Crie uma conta em https://render.com. Dá para entrar com a
+     própria conta do GitHub.
+  2) Clique em "New" e depois em "Blueprint". Conecte o GitHub e
+     escolha o repositório telinha.
+  3) O Render lê o arquivo render.yaml e pede três valores:
+       ADMIN_SENHA ................ escolha a SUA senha de admin
+       UPSTASH_REDIS_REST_URL ..... cole o valor do passo 1
+       UPSTASH_REDIS_REST_TOKEN ... cole o valor do passo 1
+  4) Clique em "Apply" ou "Deploy" e espere uns 2 minutos.
+  5) O endereço do site aparece no topo da página do serviço:
+       https://telinha-xxxx.onrender.com
+
+Se o Render não deixar usar o "Blueprint", faça manualmente:
+  New -> Web Service -> escolha o repositório e preencha:
+    Build Command ..... npm install
+    Start Command ..... node server.js
+    Instance Type ..... Free
+  Em "Environment Variables", adicione as mesmas três variáveis acima.
+
+---------------------------------------------------------------------
+PASSO 4 - Primeiro acesso
+---------------------------------------------------------------------
+
+  1) Abra o endereço do site, clique em "Sou admin" e digite a
+     ADMIN_SENHA que você escolheu.
+  2) Clique no escudo dourado (ao lado do nome do servidor) para abrir
+     o painel. Na aba "Servidor":
+       - coloque uma senha de entrada para os amigos;
+       - mude o nome do servidor, se quiser.
+  3) Mande o link e a senha de entrada para a galera.
+
+---------------------------------------------------------------------
+Sobre o plano grátis do Render
+---------------------------------------------------------------------
+
+  - Depois de 15 minutos sem ninguém acessar, o site "dorme". O
+    primeiro acesso depois disso demora cerca de 1 minuto. Com o
+    Upstash, nada se perde.
+  - Enquanto alguém está com o site aberto, ele não dorme.
+  - Para nunca dormir: no Render, em Settings -> Instance Type, mude
+    para "Starter" (US$ 7 por mês).
+
+Para atualizar o site depois: envie os arquivos novos no GitHub (do
+mesmo jeito do passo 2). O Render atualiza sozinho.
+
+Domínio próprio (opcional): se você comprar um endereço (por exemplo
+um .com.br), configure em Settings -> Custom Domains, no Render.
+
+
+=====================================================================
+3. ADMIN
+=====================================================================
+
+COMO VIRAR ADMIN
+  - Na tela de entrada: clique em "Sou admin" e digite a senha de
+    admin. O admin entra mesmo se o servidor estiver trancado.
+  - Ou, já dentro do site, digite no chat:  /admin SUA-SENHA
+
+QUAL É A SENHA DE ADMIN
+  - Na nuvem: a que você colocou em ADMIN_SENHA no Render. Para
+    trocar, mude a variável lá; o serviço reinicia sozinho.
+  - No seu PC: a que aparece na janela preta. Dá para trocar no painel
+    (aba Servidor).
+
+O PAINEL (escudo dourado ao lado do nome do servidor)
+  - Pessoas: silenciar, parar transmissão, tirar da sala, renomear,
+    dar ou tirar admin, expulsar e banir. Também mostra o IP de cada
+    pessoa. Clicar em alguém na lista de membros abre direto aqui.
+  - Banidos: lista de banidos, com o botão para desbanir.
+  - Servidor: nome, senha de entrada, trancar a entrada, aviso para
+    todos, limpar canal e trocar a senha de admin.
+  - Comandos: a lista de comandos do chat.
+
+COMANDOS NO CHAT (digite / para ver as sugestões)
+  /admin <senha>          entrar no modo admin
+  /painel                 abrir o painel
+  /kick <nome> [motivo]   expulsar (a pessoa pode voltar)
+  /ban <nome> [motivo]    banir
+  /unban <nome>           desbanir
+  /mute <nome> [minutos]  silenciar no chat (sem minutos = até tirar)
+  /unmute <nome>          tirar o silêncio
+  /parar <nome>           encerrar a transmissão de alguém
+  /tirar <nome>           tirar alguém da sala de tela
+  /daradmin <nome>        dar admin (vale até a pessoa sair)
+  /tiraradmin <nome>      tirar o admin
+  /limpar                 apagar todas as mensagens do canal atual
+  /aviso <texto>          faixa de aviso no topo para todo mundo
+  /nome <nome>            mudar o nome do servidor
+  /senha <senha>          mudar a senha de entrada
+  /semsenha               tirar a senha de entrada
+  /trancar                ninguém novo entra (admins entram)
+  /destrancar             liberar a entrada
+  /sairadmin              sair do modo admin
+
+  O nome pode ter espaços e não precisa estar completo. Por exemplo,
+  "/kick jo" funciona se só tiver um "Jo..." online.
+
+OUTRAS COISAS DE ADMIN
+  - Criar, renomear e apagar canais e salas: botões "+", lápis e
+    lixeira na barra da esquerda. Só admins veem esses botões.
+  - Apagar qualquer mensagem: passe o mouse por cima e clique na
+    lixeira. Segure Shift para apagar sem confirmação. Cada pessoa
+    também pode apagar as próprias mensagens.
+
+SOBRE O BANIMENTO
+  Não existe cadastro com e-mail. Por isso, o banimento bloqueia o IP
+  e o navegador da pessoa. Quem trocar de rede (4G, VPN) e usar outro
+  navegador consegue voltar. Se isso acontecer, troque a senha de
+  entrada. Se duas pessoas usam a mesma internet (mesma casa), o
+  banimento vale só para o navegador, para não bloquear a outra.
+
+PROTEÇÃO
+  Depois de 8 senhas erradas em 10 minutos, aquele IP fica bloqueado
+  por um tempo. As senhas são guardadas só como "hash" (embaralhadas).
+
+
+=====================================================================
+4. ALTERNATIVA: DO SEU PC, COM LINK TEMPORÁRIO
+=====================================================================
+
+Se quiser usar sem colocar na nuvem: deixe o iniciar.bat aberto e,
+em outro terminal, rode:
+
+    cloudflared tunnel --url http://localhost:3000
+
+(Para instalar no Windows: winget install --id Cloudflare.cloudflared)
+
+Ele mostra um link https://...trycloudflare.com para mandar aos
+amigos. O link muda toda vez e o seu PC precisa ficar ligado. Entrar
+pela primeira vez demora uns 8 segundos (é normal).
+
+
+=====================================================================
+CONFIGURAÇÕES (variáveis de ambiente)
+=====================================================================
+
+  ADMIN_SENHA       Senha de admin. Se não definir, uma é gerada e
+                    aparece na janela/no log do servidor.
+  UPSTASH_REDIS_REST_URL
+  UPSTASH_REDIS_REST_TOKEN
+                    Banco Upstash para guardar os dados. Sem eles,
+                    os dados vão para o arquivo data.json.
+  NOME_SERVIDOR     Nome inicial do servidor (dá para mudar no painel).
+  SENHA             Senha de entrada inicial (dá para mudar no painel;
+                    o que for definido no painel vale mais).
+  PORT              Porta (padrão 3000; o Render define sozinho).
+  DATA_FILE         Arquivo de dados quando não usa o Upstash.
+  TURN_URL, TURN_USUARIO, TURN_SENHA
+                    Servidor TURN (veja abaixo).
+
+
+=====================================================================
+ALGUÉM NÃO CONSEGUE VER A TELA?
+=====================================================================
+
+Algumas redes (4G/5G, CGNAT, empresa ou faculdade) bloqueiam a
+conexão direta entre navegadores. A solução é um servidor TURN, que
+repassa o vídeo. Opção grátis: o Open Relay da Metered (metered.ca),
+com 20 GB por mês. Crie a conta, copie as credenciais e adicione no
+Render (Environment):
+
+    TURN_URL=turn:ENDERECO:80,turn:ENDERECO:443?transport=tcp
+    TURN_USUARIO=seu-usuario
+    TURN_SENHA=sua-credencial
+
+Use as URLs exatas que o painel da Metered mostrar, separadas por
+vírgula. Para ter uma ideia do consumo: 1 hora de 1080p para 1 pessoa
+gasta uns 2 GB.
+
+
+=====================================================================
+DICAS
+=====================================================================
+
+  - Para transmitir, use Chrome, Edge, Firefox ou Opera no computador.
+    No celular dá para assistir e conversar.
+  - Som: na janela em que você escolhe o que compartilhar, marque
+    "Compartilhar áudio da guia" ou "Compartilhar áudio do sistema".
+  - Upload: quem transmite manda uma cópia para cada pessoa assistindo
+    (uns 4,5 Mbps por pessoa em 1080p). Com pouco upload, use 720p.
+  - Alguém não ouve? Aparece um botão "Clique para ouvir" em cima da
+    transmissão.
+  - Atalhos: Enter envia, Shift+Enter pula linha, duplo clique deixa a
+    transmissão em tela cheia, Esc sai do destaque e fecha o painel.
+  - Privacidade: o vídeo vai criptografado direto entre os
+    navegadores. O chat passa pelo servidor, que guarda as 200 últimas
+    mensagens de cada canal.
+
+
+=====================================================================
+ARQUIVOS
+=====================================================================
+
+  iniciar.bat         liga o servidor no Windows (dois cliques)
+  server.js           servidor (chat, admin, sinalização WebRTC)
+  render.yaml         configuração para publicar no Render
+  package.json        informações do projeto (o Render usa)
+  public/index.html   página
+  public/style.css    visual
+  public/app.js       lógica do site

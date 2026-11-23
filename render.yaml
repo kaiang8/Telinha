@@ -1,0 +1,19 @@
+# Configuração para publicar no Render (New -> Blueprint).
+# Os valores marcados com "sync: false" são pedidos na hora de criar.
+services:
+  - type: web
+    name: telinha
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/config
+    envVars:
+      - key: NOME_SERVIDOR
+        value: Nosso Servidor
+      - key: ADMIN_SENHA
+        sync: false
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
