@@ -358,6 +358,28 @@ const TIPOS = {
   '.png': 'image/png',
   '.ico': 'image/x-icon',
 };
+// Arquivos da página. O normal é estarem na pasta public/, mas se foram enviados
+// soltos (sem a pasta), o servidor procura também ao lado do server.js.
+const ARQUIVOS_DA_PAGINA = ['index.html', 'app.js', 'style.css'];
+function acharArquivoDaPagina(nome) {
+  for (const dir of [PUBLIC_DIR, __dirname]) {
+    const f = path.join(dir, nome);
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+}
+function paginaDeAjuda(res) {
+  const faltando = ARQUIVOS_DA_PAGINA.filter((n) => !acharArquivoDaPagina(n));
+  res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(`<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Faltam arquivos</title><body style="font-family:system-ui,sans-serif;background:#313338;color:#dbdee1;max-width:640px;margin:60px auto;padding:0 20px;line-height:1.6">
+<h1 style="color:#fff">O servidor está ligado, mas faltam arquivos da página</h1>
+<p>Não encontrei: <b>${faltando.join(', ')}</b></p>
+<p>No GitHub, clique em <b>Add file → Upload files</b> e envie esses arquivos (eles ficam dentro da pasta <code>public</code> no seu computador).
+Podem ficar soltos, junto do <code>server.js</code>, ou dentro de uma pasta <code>public</code>. Depois clique em <b>Commit changes</b>
+e espere uns 2 minutos: o Render atualiza sozinho.</p></body></html>`);
+}
+
 function servirEstatico(req, res) {
   let p;
   try {
@@ -366,8 +388,17 @@ function servirEstatico(req, res) {
     return json(res, 400, { error: 'endereço inválido' });
   }
   if (p === '/') p = '/index.html';
-  const arquivo = path.normalize(path.join(PUBLIC_DIR, p));
+  let arquivo = path.normalize(path.join(PUBLIC_DIR, p));
   if (!arquivo.startsWith(PUBLIC_DIR + path.sep)) return json(res, 403, { error: 'proibido' });
+  const nome = p.slice(1);
+  if (ARQUIVOS_DA_PAGINA.includes(nome)) {
+    arquivo = acharArquivoDaPagina(nome);
+    if (!arquivo) {
+      if (nome === 'index.html') return paginaDeAjuda(res);
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end('Não encontrado');
+    }
+  }
   fs.readFile(arquivo, (err, buf) => {
     if (err) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -883,6 +914,11 @@ server.on('error', (err) => {
 
 async function iniciar() {
   console.log('');
+  const faltando = ARQUIVOS_DA_PAGINA.filter((n) => !acharArquivoDaPagina(n));
+  if (faltando.length) {
+    console.warn(`  ATENÇÃO: não encontrei ${faltando.join(', ')} (nem em public/, nem ao lado do server.js).`);
+    console.warn('  Envie esses arquivos para o GitHub, senão o site não abre.\n');
+  }
   await carregarDados();
   garantirSenhaAdmin();
   server.listen(PORT, () => {
