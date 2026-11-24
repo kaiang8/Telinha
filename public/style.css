@@ -892,6 +892,96 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
 .t-cores-ok:hover { background: rgba(255, 255, 255, .26); }
 .stage-grid.focus .thumbs .tile .t-caneta, .stage-grid.focus .thumbs .tile .t-cores-dica { display: none; }
 @media (max-width: 560px) { .t-cores-dica { display: none; } }
+/* ===== Reações: emotes que sobem flutuando na transmissão ===== */
+.tile .t-emotes { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.tile .t-reacoes {
+  position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%); display: flex; gap: 2px; padding: 4px;
+  border-radius: 999px; background: rgba(6, 24, 39, .74); border: 1px solid rgba(255, 255, 255, .22);
+  box-shadow: 0 8px 22px -8px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .18);
+  opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.tile:hover .t-reacoes, .tile:focus-within .t-reacoes, .tile.show-ctrl .t-reacoes { opacity: 1; pointer-events: auto; }
+.tile.desenhando .t-reacoes, .stage-grid.focus .thumbs .tile .t-reacoes { display: none; }
+.t-reacao {
+  width: 36px; height: 36px; padding: 5px; border: 0; border-radius: 50%; background: transparent; cursor: pointer;
+  display: grid; place-items: center; transition: transform .12s, background-color .12s;
+}
+.t-reacao svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .35)); }
+.t-reacao:hover { background: rgba(255, 255, 255, .16); transform: translateY(-2px) scale(1.14); }
+.t-reacao:active { transform: scale(.9); }
+.t-reacao:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+
+.emote-voa {
+  position: absolute; bottom: 5%; width: var(--tam); height: var(--tam); margin-left: calc(var(--tam) / -2);
+  animation: emoSobe 2s cubic-bezier(.2, .7, .3, 1) forwards; will-change: transform, opacity;
+}
+.emote-voa .ginga { width: 100%; height: 100%; animation: emoGinga .9s ease-in-out infinite alternate; }
+.emote-voa svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 4px 5px rgba(0, 0, 0, .4)); }
+@keyframes emoSobe {
+  0% { opacity: 0; transform: translate(0, 0) scale(.3); }
+  10% { opacity: 1; transform: translate(0, calc(var(--sobe) * -.04)) scale(1.18); }
+  18% { transform: translate(calc(var(--dx) * .1), calc(var(--sobe) * -.1)) scale(1); }
+  65% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), calc(var(--sobe) * -1)) scale(.86); }
+}
+@keyframes emoGinga { from { transform: translateX(-7%) rotate(-7deg); } to { transform: translateX(7%) rotate(7deg); } }
+
+/* as animações de cada emote: sempre no que está voando, e na barra só ao passar o mouse */
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-rio { animation: emoRio .45s linear infinite; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-gota { animation: emoGota .6s ease-in infinite; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-gota.d2 { animation-delay: -.3s; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-soluco { animation: emoSoluco .22s ease-in-out infinite alternate; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-coracao { animation: emoBate .7s ease-in-out infinite; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-coracao.d2 { animation-delay: -.08s; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-chama-fora { animation: emoChama .5s ease-in-out infinite alternate; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-chama-meio { animation: emoChama .38s ease-in-out infinite alternate-reverse; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-chama-centro { animation: emoChama .29s ease-in-out infinite alternate; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-faisca { animation: emoFaisca .7s ease-out infinite; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-faisca.d2 { animation-delay: -.35s; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-faisca.d3 { animation-delay: -.55s; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-pingo { animation: emoPingo 1.1s linear infinite; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-pingo.d2 { animation-delay: -.37s; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-pingo.d3 { animation-delay: -.74s; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-gargalha { animation: emoGargalha .16s ease-in-out infinite alternate; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-boca { animation: emoBoca .16s ease-in-out infinite alternate; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-alegria-e { animation: emoAlegriaE .5s ease-out infinite; }
+:is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-alegria-d { animation: emoAlegriaD .5s ease-out infinite; animation-delay: -.25s; }
+.emo-gota, .emo-soluco, .emo-coracao, .emo-faisca, .emo-pingo, .emo-boca, .emo-alegria-e, .emo-alegria-d { transform-box: fill-box; transform-origin: center; }
+.emo-chama-fora, .emo-chama-meio, .emo-chama-centro { transform-box: fill-box; transform-origin: 50% 100%; }
+.emo-boca { transform-origin: 50% 0; }
+.emo-gargalha { transform-box: view-box; transform-origin: 32px 33px; }
+.emo-pingo { opacity: 0; }
+.t-reacao:not(:hover):not(:focus-visible) .emo-pingo.d3 { opacity: 1; transform: translate(14px, 4px); }
+@keyframes emoRio { to { stroke-dashoffset: -20; } }
+@keyframes emoGota { 0% { transform: translateY(-2px) scale(.5); opacity: 0; } 25% { opacity: 1; transform: translateY(0) scale(1); } 100% { transform: translateY(9px) scale(.8); opacity: 0; } }
+@keyframes emoSoluco { from { transform: scaleY(1); } to { transform: scale(1.06, .8); } }
+@keyframes emoBate { 0%, 55%, 100% { transform: scale(1); } 15% { transform: scale(1.32); } 30% { transform: scale(1.05); } 42% { transform: scale(1.2); } }
+@keyframes emoChama {
+  0% { transform: scale(1, 1) skewX(0deg); }
+  50% { transform: scale(.93, 1.09) skewX(-5deg); }
+  100% { transform: scale(1.05, .95) skewX(4deg); }
+}
+@keyframes emoFaisca { 0% { transform: translateY(4px) scale(1); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(-14px) scale(.4); opacity: 0; } }
+/* a água desce pela berinjela do talo até a ponta e cai */
+@keyframes emoPingo {
+  0% { transform: translate(0, 0) scale(.4); opacity: 0; }
+  8% { transform: translate(0, 0) scale(1); opacity: 1; }
+  32% { transform: translate(14px, 4px) scale(1, 1.05); }
+  52% { transform: translate(27px, 25px) scale(1, 1.08); }
+  68% { transform: translate(26px, 37px) scale(1, 1.1); }
+  80% { transform: translate(22px, 42px) scale(.9, 1.25); opacity: 1; }
+  100% { transform: translate(22px, 58px) scale(.8, 1.1); opacity: 0; }
+}
+@keyframes emoGargalha { from { transform: rotate(-8deg) translateY(0); } to { transform: rotate(8deg) translateY(-1.5px); } }
+@keyframes emoBoca { from { transform: scaleY(1); } to { transform: scaleY(.82); } }
+@keyframes emoAlegriaE { 0% { transform: translate(0, 0); opacity: 1; } 60% { opacity: 1; } 100% { transform: translate(-10px, 3px) scale(.7); opacity: 0; } }
+@keyframes emoAlegriaD { 0% { transform: translate(0, 0); opacity: 1; } 60% { opacity: 1; } 100% { transform: translate(10px, 3px) scale(.7); opacity: 0; } }
+/* "reduzir movimento" ligado no sistema: o emote aparece parado e só esmaece, sem subir nem balançar */
+@media (prefers-reduced-motion: reduce) {
+  .tile .t-emotes .emote-voa { animation: emoSurge 2s ease forwards !important; bottom: 30%; }
+  .tile .t-emotes .emo-pingo.d3 { opacity: 1; transform: translate(14px, 4px); }
+}
+@keyframes emoSurge { 0% { opacity: 0; } 12%, 65% { opacity: 1; } 100% { opacity: 0; } }
 #canetaBtn.caneta-on { position: relative; }
 #canetaBtn.caneta-on::after {
   content: ''; position: absolute; top: 6px; right: 8px; width: 8px; height: 8px; border-radius: 50%;

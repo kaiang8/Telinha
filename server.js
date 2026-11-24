@@ -1446,6 +1446,20 @@ async function api(req, res, url) {
       return json(res, 200, { ok: true });
     }
 
+    case 'emote': {
+      // reação que sobe flutuando na transmissão de alguém da mesma sala
+      const alvo = users.get(String(body.sid));
+      if (!alvo || !u.sala || alvo.sala !== u.sala || !alvo.live) return json(res, 409, { error: 'Essa transmissão acabou' });
+      if (silencioDe(u) > Date.now()) return json(res, 403, { error: 'Você está silenciado: as reações voltam quando o silêncio acabar.' });
+      if (limiteDe(u, 'limEmote', 10, 1000)) return json(res, 429, { error: 'Calma com as reações' });
+      const e = Number.isInteger(body.e) && body.e >= 0 && body.e < 5 ? body.e : null;
+      const x = Number(body.x);
+      if (e === null || !Number.isFinite(x)) return json(res, 400, { error: 'reação inválida' });
+      const ev = { type: 'emote', from: u.id, sid: alvo.id, e, x: Math.round(Math.min(0.9, Math.max(0.1, x)) * 1000) / 1000 };
+      for (const y of users.values()) if (y !== u && y.sala === u.sala && !y.kicked) enviar(y, ev);
+      return json(res, 200, { ok: true });
+    }
+
     case 'tinta': {
       // um pedaço de traço: no máximo 64 pontos, coordenadas de 0 a 1 do quadro do vídeo
       const alvo = users.get(String(body.sid));

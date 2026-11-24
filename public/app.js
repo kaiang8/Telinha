@@ -426,6 +426,7 @@
       case 'renamed': return onRenamed(m);
       case 'sb': return onSomTocado(m);
       case 'tinta': return onTinta(m);
+      case 'emote': return onEmote(m);
       case 'avisoAdmin':
         toast(m.texto, 10000);
         if (P.aberto && P.aba === 'problemas') carregarProblemas();
@@ -914,9 +915,11 @@
     el.dataset.uid = uid;
     el.innerHTML = `<video autoplay playsinline muted></video>
       <canvas class="t-tinta" aria-hidden="true"></canvas>
+      <div class="t-emotes" aria-hidden="true"></div>
       <div class="t-cores" hidden></div>
       <div class="t-top"><span class="live-badge">ao vivo</span><span class="t-state"></span><span class="t-qual" hidden></span></div>
       <button class="unmute-hint" data-act="center" hidden></button>
+      ${barraDeReacoes()}
       <div class="t-bottom">
         <span class="t-name"></span>
         <button class="icon-btn" data-act="mute" title="Ligar/desligar som"></button>
@@ -1192,6 +1195,8 @@
     const act = e.target.closest('[data-act]')?.dataset.act;
     const v = t.video;
     if (act === 'vol') return;
+    if (act === 'emote') return reagir(uid, Number(e.target.closest('[data-emote]').dataset.emote));
+    if (e.target.closest('.t-reacoes')) return; // clique entre os emotes não muda o destaque
     if (act === 'caneta') return alternarCaneta(uid);
     if (act === 'cor') return escolherCor(Number(e.target.closest('[data-cor]').dataset.cor));
     if (act === 'sair-caneta') return sairDaCaneta();
@@ -1932,6 +1937,113 @@
       c.pending.push(d);
       if (c.pending.length > 200) c.pending.shift();
     }
+  }
+
+  // ================= Reações: emotes que sobem flutuando na transmissão =================
+  // Desenhos próprios (SVG), cada um com uma animação curtinha. Cada clique solta um emote que
+  // sobe e some em 2 segundos, para todo mundo da sala que está vendo aquela transmissão. Sem som.
+  const ROSTO_EMO = '<circle cx="32" cy="33" r="27" fill="url(#emoRosto)" stroke="#c88400" stroke-width="1.4"/><ellipse cx="30" cy="16.5" rx="15" ry="6.5" fill="#fff" opacity=".5"/>';
+  const GOTA_EMO = '<path d="M0 -3.5C1.8 -1 2.8 .8 2.8 2.2C2.8 3.9 1.5 5 0 5C-1.5 5 -2.8 3.9 -2.8 2.2C-2.8 .8 -1.8 -1 0 -3.5z" fill="url(#emoAgua)"/><circle cx="-.9" cy="2" r=".8" fill="#fff" opacity=".85"/>';
+  const CORACAO_EMO = '<path d="M0 6C-3 3.5 -8 .5 -8 -3C-8 -6 -5.5 -7.5 -3.5 -7.5C-1.8 -7.5 -.6 -6.5 0 -5.3C.6 -6.5 1.8 -7.5 3.5 -7.5C5.5 -7.5 8 -6 8 -3C8 .5 3 3.5 0 6z" fill="url(#emoCoracao)" stroke="#b80d35" stroke-width=".8"/><ellipse cx="-3.6" cy="-4" rx="1.9" ry="1.2" fill="#fff" opacity=".75"/>';
+  const svgEmo = (miolo) => `<svg viewBox="0 0 64 64" overflow="visible" aria-hidden="true">${miolo}</svg>`;
+  const EMOTES = [
+    {
+      id: 'chorando', nome: 'Chorando',
+      svg: svgEmo(`${ROSTO_EMO}
+        <path d="M17 24.5q4.5 -1 9 -4.5M47 24.5q-4.5 -1 -9 -4.5" stroke="#6b3a00" stroke-width="2.6" stroke-linecap="round" fill="none"/>
+        <path d="M17 30q5.5 -5 11 0M47 30q-5.5 -5 -11 0" stroke="#5a3200" stroke-width="3" stroke-linecap="round" fill="none"/>
+        <g class="emo-soluco"><ellipse cx="32" cy="46" rx="8" ry="6.5" fill="#6b2b12"/><ellipse cx="32" cy="50" rx="5" ry="2.6" fill="#ff7a8a"/></g>
+        <path d="M19.5 31C15 38 17 47 11 58M44.5 31C49 38 47 47 53 58" stroke="#2a9be8" stroke-width="7.5" stroke-linecap="round" fill="none" opacity=".35"/>
+        <path d="M19.5 31C15 38 17 47 11 58M44.5 31C49 38 47 47 53 58" stroke="url(#emoAgua)" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+        <path class="emo-rio" d="M19.5 31C15 38 17 47 11 58M44.5 31C49 38 47 47 53 58" stroke="#f2fdff" stroke-width="2" stroke-linecap="round" fill="none" stroke-dasharray="3 7"/>
+        <g class="emo-gota"><g transform="translate(11 59)">${GOTA_EMO}</g></g>
+        <g class="emo-gota d2"><g transform="translate(53 59)">${GOTA_EMO}</g></g>`),
+    },
+    {
+      id: 'apaixonado', nome: 'Apaixonado',
+      svg: svgEmo(`${ROSTO_EMO}
+        <ellipse cx="14.5" cy="40.5" rx="5" ry="3" fill="#ff6f9c" opacity=".5"/><ellipse cx="49.5" cy="40.5" rx="5" ry="3" fill="#ff6f9c" opacity=".5"/>
+        <path d="M19 39q13 15 26 0q-13 4 -26 0z" fill="#6b2b12"/>
+        <path d="M20.5 39.8q11.5 3.2 23 0l-1.2 2.6q-10.3 2.6 -20.6 0z" fill="#fff"/>
+        <g class="emo-coracao"><g transform="translate(21.5 27)">${CORACAO_EMO}</g></g>
+        <g class="emo-coracao d2"><g transform="translate(42.5 27)">${CORACAO_EMO}</g></g>`),
+    },
+    {
+      id: 'fogo', nome: 'Fogo',
+      svg: svgEmo(`<g class="emo-chama-fora"><path d="M32 3C35 12 47 17 48.5 33C49.5 47 42 60 32 60C21.5 60 15 50 15.5 39C16 30 21 25 23.5 17C26.5 22 27.5 26 30.5 27.5C29.5 19 29 10 32 3z" fill="url(#emoFogoFora)" stroke="#d83a00" stroke-width="1"/></g>
+        <g class="emo-chama-meio"><path d="M32.5 24C35.5 31 42 35 42 45C42 53.5 37.5 59 32 59C26.5 59 22 54 22 47C22 41 26 37.5 27.5 32C29.5 36 31 37.5 32.5 38.5C31.5 33 31.5 28 32.5 24z" fill="url(#emoFogoDentro)"/></g>
+        <g class="emo-chama-centro"><path d="M32 42C34.5 45.5 37 48 37 52C37 55.5 34.8 58 32 58C29.2 58 27 55.5 27 52C27 48.5 29.5 46 32 42z" fill="#fffbe6"/></g>
+        <ellipse cx="25.5" cy="33" rx="2.6" ry="7" fill="#fff" opacity=".28" transform="rotate(18 25.5 33)"/>
+        <circle class="emo-faisca" cx="21" cy="24" r="2.4" fill="#ffd54a"/><circle class="emo-faisca d2" cx="44" cy="19" r="2.1" fill="#ffb300"/><circle class="emo-faisca d3" cx="34" cy="8" r="1.7" fill="#ffe57a"/>`),
+    },
+    {
+      id: 'berinjela', nome: 'Berinjela',
+      svg: svgEmo(`<path d="M19 19C27 12 39 16 47 28C55 40 57 52 50.5 55.5C44 59 33.5 52.5 25.5 42.5C17.5 32.5 12.5 25.5 19 19z" fill="url(#emoBerinjela)" stroke="#3a1072" stroke-width="1.2"/>
+        <path d="M23 20.5C29 17 37 20 43 28" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none" opacity=".55"/>
+        <path d="M13.5 11.5C11.5 8 9.5 6 6.5 4.5" stroke="#2e7d32" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+        <path d="M11 12C16 8 24 9 27.5 14.5L22 14.5L24.5 20.5L18.5 17.5L17 23.5L13.5 17.5L8 20L11.5 14.5z" fill="#43a047" stroke="#2e7d32" stroke-width="1" stroke-linejoin="round"/>
+        <g class="emo-pingo"><g transform="translate(28 16)">${GOTA_EMO}</g></g>
+        <g class="emo-pingo d2"><g transform="translate(28 16)">${GOTA_EMO}</g></g>
+        <g class="emo-pingo d3"><g transform="translate(28 16)">${GOTA_EMO}</g></g>`),
+    },
+    {
+      id: 'risada', nome: 'Gargalhando',
+      svg: svgEmo(`<g class="emo-gargalha">${ROSTO_EMO}
+        <path d="M17 22.5l9.5 5l-9.5 5M47 22.5l-9.5 5l9.5 5" stroke="#5a3200" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <g class="emo-boca"><path d="M15.5 37.5q16.5 2.5 33 0q-1.5 19.5 -16.5 19.5q-15 0 -16.5 -19.5z" fill="#6b2b12"/>
+          <path d="M16.6 38.4q15.4 2.3 30.8 0l-.8 4q-14.6 2 -29.2 0z" fill="#fff"/><ellipse cx="32" cy="51.5" rx="7.5" ry="4" fill="#ff6f6f"/></g>
+        <g class="emo-alegria-e"><g transform="translate(11 31) rotate(50) scale(1.3)">${GOTA_EMO}</g></g>
+        <g class="emo-alegria-d"><g transform="translate(53 31) rotate(-50) scale(1.3)">${GOTA_EMO}</g></g></g>`),
+    },
+  ];
+  // gradientes dos emotes, uma vez só na página
+  function montarDefsDosEmotes() {
+    if (document.getElementById('emoDefs')) return;
+    const d = document.createElement('div');
+    d.innerHTML = `<svg id="emoDefs" width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+      <radialGradient id="emoRosto" cx=".38" cy=".3" r=".78"><stop offset="0" stop-color="#fff6b8"/><stop offset=".45" stop-color="#ffd84a"/><stop offset="1" stop-color="#f6a800"/></radialGradient>
+      <linearGradient id="emoAgua" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c8f2ff"/><stop offset="1" stop-color="#2fa8f5"/></linearGradient>
+      <linearGradient id="emoCoracao" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff7d98"/><stop offset="1" stop-color="#e3133c"/></linearGradient>
+      <linearGradient id="emoFogoFora" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff3d00"/><stop offset=".6" stop-color="#ff7a1a"/><stop offset="1" stop-color="#ffb347"/></linearGradient>
+      <linearGradient id="emoFogoDentro" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ffb300"/><stop offset="1" stop-color="#ffe57a"/></linearGradient>
+      <radialGradient id="emoBerinjela" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#c29bff"/><stop offset=".45" stop-color="#7e3bd6"/><stop offset="1" stop-color="#4a1890"/></radialGradient>
+    </defs></svg>`;
+    document.body.appendChild(d.firstElementChild);
+  }
+  montarDefsDosEmotes();
+  const barraDeReacoes = () => `<div class="t-reacoes" role="group" aria-label="Reações">${EMOTES.map((x, i) =>
+    `<button type="button" class="t-reacao" data-act="emote" data-emote="${i}" title="${x.nome}" aria-label="Reagir: ${x.nome}">${x.svg}</button>`).join('')}</div>`;
+
+  const REACAO = { cliques: [] };
+  function soltarEmote(sid, e, x) {
+    const t = S.tiles.get(sid);
+    if (!t || !EMOTES[e]) return;
+    const camada = t.el.querySelector('.t-emotes');
+    if (camada.childElementCount >= 30) camada.firstElementChild.remove(); // não deixa acumular
+    const h = t.el.clientHeight || 300;
+    const tam = Math.round(Math.max(36, Math.min(84, h * 0.13)));
+    const el = document.createElement('div');
+    el.className = `emote-voa emo-${EMOTES[e].id}`;
+    el.style.cssText = `left:${(x * 100).toFixed(1)}%;--tam:${tam}px;--sobe:${Math.round(h * 0.5)}px;--dx:${Math.round((Math.random() - 0.5) * tam)}px`;
+    el.innerHTML = `<div class="ginga" style="animation-delay:-${(Math.random() * 0.9).toFixed(2)}s">${EMOTES[e].svg}</div>`;
+    camada.appendChild(el);
+    setTimeout(() => el.remove(), 2100);
+  }
+  function reagir(sid, e) {
+    if (!EMOTES[e]) return;
+    const agora = Date.now();
+    REACAO.cliques = REACAO.cliques.filter((t) => agora - t < 1000);
+    if (REACAO.cliques.length >= 6) return; // no máximo 6 por segundo
+    REACAO.cliques.push(agora);
+    const x = Math.round((0.15 + Math.random() * 0.7) * 1000) / 1000;
+    soltarEmote(sid, e, x);
+    api('emote', { sid, e, x }).catch((err) => {
+      if (/silenciad/i.test(err.message) && agora - (REACAO.avisou || 0) > 5000) { REACAO.avisou = agora; toast(err.message); }
+    });
+  }
+  function onEmote(m) {
+    if (typeof m.sid !== 'string' || !Number.isInteger(m.e) || !EMOTES[m.e]) return;
+    soltarEmote(m.sid, m.e, Math.min(0.9, Math.max(0.1, Number(m.x) || 0.5)));
   }
 
   // ================= Qualidade da transmissão =================
