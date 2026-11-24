@@ -14,6 +14,8 @@ const ajudante = require('./ajudante');
 const EM_TESTE = !app.isPackaged; // rodando pelo código (não instalado)
 const ARG_TESTE = process.argv.find((a) => a.startsWith('--teste-rapido='));
 const TESTE_RAPIDO = ARG_TESTE ? ARG_TESTE.slice('--teste-rapido='.length) : null; // usado pelo GitHub ao gerar o instalador
+// No teste do GitHub não há microfone nem câmera: aparelhos de mentira, só para conferir as permissões
+if (TESTE_RAPIDO) app.commandLine.appendSwitch('use-fake-device-for-media-stream');
 
 const SITE = (() => {
   const pedido = EM_TESTE ? process.env.CARAS_SITE : null; // trocar o site só é possível em teste
@@ -518,8 +520,7 @@ async function testeRapido() {
       .catch((e) => 'erro: ' + e.name + ': ' + e.message)`, true);
     r.capturaComSom = await capturar('{ restrictOwnAudio: true, echoCancellation: false }');
     r.capturaSemSom = await capturar('false');
-    // microfone liberado (a máquina do GitHub não tem microfone: "NotFoundError" já mostra que a
-    // permissão passou); câmera sempre bloqueada
+    // microfone liberado e câmera sempre bloqueada (com aparelhos de mentira)
     const midia = (c) => js(`navigator.mediaDevices.getUserMedia(${c}).then((s) => { const n = s.getTracks().map((t) => t.kind).join(','); s.getTracks().forEach((t) => t.stop()); return 'ok: ' + n; }, (e) => e.name)`, true);
     r.microfone = await midia('{ audio: true }');
     r.camera = await midia('{ video: true }');
@@ -557,7 +558,7 @@ async function testeRapido() {
     const ok = r.api === true && r.semNode === true && r.bloqueioExterno === 'bloqueado' && r.listaDeEnderecos === 'bloqueado'
       && r.janelaNova === 'bloqueada' && r.navegacaoExterna === 'bloqueada'
       && Array.isArray(r.atalhos?.ok) && !r.atalhos.ok.includes('ruim')
-      && !String(r.camera).startsWith('ok') && r.pttRuim?.ok === false;
+      && r.microfone === 'ok: audio' && r.camera === 'NotAllowedError' && r.pttRuim?.ok === false;
     r.resultado = ok ? 'passou' : 'falhou';
     gravar(ok ? 0 : 1);
   } catch (e) {
