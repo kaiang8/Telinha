@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <title>Escolha o que compartilhar</title>
+  <link rel="stylesheet" href="telas.css">
+</head>
+<body>
+  <div class="seletor">
+    <header>
+      <h1>Escolha o que compartilhar</h1>
+      <div class="abas" role="tablist">
+        <button type="button" role="tab" id="abaJanela" aria-selected="true" aria-controls="grade">Janelas</button>
+        <button type="button" role="tab" id="abaTela" aria-selected="false" aria-controls="grade">Tela inteira</button>
+      </div>
+    </header>
+    <div class="grade" id="grade" role="tabpanel" aria-live="polite"></div>
+    <footer>
+      <p id="somAviso"></p>
+      <button type="button" class="botao" id="cancelar">Cancelar</button>
+      <button type="button" class="botao principal" id="compartilhar" disabled>Compartilhar</button>
+    </footer>
+  </div>
+  <script src="seletor.js"></script>
+</body>
+</html>

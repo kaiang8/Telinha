@@ -1,0 +1,68 @@
+{
+  "name": "caras-e-telas",
+  "productName": "Caras E Telas",
+  "version": "1.0.0",
+  "description": "Caras E Telas para Windows",
+  "author": "kaiang8",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "testar": "node teste-regras.js",
+    "iniciar": "electron .",
+    "instalador": "electron-builder --win --x64 --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
+  },
+  "devDependencies": {
+    "@electron/fuses": "^1.8.0",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.kaiang8.carasetelas",
+    "productName": "Caras E Telas",
+    "copyright": "Uso privado entre amigos",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "regras.js",
+      "preload.js",
+      "preload-seletor.js",
+      "telas/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "afterPack": "./build/fusiveis.js",
+    "electronLanguages": ["pt-BR", "en-US"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico",
+      "artifactName": "Caras-E-Telas-Instalador.${ext}",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Caras E Telas",
+      "uninstallDisplayName": "Caras E Telas",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "kaiang8",
+        "repo": "Telinha",
+        "releaseType": "release"
+      }
+    ]
+  }
+}

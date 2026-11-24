@@ -36,6 +36,7 @@
       <button type="submit" class="btn primary block" id="loginBtn">Entrar</button>
       <p id="loginError" class="error" role="alert"></p>
       <button type="button" class="link-btn" id="adminToggle">Sou admin</button>
+      <a class="login-programa" id="loginPrograma" href="/baixar" target="_blank" rel="noopener" hidden>Baixar o programa para Windows</a>
     </form>
   </div>
 
@@ -118,6 +119,7 @@
                 <select id="uploadSelect"></select>
               </label>
               <p class="ajustes-dica">Cada pessoa assistindo recebe uma cópia do vídeo. O site divide o seu upload entre elas e baixa a resolução quando a sala enche. No automático, ele mede a sua internet sozinho.</p>
+              <p class="ajustes-dica programa-dica" id="programaDica" hidden>Também tem o <a href="/baixar" target="_blank" rel="noopener">programa para Windows</a>: nele, o som do computador vai sem eco e os atalhos dos sons funcionam até dentro de jogos.</p>
             </div>
             <label class="quality send-vol" id="sendVolWrap" title="Volume do som que você está mandando, para todo mundo" hidden>
               <span class="muted small">Volume enviado</span>
@@ -135,7 +137,7 @@
               </div>
               <p class="sons-aviso" id="sbAviso"></p>
               <div class="sons-grade" id="sbGrade"></div>
-              <p class="sons-dica">Clique num som ou use o atalho. Os atalhos só funcionam com esta janela do navegador em foco (dentro de um jogo, o navegador não recebe as teclas). Com Alt+0, todos os sons param.</p>
+              <p class="sons-dica" id="sonsDica">Clique num som ou use o atalho. Os atalhos só funcionam com esta janela do navegador em foco (dentro de um jogo, o navegador não recebe as teclas). Com Alt+0, todos os sons param.</p>
             </div>
             <button class="btn" id="sonsBtn" title="Soundboard: sons que todo mundo ouve na sua transmissão" hidden></button>
             <button class="btn" id="ajustesBtn" title="Som, qualidade e upload da sua transmissão" hidden></button>

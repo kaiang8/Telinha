@@ -126,6 +126,10 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 .error:empty { margin: 0; }
 .link-btn { background: none; border: 0; color: var(--violeta); font-size: 13px; margin-top: 12px; padding: 4px; }
 .link-btn:hover { text-decoration: underline; }
+.login-programa { display: block; margin-top: 2px; font-size: 13px; color: var(--suave); text-decoration: none; padding: 4px; }
+.login-programa:hover { color: var(--texto); text-decoration: underline; }
+.ajustes-dica a, .sons-dica a { color: var(--brilho-claro); }
+.programa-dica { border-top: 1px solid var(--linha); padding-top: 8px; margin-top: 6px; }
 
 /* ---------- Estrutura ---------- */
 .app { display: flex; height: 100vh; height: 100dvh; padding: 8px 8px 8px 0; gap: 8px; }

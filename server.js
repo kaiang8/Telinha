@@ -11,6 +11,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const dns = require('dns').promises;
+const net = require('net');
 
 // ---------- Configuração (variáveis de ambiente) ----------
 const PORT = Number(process.env.PORT) || 3000;
@@ -380,7 +382,7 @@ function acharArquivoDaPagina(nome) {
 }
 function paginaDeAjuda(res) {
   const faltando = ARQUIVOS_DA_PAGINA.filter((n) => !acharArquivoDaPagina(n));
-  res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8', ...CABECALHOS_SEGURANCA });
   res.end(`<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Faltam arquivos</title><body style="font-family:system-ui,sans-serif;background:#313338;color:#dbdee1;max-width:640px;margin:60px auto;padding:0 20px;line-height:1.6">
 <h1 style="color:#fff">O servidor está ligado, mas faltam arquivos da página</h1>
@@ -389,6 +391,34 @@ function paginaDeAjuda(res) {
 Podem ficar soltos, junto do <code>server.js</code>, ou dentro de uma pasta <code>public</code>. Depois clique em <b>Commit changes</b>
 e espere uns 2 minutos: o Render atualiza sozinho.</p></body></html>`);
 }
+
+// Proteções do navegador: a página só roda o próprio código e só conversa com este servidor
+// (mesmo que alguém consiga colar algo malicioso no chat, o navegador não executa).
+const CABECALHOS_SEGURANCA = {
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "img-src 'self' data: blob:",
+    "media-src 'self' blob: data:",
+    "connect-src 'self'",
+    "worker-src 'self' blob:",
+    "frame-src 'none'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; '),
+  'Permissions-Policy': 'camera=(), geolocation=(), payment=(), usb=()',
+};
+
+// Link fixo para o instalador do programa (sempre a última versão publicada no GitHub)
+const LINK_PROGRAMA = limparEnv(process.env.LINK_PROGRAMA)
+  || 'https://github.com/kaiang8/Telinha/releases/latest/download/Caras-E-Telas-Instalador.exe';
 
 function servirEstatico(req, res) {
   let p;
@@ -417,8 +447,7 @@ function servirEstatico(req, res) {
     res.writeHead(200, {
       'Content-Type': TIPOS[path.extname(arquivo)] || 'application/octet-stream',
       'Cache-Control': 'no-cache',
-      'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'no-referrer',
+      ...CABECALHOS_SEGURANCA,
     });
     res.end(buf);
   });
@@ -657,8 +686,104 @@ async function acaoAdmin(u, body, res) {
 }
 
 // ---------- Rotas da API ----------
+// ---------- Imagens do chat passam pelo servidor ----------
+// Assim o site de onde a imagem vem nunca vê o IP de quem está no chat
+// (um link de "capturador de IP" postado no chat não pega ninguém).
+const IMG_MAX_BYTES = 8 * 1024 * 1024;
+const IMG_TIPOS = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
+let imgEmAndamento = 0;
+
+function ipPrivado(ip) {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number);
+    return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31)
+      || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || (a === 198 && (b === 18 || b === 19));
+  }
+  const x = ip.toLowerCase();
+  const v4 = x.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (v4) return ipPrivado(v4[1]);
+  return x === '::' || x === '::1' || /^f[cd]/.test(x) || /^fe[89ab]/.test(x) || x.startsWith('ff');
+}
+
+// Só https, porta padrão e endereços públicos (o servidor não vira ponte para a rede interna)
+async function enderecoPublico(u) {
+  if (u.protocol !== 'https:' || u.username || u.password || (u.port && u.port !== '443')) return false;
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  if (net.isIP(host)) return !ipPrivado(host);
+  if (!host.includes('.') || /(^|\.)(localhost|local|internal|lan|home)$/i.test(host)) return false;
+  try {
+    const ips = await dns.lookup(host, { all: true, verbatim: true });
+    return ips.length > 0 && ips.every((e) => !ipPrivado(e.address));
+  } catch {
+    return false;
+  }
+}
+
+async function proxyImagem(req, res, url) {
+  const u = usuarioDoToken(url.searchParams.get('t'));
+  if (!u || u.kicked) return json(res, 401, { error: 'sessão expirada' });
+  const agora = Date.now();
+  if (!u.img || agora - u.img.inicio > 60000) u.img = { inicio: agora, n: 0 };
+  if (++u.img.n > 120 || imgEmAndamento >= 12) return json(res, 429, { error: 'muitas imagens, tente já já' });
+  let alvo;
+  try {
+    alvo = new URL(String(url.searchParams.get('u') || ''));
+  } catch {
+    return json(res, 400, { error: 'endereço inválido' });
+  }
+  imgEmAndamento++;
+  const ctrl = new AbortController();
+  const prazo = setTimeout(() => ctrl.abort(), 10000);
+  res.on('close', () => ctrl.abort());
+  try {
+    let r = null;
+    for (let saltos = 0; saltos < 4; saltos++) {
+      if (!(await enderecoPublico(alvo))) return json(res, 403, { error: 'endereço não permitido' });
+      r = await fetch(alvo, {
+        redirect: 'manual',
+        signal: ctrl.signal,
+        headers: { 'User-Agent': 'CarasETelas/1.0 (imagens do chat)', Accept: 'image/avif,image/webp,image/png,image/jpeg,image/gif;q=0.9' },
+      });
+      if (![301, 302, 303, 307, 308].includes(r.status)) break;
+      const prox = r.headers.get('location');
+      if (!prox) break;
+      alvo = new URL(prox, alvo);
+      r = null;
+    }
+    if (!r || !r.ok) return json(res, 404, { error: 'imagem não encontrada' });
+    const tipo = String(r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (!IMG_TIPOS.has(tipo)) return json(res, 415, { error: 'não é uma imagem' });
+    if (Number(r.headers.get('content-length') || 0) > IMG_MAX_BYTES) return json(res, 413, { error: 'imagem grande demais' });
+    res.writeHead(200, {
+      'Content-Type': tipo,
+      'Cache-Control': 'private, max-age=86400',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+      'Content-Disposition': 'inline',
+      'Referrer-Policy': 'no-referrer',
+    });
+    let total = 0;
+    for await (const pedaco of r.body) {
+      total += pedaco.length;
+      if (total > IMG_MAX_BYTES) {
+        ctrl.abort();
+        return res.destroy();
+      }
+      if (!res.write(pedaco)) await new Promise((ok) => res.once('drain', ok));
+    }
+    res.end();
+  } catch {
+    if (!res.headersSent) json(res, 502, { error: 'não consegui buscar a imagem' });
+    else res.destroy();
+  } finally {
+    clearTimeout(prazo);
+    imgEmAndamento--;
+  }
+}
+
 async function api(req, res, url) {
   const rota = url.pathname.slice('/api/'.length);
+  if ((req.method === 'GET' || req.method === 'HEAD') && rota === 'img') return proxyImagem(req, res, url);
 
   if (req.method === 'GET' && rota === 'config') return json(res, 200, configPublica());
   if (req.method === 'GET' && rota === 'events') return abrirEventos(req, res, url);
@@ -898,6 +1023,9 @@ const server = http.createServer((req, res) => {
       console.error(e);
       if (!res.headersSent) json(res, 500, { error: 'erro interno' });
     });
+  } else if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/baixar') {
+    res.writeHead(302, { Location: LINK_PROGRAMA, 'Cache-Control': 'no-store' });
+    res.end();
   } else if (req.method === 'GET' || req.method === 'HEAD') {
     servirEstatico(req, res);
   } else {

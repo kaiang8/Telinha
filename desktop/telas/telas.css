@@ -1,0 +1,145 @@
+/* Telas locais do programa (carregando, erro, seletor de tela). Mesmas cores do site. */
+:root {
+  --noite: #101233;
+  --painel: #171a40;
+  --campo: #272b62;
+  --campo-hover: #30357a;
+  --linha: #2c3170;
+  --texto: #ecebfa;
+  --suave: #a3a6d4;
+  --brilho: #ffb23f;
+  --brilho-claro: #ffc871;
+  --tinta: #1b1440;
+  --fonte: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --fonte-titulo: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font: 15px/1.5 var(--fonte);
+  background: var(--noite);
+  color: var(--texto);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+[hidden] { display: none !important; }
+
+/* ---------- carregando / erro ---------- */
+.aviso {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+  padding: 24px;
+}
+.aviso img { width: 96px; height: 96px; margin-bottom: 18px; }
+.aviso h1 { font: 650 24px/1.25 var(--fonte-titulo); margin: 0 0 6px; color: #fff; }
+.aviso p { margin: 0; color: var(--suave); max-width: 40ch; }
+.aviso kbd {
+  font: 600 13px var(--fonte);
+  background: var(--campo);
+  border: 1px solid var(--linha);
+  border-radius: 6px;
+  padding: 1px 6px;
+  color: var(--texto);
+}
+.barra {
+  width: 220px;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--campo);
+  overflow: hidden;
+  margin-top: 22px;
+}
+.barra::after {
+  content: "";
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--brilho);
+  animation: correr 1.4s ease-in-out infinite;
+}
+@keyframes correr { 0% { transform: translateX(-110%); } 100% { transform: translateX(260%); } }
+@media (prefers-reduced-motion: reduce) { .barra::after { animation: none; width: 100%; opacity: .5; } }
+
+/* ---------- seletor de tela ---------- */
+.seletor { height: 100%; display: flex; flex-direction: column; }
+.seletor header { padding: 18px 22px 0; }
+.seletor h1 { font: 650 20px/1.3 var(--fonte-titulo); margin: 0 0 14px; color: #fff; }
+.abas { display: flex; gap: 6px; border-bottom: 1px solid var(--linha); }
+.abas button {
+  font: 600 14px var(--fonte);
+  color: var(--suave);
+  background: none;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  padding: 8px 12px 9px;
+  cursor: pointer;
+}
+.abas button[aria-selected="true"] { color: #fff; border-bottom-color: var(--brilho); }
+.abas button:focus-visible { outline: 2px solid var(--brilho-claro); outline-offset: -2px; border-radius: 6px 6px 0 0; }
+
+.grade {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 22px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 14px;
+  align-content: start;
+}
+.fonte {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--painel);
+  border: 2px solid transparent;
+  color: var(--texto);
+  font: 14px var(--fonte);
+  text-align: left;
+  cursor: pointer;
+}
+.fonte:hover { background: var(--campo); }
+.fonte:focus-visible { outline: 2px solid var(--brilho-claro); outline-offset: 2px; }
+.fonte[aria-pressed="true"] { border-color: var(--brilho); background: var(--campo); }
+.fonte .miniatura {
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: #0b0d26 center / contain no-repeat;
+  display: block;
+  width: 100%;
+  object-fit: contain;
+}
+.fonte .nome { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fonte .nome img { width: 18px; height: 18px; flex: none; }
+.fonte .nome span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vazio { grid-column: 1 / -1; color: var(--suave); text-align: center; padding: 40px 0; }
+
+.seletor footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--linha);
+  background: var(--painel);
+}
+.seletor footer p { margin: 0 auto 0 0; color: var(--suave); font-size: 13.5px; max-width: 56ch; }
+.botao {
+  font: 600 14px var(--fonte);
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 18px;
+  cursor: pointer;
+  background: var(--campo);
+  color: var(--texto);
+}
+.botao:hover { background: var(--campo-hover); }
+.botao.principal { background: var(--brilho); color: var(--tinta); }
+.botao.principal:hover { background: var(--brilho-claro); }
+.botao:disabled { opacity: .45; cursor: default; }
+.botao:focus-visible { outline: 2px solid var(--brilho-claro); outline-offset: 2px; }

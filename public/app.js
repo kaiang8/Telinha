@@ -82,6 +82,21 @@
   };
 
   if (salvo.somV !== 2) salvar({ som: 'janela', somV: 2 });
+
+  // ================= Programa para Windows =================
+  // Dentro do programa, o site ganha atalhos globais e o som do PC sem eco
+  // (o programa tira da captura tudo o que ele mesmo toca).
+  const PROGRAMA = (() => {
+    try {
+      const p = window.carasETelas;
+      return p && p.programa === true && typeof p.atalhos === 'function' ? p : null;
+    } catch {
+      return null;
+    }
+  })();
+  const NO_WINDOWS = /Windows/i.test(navigator.userAgent);
+  const LINK_PROGRAMA = '/baixar';
+  if (PROGRAMA && S.som === 'janela') S.som = 'pc';
   const chan = (id) => S.channels.find((c) => c.id === id);
   const textChannels = () => S.channels.filter((c) => c.type === 'text');
   const salas = () => S.channels.filter((c) => c.type === 'sala');
@@ -160,6 +175,7 @@
     }
     S.myColor = CORES.includes(salvo.color) ? salvo.color : CORES[Math.floor(Math.random() * CORES.length)];
     renderColorPicker();
+    $('#loginPrograma').hidden = !!PROGRAMA || !NO_WINDOWS;
     let aviso = '';
     let semAuto = false;
     try {
@@ -526,7 +542,9 @@
       .replace(/~~([^~\n]+)~~/g, '<s>$1</s>')
       .replace(/(^|\s)(@[\p{L}\p{N}_.-]{1,32})/gu, '$1<span class="ment">$2</span>');
     s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[i]}</code>`);
-    return s + imgs.map((u) => `<img class="embed" src="${u}" alt="" loading="lazy">`).join('');
+    // a imagem vem pelo servidor: o site de origem não vê o IP de quem está no chat
+    const bruto = (u) => u.replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[e]);
+    return s + imgs.map((u) => `<img class="embed" src="/api/img?u=${encodeURIComponent(bruto(u))}&amp;t=${encodeURIComponent(S.token || '')}" alt="" loading="lazy" referrerpolicy="no-referrer">`).join('');
   }
 
   const mesmoDia = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
@@ -1215,14 +1233,17 @@
     // mantendo a regra do som escolhido (no modo sem eco, nunca oferecer o som do sistema).
     const regraSom = S.som === 'janela' ? { systemAudio: 'exclude', windowAudio: 'window' }
       : S.som === 'pc' ? { systemAudio: 'include', windowAudio: 'system' } : {};
-    const tentativas = [opcoes];
-    if (opcoes.audio) tentativas.push({ ...opcoes, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-    tentativas.push({ video: true, audio: S.som !== 'nenhum', ...regraSom });
-    if (S.som === 'janela') {
-      tentativas.push({ video: true, audio: true, systemAudio: 'exclude', windowAudio: 'exclude' }); // som só de aba
-      tentativas.push({ video: true, audio: true, systemAudio: 'exclude' });
-    } else {
-      tentativas.push({ video: true, audio: S.som !== 'nenhum' });
+    // No programa o seletor é dele, então vai um pedido só (sem repetir a janela de escolha)
+    const tentativas = PROGRAMA ? [{ video: opcoes.video, audio: opcoes.audio }] : [opcoes];
+    if (!PROGRAMA && opcoes.audio) tentativas.push({ ...opcoes, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    if (!PROGRAMA) {
+      tentativas.push({ video: true, audio: S.som !== 'nenhum', ...regraSom });
+      if (S.som === 'janela') {
+        tentativas.push({ video: true, audio: true, systemAudio: 'exclude', windowAudio: 'exclude' }); // som só de aba
+        tentativas.push({ video: true, audio: true, systemAudio: 'exclude' });
+      } else {
+        tentativas.push({ video: true, audio: S.som !== 'nenhum' });
+      }
     }
     S.diagCaptura = { tentativa: 0, erros: [] };
     for (const [i, o] of tentativas.entries()) {
@@ -1262,6 +1283,13 @@
     const superficie = vt?.getSettings?.().displaySurface;
     S.audioCaptado = !!at;
     S.evitarEco = false;
+    if (PROGRAMA) {
+      // O programa já tira o próprio som da captura. Se um dia não conseguir, pausa as outras transmissões aqui.
+      if (at && at.getSettings?.().restrictOwnAudio !== true) S.evitarEco = true;
+      if (!at && S.som !== 'nenhum') toast(`${trocou ? 'Tela trocada, mas sem som' : 'A transmissão começou sem som'}: o Windows não liberou o som do computador.`, 7000);
+      else if (trocou) toast('Tela trocada!');
+      return aplicarMudoEco();
+    }
     const somDoSistema = !!at && (superficie === 'monitor' || S.som === 'pc' || /system|sistema/i.test(at.label || ''));
     if (somDoSistema) {
       if (at.getSettings?.().restrictOwnAudio !== true) S.evitarEco = true;
@@ -1822,10 +1850,18 @@
     });
 
     const som = $('#somSelect');
+    if (PROGRAMA) som.innerHTML = '<option value="pc">Som do computador (sem eco)</option><option value="nenhum">Sem som</option>';
     som.value = S.som;
+    $('#programaDica').hidden = !!PROGRAMA || !NO_WINDOWS;
     const dicaSom = () => {
       const pc = S.som === 'pc';
       const el = $('#somDica');
+      if (PROGRAMA) {
+        el.hidden = S.som === 'nenhum';
+        el.classList.remove('aviso');
+        el.textContent = 'Vai todo o som do computador, menos o que toca aqui no Caras E Telas: ninguém ouve o próprio som de volta. Chamadas de voz em outros programas (Discord, WhatsApp) também entram.';
+        return;
+      }
       el.classList.toggle('aviso', pc);
       el.hidden = S.som === 'nenhum';
       const antigo = navegadorAntigo();
@@ -2507,8 +2543,41 @@
     }
     return { volume: typeof g.volume === 'number' ? g.volume : 0.8, ouvir: g.ouvir !== false, slots, editando: false, gravando: null };
   })();
+  // No programa: atalhos que funcionam com o jogo na frente (o Windows avisa o programa)
+  const GLOBAIS = new Set(); // ids com atalho global ativo
+  let atalhosRecusados = []; // ids cujo atalho outro programa já usa
+  let sincronia = 0;
+  let enviados = ''; // o que o programa já tem registrado (evita repetir a cada mexida no volume)
   function guardarSB() {
     salvar({ sb: { volume: SB.volume, ouvir: SB.ouvir, slots: SB.slots.map(({ id, padrao, nome, emoji, atalho, volume, proprio }) => ({ id, padrao, nome, emoji, atalho, volume, proprio })) } });
+    sincronizarAtalhos();
+  }
+  function sincronizarAtalhos() {
+    if (!PROGRAMA) return;
+    clearTimeout(sincronia);
+    // gravando um atalho novo: solta todos, senão o Windows "engole" a tecla antes da página
+    sincronia = setTimeout(async () => {
+      const lista = SB.gravando ? [] : [
+        { id: 'parar', ...ATALHO_PARAR },
+        ...SB.slots.filter((s) => s.atalho).map((s) => ({ id: s.id, ...s.atalho })),
+      ];
+      const assinatura = JSON.stringify(lista);
+      if (assinatura === enviados) return;
+      enviados = assinatura;
+      let r = null;
+      try { r = await PROGRAMA.atalhos(lista); } catch { r = null; enviados = ''; }
+      GLOBAIS.clear();
+      for (const id of r?.ok || []) GLOBAIS.add(id);
+      atalhosRecusados = r?.falhou || [];
+      dicaSons();
+    }, SB.gravando ? 0 : 120);
+  }
+  if (PROGRAMA) {
+    PROGRAMA.aoAtalho((id) => {
+      if (SB.gravando || !S.started) return;
+      if (id === 'parar') return pararTodos();
+      if (SB.slots.some((s) => s.id === id)) tocarSom(id, 'atalho');
+    });
   }
 
   // IndexedDB: guarda os arquivos de áudio enviados por você
@@ -2648,11 +2717,13 @@
     const ev = atalhoDoEvento(e);
     if (mesmoAtalho(ATALHO_PARAR, ev)) {
       e.preventDefault();
+      if (GLOBAIS.has('parar')) return; // o programa já cuidou pelo atalho global
       return pararTodos();
     }
     const slot = SB.slots.find((s) => mesmoAtalho(s.atalho, ev));
     if (!slot) return;
     e.preventDefault();
+    if (GLOBAIS.has(slot.id)) return;
     tocarSom(slot.id, 'atalho');
   });
 
@@ -2674,6 +2745,21 @@
       h += `<button type="button" class="som som-novo" data-novo="1">${icon('plus')}<span class="som-nome">Adicionar som</span><span class="som-sem">${MAX_PERSONALIZADOS - personalizados} espaços livres</span></button>`;
     }
     $('#sbGrade').innerHTML = h;
+  }
+
+  function dicaSons() {
+    const el = $('#sonsDica');
+    if (!el) return;
+    const fim = ' Com Alt+0, todos os sons param.';
+    if (PROGRAMA) {
+      const recusados = SB.slots.filter((s) => atalhosRecusados.includes(s.id) && s.atalho).map((s) => textoAtalho(s.atalho));
+      el.textContent = 'Clique num som ou use o atalho. No programa, os atalhos com Ctrl ou Alt (e as teclas F1 a F12) funcionam até com você dentro de um jogo.'
+        + fim + (recusados.length ? ` Outro programa já usa ${recusados.join(', ')}: ${recusados.length > 1 ? 'esses só funcionam' : 'esse só funciona'} com esta janela em foco.` : '');
+    } else if (NO_WINDOWS) {
+      el.innerHTML = `Clique num som ou use o atalho. No navegador, os atalhos só funcionam com esta janela em foco. Para usar dentro de jogos, <a href="${LINK_PROGRAMA}" target="_blank" rel="noopener">baixe o programa para Windows</a>.${fim}`;
+    } else {
+      el.textContent = 'Clique num som ou use o atalho. Os atalhos só funcionam com esta janela do navegador em foco (dentro de um jogo, o navegador não recebe as teclas).' + fim;
+    }
   }
 
   function avisoSons() {
@@ -2798,11 +2884,13 @@
       $('#sbGravar').classList.add('primary');
       SB.gravando = (novoAtalho, cancelou) => {
         SB.gravando = null;
+        sincronizarAtalhos();
         $('#sbGravar').textContent = 'Gravar atalho';
         $('#sbGravar').classList.remove('primary');
         if (!cancelou) atalho = novoAtalho;
         mostrarAtalho();
       };
+      sincronizarAtalhos();
     };
     $('#sbSemAtalho').onclick = () => { atalho = null; mostrarAtalho(); };
     $('#modalBody input[name=volume]').oninput = (e) => { $('#sbVolTxt').textContent = `${Math.round(Number(e.target.value) * 100)}%`; };
@@ -2856,6 +2944,8 @@
   }
 
   function montarSons() {
+    dicaSons();
+    sincronizarAtalhos();
     $('#sonsBtn').innerHTML = `${icon('vol')} Sons`;
     $('#sonsBtn').addEventListener('click', (e) => {
       e.stopPropagation();

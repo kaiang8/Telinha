@@ -1,4 +1,4 @@
-﻿﻿=====================================================================
+﻿=====================================================================
   CARAS E TELAS - seu "Discord" particular para compartilhar a tela
 =====================================================================
 
@@ -20,6 +20,9 @@ O que tem:
     encerrar transmissões, apagar mensagens, limpar canais, criar,
     renomear e apagar canais, trocar o nome e a senha do servidor,
     trancar a entrada, mandar avisos e dar admin para outras pessoas.
+  - PROGRAMA PARA WINDOWS (opcional): os atalhos dos sons funcionam
+    até dentro de jogos e o som do computador vai sem eco. Veja a
+    parte 5.
 
 Só precisa do Node.js 18 ou mais novo (https://nodejs.org).
 
@@ -246,6 +249,78 @@ pela primeira vez demora uns 8 segundos (é normal).
 
 
 =====================================================================
+5. PROGRAMA PARA WINDOWS (opcional)
+=====================================================================
+
+Além do site, dá para instalar o Caras E Telas como programa. Ele
+abre o mesmo site, numa janela própria, com duas vantagens:
+
+  - Os atalhos dos sons funcionam até com você dentro de um jogo
+    (os que usam Ctrl ou Alt, e as teclas F1 a F12).
+  - O som do computador vai sem eco: o programa tira da captura
+    tudo o que ele mesmo toca (as transmissões dos outros). Só as
+    chamadas de voz de OUTROS programas (Discord, WhatsApp) entram.
+
+Quem preferir pode continuar usando só o navegador, como sempre.
+
+COMO BAIXAR
+  Mande para os amigos este link (com o endereço do seu site):
+
+      https://SEU-SITE.onrender.com/baixar
+
+  Ele sempre leva à versão mais nova. No site, quem usa Windows
+  também vê o link "Baixar o programa para Windows" na entrada.
+
+  Na primeira vez, o Windows mostra "O Windows protegeu o
+  computador". Clique em "Mais informações" e depois em "Executar
+  assim mesmo". O aviso aparece porque o programa não tem um
+  certificado pago de editor, não porque tenha algo errado. O
+  certificado é opcional e não muda a segurança do programa.
+
+ATUALIZAÇÕES
+  Mudanças no site chegam na hora (o programa abre o site). Quando
+  o próprio programa muda, o GitHub gera uma versão nova e o
+  programa baixa sozinho e pergunta se quer reiniciar.
+
+O QUE O PROGRAMA FAZ PARA NÃO VIRAR PORTA DE ENTRADA
+  - Só abre o seu site. Qualquer outro endereço é bloqueado lá
+    dentro; links do chat abrem no seu navegador normal.
+  - A página roda isolada (sandbox): não tem acesso a arquivos,
+    programas nem configurações do computador.
+  - Não abre portas nem roda servidor no seu PC: só faz conexões de
+    saída, como um navegador.
+  - Só libera o que precisa: capturar a tela (sempre por um
+    seletor que você escolhe), copiar o link de convite e tela
+    cheia. Câmera, microfone, USB e localização ficam bloqueados.
+  - Os recursos de depuração do Electron vêm desligados.
+  - Instala só para o seu usuário, sem pedir senha de administrador.
+  - Antes de publicar uma versão, o GitHub abre o programa e confere
+    se ele bloqueia sites de fora, janelas novas e acesso ao sistema.
+
+SOBRE O SEU IP
+  - Ninguém de fora do servidor consegue ver o seu IP pelo site ou
+    pelo programa.
+  - As imagens do chat passam pelo servidor. Assim, um link de
+    "capturador de IP" postado no chat não pega o IP de ninguém.
+  - O vídeo vai direto entre os computadores, criptografado. Por
+    isso, quem está NA MESMA SALA consegue, tecnicamente, descobrir
+    o seu IP, como em qualquer chamada de vídeo. Deixe a senha do
+    servidor ligada (comando /senha) e passe só para quem você
+    confia.
+  - Saber um IP não dá acesso ao computador: o roteador e o firewall
+    do Windows bloqueiam conexões que você não pediu. Mantenha o
+    Windows atualizado.
+  - Ative a verificação em duas etapas na sua conta do GitHub: é de
+    lá que o programa recebe as atualizações.
+
+PARA GERAR UMA VERSÃO NOVA DO PROGRAMA
+  Só é preciso quando algo da pasta desktop/ muda. Aumente o número
+  "version" em desktop/package.json (por exemplo, de 1.0.0 para
+  1.0.1) e envie para o GitHub. Ele monta, testa e publica sozinho
+  (acompanhe na aba Actions). Leva uns 10 minutos.
+
+
+=====================================================================
 CONFIGURAÇÕES (variáveis de ambiente)
 =====================================================================
 
@@ -262,6 +337,8 @@ CONFIGURAÇÕES (variáveis de ambiente)
   DATA_FILE         Arquivo de dados quando não usa o Upstash.
   TURN_URL, TURN_USUARIO, TURN_SENHA
                     Servidor TURN (veja abaixo).
+  LINK_PROGRAMA     Para onde o /baixar leva (o padrão é o instalador
+                    mais novo no GitHub).
 
 
 =====================================================================
@@ -287,7 +364,8 @@ gasta uns 2 GB.
 DICAS
 =====================================================================
 
-  - Para transmitir, use Chrome, Edge, Firefox ou Opera no computador.
+  - Para transmitir, use Chrome, Edge, Firefox ou Opera no computador,
+    ou o programa para Windows (parte 5).
     No celular dá para assistir e conversar.
   - Ajustes da transmissão: o botão "Ajustes", embaixo da sala, guarda
     o Som, a Qualidade e o "Seu upload".
@@ -368,3 +446,7 @@ ARQUIVOS
   public/index.html   página
   public/style.css    visual
   public/app.js       lógica do site
+  desktop/            o programa para Windows (Electron)
+  .github/workflows/programa.yml
+                      roteiro que o GitHub usa para montar, testar e
+                      publicar o instalador
