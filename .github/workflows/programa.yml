@@ -38,6 +38,22 @@ jobs:
       - name: Testar as regras de segurança
         run: node teste-regras.js
 
+      - name: Compilar o ajudante de som (C++)
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSDIR=%%i"
+          call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
+          if not exist nativo\bin mkdir nativo\bin
+          cl /nologo /O2 /MT /EHsc /std:c++17 /W3 /utf-8 /DUNICODE /D_UNICODE nativo\som-programa.cpp /Fo:nativo\bin\ /Fe:nativo\bin\som-programa.exe /link ole32.lib oleaut32.lib mmdevapi.lib version.lib user32.lib dwmapi.lib || exit /b 1
+          nativo\bin\som-programa.exe --versao || exit /b 1
+
+      - name: Testar o ajudante de som (lista de programas)
+        shell: pwsh
+        run: |
+          $saida = & ./nativo/bin/som-programa.exe --listar --ignorar 0
+          Write-Output $saida
+          $null = $saida | ConvertFrom-Json
+
       - name: Montar o instalador
         run: npx electron-builder --win --x64 --publish never
 

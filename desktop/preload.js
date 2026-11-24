@@ -27,4 +27,15 @@ contextBridge.exposeInMainWorld('carasETelas', {
     ouvinte = (_e, id) => fn(String(id));
     ipcRenderer.on('atalho', ouvinte);
   },
+  // Som de um programa só: a página pede depois de escolher a tela
+  somDoPrograma: (taxa) => ipcRenderer.invoke('som-do-programa', Number(taxa)),
+  pararSomDoPrograma: (id) => ipcRenderer.invoke('parar-som-do-programa', Number(id)),
+});
+
+// O som chega à página por um MessagePort. A página cria o canal e entrega uma ponta
+// por window.postMessage; aqui ela segue para o programa.
+window.addEventListener('message', (e) => {
+  if (e.origin !== window.location.origin || e.data?.caras !== 'porta-do-som') return;
+  const porta = e.ports?.[0];
+  if (porta) ipcRenderer.postMessage('som-porta', null, [porta]);
 });

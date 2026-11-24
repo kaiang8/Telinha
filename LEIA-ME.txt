@@ -21,8 +21,8 @@ O que tem:
     renomear e apagar canais, trocar o nome e a senha do servidor,
     trancar a entrada, mandar avisos e dar admin para outras pessoas.
   - PROGRAMA PARA WINDOWS (opcional): os atalhos dos sons funcionam
-    até dentro de jogos e o som do computador vai sem eco. Veja a
-    parte 5.
+    até dentro de jogos e dá para mandar o som de um programa só
+    (a voz do Discord não volta para ninguém). Veja a parte 5.
 
 Só precisa do Node.js 18 ou mais novo (https://nodejs.org).
 
@@ -257,9 +257,21 @@ abre o mesmo site, numa janela própria, com duas vantagens:
 
   - Os atalhos dos sons funcionam até com você dentro de um jogo
     (os que usam Ctrl ou Alt, e as teclas F1 a F12).
-  - O som do computador vai sem eco: o programa tira da captura
-    tudo o que ele mesmo toca (as transmissões dos outros). Só as
-    chamadas de voz de OUTROS programas (Discord, WhatsApp) entram.
+  - Você escolhe de onde vem o som, na própria janela de
+    compartilhar:
+      Só desta janela     o som da janela que você está mostrando
+      Só de um programa   por exemplo, o jogo ou o player do filme
+      Computador todo     tudo, menos o que toca no Caras E Telas
+      Sem som
+    Nas duas primeiras, a voz do Discord (ou de outra chamada) NÃO
+    vai junto: ninguém se escuta de volta. Elas precisam do
+    Windows 11. Num Windows 10 antigo, o programa avisa, e aí use
+    "Computador todo" (sem chamada de voz aberta) ou o navegador.
+
+JOGO EM TELA CHEIA
+  Se a janela do jogo aparecer preta, escolha a aba "Tela inteira"
+  e, no som, "Só de um programa" com o jogo. Assim vai a tela toda,
+  mas só o som do jogo.
 
 Quem preferir pode continuar usando só o navegador, como sempre.
 
@@ -293,6 +305,8 @@ O QUE O PROGRAMA FAZ PARA NÃO VIRAR PORTA DE ENTRADA
     seletor que você escolhe), copiar o link de convite e tela
     cheia. Câmera, microfone, USB e localização ficam bloqueados.
   - Os recursos de depuração do Electron vêm desligados.
+  - O ajudante de som (som-programa.exe) só lê o som do programa que
+    você escolheu: não usa a internet e não grava nada no disco.
   - Instala só para o seu usuário, sem pedir senha de administrador.
   - Antes de publicar uma versão, o GitHub abre o programa e confere
     se ele bloqueia sites de fora, janelas novas e acesso ao sistema.
@@ -447,6 +461,10 @@ ARQUIVOS
   public/style.css    visual
   public/app.js       lógica do site
   desktop/            o programa para Windows (Electron)
+  desktop/nativo/     ajudante que pega o som de um programa só
+                      (C++; o GitHub compila)
+  public/som-programa.js
+                      toca no site o som que vem do ajudante
   .github/workflows/programa.yml
                       roteiro que o GitHub usa para montar, testar e
                       publicar o instalador

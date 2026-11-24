@@ -15,7 +15,18 @@
         <button type="button" role="tab" id="abaTela" aria-selected="false" aria-controls="grade">Tela inteira</button>
       </div>
     </header>
+    <p class="dica-jogo" id="dicaJogo">Jogo em tela cheia aparecendo preto? Use a aba "Tela inteira" e, no som, escolha só o programa do jogo.</p>
     <div class="grade" id="grade" role="tabpanel" aria-live="polite"></div>
+    <section class="som" id="som" hidden>
+      <div class="som-linha" role="radiogroup" aria-label="Som da transmissão">
+        <span class="som-rotulo">Som</span>
+        <label class="chip" id="chipJanela"><input type="radio" name="som" value="janela"><span>Só desta janela</span></label>
+        <label class="chip" id="chipPrograma"><input type="radio" name="som" value="programa"><span>Só de um programa</span></label>
+        <select id="programa" aria-label="Programa" hidden></select>
+        <label class="chip"><input type="radio" name="som" value="sistema"><span>Computador todo</span></label>
+        <label class="chip"><input type="radio" name="som" value="nenhum"><span>Sem som</span></label>
+      </div>
+    </section>
     <footer>
       <p id="somAviso"></p>
       <button type="button" class="botao" id="cancelar">Cancelar</button>

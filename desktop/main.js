@@ -9,6 +9,7 @@ const {
 const path = require('node:path');
 const fs = require('node:fs');
 const R = require('./regras');
+const ajudante = require('./ajudante');
 
 const EM_TESTE = !app.isPackaged; // rodando pelo código (não instalado)
 const ARG_TESTE = process.argv.find((a) => a.startsWith('--teste-rapido='));
@@ -24,6 +25,16 @@ const PARTICAO = 'persist:caras-e-telas';
 const ID_APP = 'com.kaiang8.carasetelas';
 
 let janela = null;
+let escolhaDeSom = null; // o que a pessoa escolheu no seletor: { modo, pid, nome, quando }
+
+// Preferências do seletor (de onde vem o som), guardadas só neste computador
+const ARQ_PREFS = () => path.join(app.getPath('userData'), 'preferencias.json');
+function lerPrefs() {
+  try { return JSON.parse(fs.readFileSync(ARQ_PREFS(), 'utf8')) || {}; } catch { return {}; }
+}
+function guardarPrefs(p) {
+  try { fs.writeFileSync(ARQ_PREFS(), JSON.stringify(p)); } catch { /* ok */ }
+}
 const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
 const tela = (nome) => path.join(PASTA_TELAS, nome);
 
@@ -114,21 +125,39 @@ async function pedidoDeTela(pedido, responder) {
     try { wc = frame ? webContents.fromFrame(frame) : null; } catch { wc = null; }
     if (!frame || frame.parent || !daJanelaPrincipal(wc, frame.url) || !pedido.videoRequested) return responda(null);
 
-    const fontes = await desktopCapturer.getSources({
-      types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: true,
-    });
+    const comSom = !!pedido.audioRequested && process.platform === 'win32';
+    const [fontes, info] = await Promise.all([
+      desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: true }),
+      comSom ? ajudante.listar() : Promise.resolve(null),
+    ]);
     const proprias = new Set();
     for (const w of BrowserWindow.getAllWindows()) {
       try { proprias.add(w.getMediaSourceId()); } catch { /* ok */ }
     }
     const lista = fontes.filter((f) => !proprias.has(f.id)); // não deixa compartilhar a própria janela (efeito espelho)
-    const comSom = !!pedido.audioRequested && process.platform === 'win32';
-    const escolha = TESTE_RAPIDO ? lista.find((f) => f.id.startsWith('screen:')) : await abrirSeletor(lista, comSom);
-    if (!escolha) return responda(null);
-    const resposta = { video: escolha };
-    // "loopback" = som do computador. Como a página pede restrictOwnAudio, o Electron
-    // tira dele tudo o que o próprio programa toca: as outras transmissões não voltam (sem eco).
-    if (comSom) resposta.audio = 'loopback';
+    // de qual programa é cada janela (para "só o som desta janela")
+    const janelas = {};
+    if (info) {
+      for (const f of lista) {
+        const hwnd = /^window:(\d+):/.exec(f.id)?.[1];
+        if (hwnd && info.janelas[hwnd]) janelas[f.id] = info.janelas[hwnd];
+      }
+    }
+    const programas = info ? info.programas : null;
+    const escolha = TESTE_RAPIDO
+      ? { fonte: lista.find((f) => f.id.startsWith('screen:')), modo: 'sistema' }
+      : await abrirSeletor(lista, { comSom, programas, janelas });
+    if (!escolha?.fonte) return responda(null);
+    const resposta = { video: escolha.fonte };
+    escolhaDeSom = null;
+    if (comSom) {
+      const modo = validarSom(escolha, { programas, janelas });
+      escolhaDeSom = { ...modo, quando: Date.now() };
+      // "loopback" = som do computador. Como a página pede restrictOwnAudio, o Electron
+      // tira dele tudo o que o próprio programa toca: as outras transmissões não voltam.
+      if (modo.modo === 'sistema') resposta.audio = 'loopback';
+      // "janela" e "programa": a página pede o som ao ajudante logo depois (somDoPrograma)
+    }
     responda(resposta);
   } catch (e) {
     console.error('Erro ao compartilhar a tela:', e);
@@ -136,10 +165,27 @@ async function pedidoDeTela(pedido, responder) {
   }
 }
 
-function abrirSeletor(lista, comSom) {
+// Confere a escolha de som que veio do seletor: só vale o que o próprio programa listou
+function validarSom(escolha, { programas, janelas }) {
+  const modo = escolha.modo;
+  const acharPrograma = (pid) => programas?.find((p) => p.pid === pid);
+  if (modo === 'janela' && programas) {
+    const pid = janelas[escolha.fonte.id];
+    const prog = acharPrograma(pid);
+    if (pid) return { modo, pid, nome: prog?.nome || escolha.fonte.name, exe: prog?.exe || '' };
+  }
+  if (modo === 'programa' && programas) {
+    const prog = acharPrograma(escolha.pid);
+    if (prog) return { modo, pid: prog.pid, nome: prog.nome, exe: prog.exe };
+  }
+  if (modo === 'nenhum') return { modo };
+  return { modo: 'sistema' };
+}
+
+function abrirSeletor(lista, { comSom, programas, janelas }) {
   return new Promise((resolver) => {
     const seletor = new BrowserWindow({
-      parent: janela, modal: true, width: 900, height: 640, minWidth: 560, minHeight: 420,
+      parent: janela, modal: true, width: 960, height: 720, minWidth: 600, minHeight: 480,
       show: false, backgroundColor: '#101233', title: 'Escolha o que compartilhar',
       autoHideMenuBar: true, minimizable: false, maximizable: false,
       webPreferences: {
@@ -148,22 +194,34 @@ function abrirSeletor(lista, comSom) {
       },
     });
     let fim = false;
-    const terminar = (fonte) => {
+    const terminar = (escolha) => {
       if (fim) return;
       fim = true;
       ipcMain.removeListener('seletor-escolha', aoEscolher);
       if (!seletor.isDestroyed()) seletor.destroy();
-      resolver(fonte || null);
+      resolver(escolha || null);
     };
-    const aoEscolher = (e, id) => {
+    const aoEscolher = (e, x) => {
       if (e.sender !== seletor.webContents) return;
-      terminar(typeof id === 'string' ? lista.find((f) => f.id === id) : null);
+      const fonte = x && typeof x.id === 'string' ? lista.find((f) => f.id === x.id) : null;
+      if (!fonte) return terminar(null);
+      const modo = ['janela', 'programa', 'sistema', 'nenhum'].includes(x.modo) ? x.modo : 'sistema';
+      const pid = Number.isInteger(x.pid) ? x.pid : null;
+      if (comSom) {
+        const exe = modo === 'programa' ? programas?.find((p) => p.pid === pid)?.exe : undefined;
+        const prefs = lerPrefs();
+        guardarPrefs({ ...prefs, som: { modo, exe: exe || prefs.som?.exe || '' } });
+      }
+      terminar({ fonte, modo, pid });
     };
     ipcMain.on('seletor-escolha', aoEscolher);
     seletor.on('closed', () => terminar(null));
     seletor.webContents.once('did-finish-load', () => {
       seletor.webContents.send('fontes', {
         comSom,
+        programas,
+        janelas,
+        preferencia: lerPrefs().som || null,
         fontes: lista.map((f) => ({
           id: f.id,
           nome: f.name,
@@ -202,6 +260,33 @@ function pedidoConfiavel(e) {
 }
 ipcMain.handle('info', (e) => (pedidoConfiavel(e) ? { versao: app.getVersion(), atalhosGlobais: true } : null));
 ipcMain.handle('atalhos', (e, lista) => (pedidoConfiavel(e) ? registrarAtalhos(lista) : { ok: [], falhou: [] }));
+
+// ---------- Som de um programa só (pelo ajudante som-programa.exe) ----------
+// A página chama logo depois do seletor. O som chega por um canal (MessagePort) direto na página.
+ipcMain.handle('som-do-programa', async (e, taxa) => {
+  if (!pedidoConfiavel(e)) return { ok: false };
+  const esc = escolhaDeSom;
+  escolhaDeSom = null;
+  if (!esc || Date.now() - esc.quando > 60000) return { ok: false };
+  if (esc.modo !== 'janela' && esc.modo !== 'programa') return { ok: false, modo: esc.modo };
+  const t = Number(taxa);
+  if (!Number.isInteger(t) || t < 8000 || t > 192000) return { ok: false, erro: 'Taxa de som inválida.' };
+  const r = await ajudante.capturar(esc.pid, t);
+  return r.ok ? { ok: true, id: r.id, nome: esc.nome, modo: esc.modo, voz: /discord|whatsapp|teams|zoom|skype|telegram/i.test(esc.exe || '') } : { ok: false, erro: r.erro };
+});
+ipcMain.handle('parar-som-do-programa', (e, id) => {
+  if (pedidoConfiavel(e) && Number.isInteger(id)) ajudante.parar(id);
+  return true;
+});
+ipcMain.on('som-porta', (e) => {
+  const porta = e.ports?.[0];
+  if (!porta) return;
+  if (!pedidoConfiavel(e)) {
+    porta.close();
+    return;
+  }
+  ajudante.anexarPorta(porta);
+});
 
 // ---------- Janela principal ----------
 async function siteRespondendo(ses) {
@@ -275,7 +360,10 @@ function criarJanela() {
     },
   });
   janela.once('ready-to-show', () => { if (!TESTE_RAPIDO) janela.show(); });
-  janela.on('closed', () => { janela = null; });
+  janela.on('closed', () => {
+    janela = null;
+    ajudante.parar();
+  });
 
   const wc = janela.webContents;
   wc.on('did-fail-load', (_e, codigo, _desc, url, principal) => {
@@ -283,7 +371,9 @@ function criarJanela() {
     if (R.origemDe(url) === SITE_ORIGEM) acordarEAbrir();
   });
   wc.on('did-start-navigation', (d) => {
-    if (d.isMainFrame && !d.isSameDocument) globalShortcut.unregisterAll(); // a página nova registra de novo
+    if (!d.isMainFrame || d.isSameDocument) return;
+    globalShortcut.unregisterAll(); // a página nova registra de novo
+    ajudante.parar(); // e o som de programa que estava indo para a página antiga
   });
   wc.on('render-process-gone', () => setTimeout(() => janela && acordarEAbrir(), 1000));
 
@@ -386,6 +476,14 @@ async function testeRapido() {
       .catch((e) => 'erro: ' + e.name + ': ' + e.message)`, true);
     r.capturaComSom = await capturar('{ restrictOwnAudio: true, echoCancellation: false }');
     r.capturaSemSom = await capturar('false');
+    // ajudante de som de um programa só (informativo: a máquina do GitHub não tem placa de som)
+    const lista = await ajudante.listar();
+    r.ajudante = lista ? { programas: lista.programas.length, janelas: Object.keys(lista.janelas).length, exemplos: lista.programas.slice(0, 5).map((p) => p.nome) } : 'indisponível';
+    if (lista?.programas.length) {
+      const c = await ajudante.capturar(lista.programas[0].pid, 48000);
+      r.ajudanteCaptura = c.ok ? 'ok' : c.erro;
+      ajudante.parar();
+    }
     const ok = r.api === true && r.semNode === true && r.bloqueioExterno === 'bloqueado' && r.listaDeEnderecos === 'bloqueado'
       && r.janelaNova === 'bloqueada' && r.navegacaoExterna === 'bloqueada'
       && Array.isArray(r.atalhos?.ok) && !r.atalhos.ok.includes('ruim');
@@ -415,6 +513,9 @@ if (!app.requestSingleInstanceLock()) {
     configurarAtualizacao();
     if (TESTE_RAPIDO) testeRapido();
   });
-  app.on('will-quit', () => globalShortcut.unregisterAll());
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll();
+    ajudante.parar();
+  });
   app.on('window-all-closed', () => app.quit());
 }

@@ -1250,6 +1250,7 @@
       try {
         const stream = await navigator.mediaDevices.getDisplayMedia(o);
         S.diagCaptura.tentativa = i;
+        if (PROGRAMA) await anexarSomDoPrograma(stream);
         return stream;
       } catch (e) {
         if (e.name === 'NotAllowedError' || e.name === 'AbortError') return null; // cancelou
@@ -1258,6 +1259,56 @@
       }
     }
     throw new Error(S.diagCaptura.erros[S.diagCaptura.erros.length - 1] || 'o navegador recusou');
+  }
+
+  // ----- Programa para Windows: som de uma janela ou de um programa só -----
+  // No seletor do programa a pessoa escolhe de onde vem o som. Se for de uma janela ou de um
+  // programa, o som chega por um canal à parte e vira uma faixa de áudio normal aqui.
+  const SOM_PROGRAMA = new WeakMap(); // faixa -> { nome, voz }
+  const SEM_SOM_ESCOLHIDO = new WeakSet(); // streams sem som de propósito, ou cujo motivo já foi avisado
+  let moduloSom = null;
+  async function anexarSomDoPrograma(stream) {
+    if (!PROGRAMA?.somDoPrograma || stream.getAudioTracks().length) return;
+    const c = audioCtx();
+    if (!c) return;
+    let r = null;
+    try { r = await PROGRAMA.somDoPrograma(c.sampleRate); } catch { r = null; }
+    if (!r) return;
+    if (r.modo === 'nenhum') { SEM_SOM_ESCOLHIDO.add(stream); return; }
+    if (!r.ok) {
+      if (r.erro) {
+        toast(r.erro, 10000);
+        SEM_SOM_ESCOLHIDO.add(stream); // o aviso certo já apareceu
+      }
+      return;
+    }
+    const soltar = () => PROGRAMA.pararSomDoPrograma(r.id).catch(() => {});
+    try {
+      moduloSom ||= c.audioWorklet.addModule('/som-programa.js');
+      await moduloSom;
+    } catch {
+      moduloSom = null;
+      soltar();
+      toast('Não consegui preparar o som do programa. Tente de novo.');
+      return;
+    }
+    if (c.state !== 'running') await c.resume().catch(() => {});
+    const canal = new MessageChannel();
+    const no = new AudioWorkletNode(c, 'som-do-programa', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+    no.port.postMessage({ porta: canal.port1 }, [canal.port1]);
+    window.postMessage({ caras: 'porta-do-som' }, location.origin, [canal.port2]);
+    const destino = c.createMediaStreamDestination();
+    no.connect(destino);
+    const faixa = destino.stream.getAudioTracks()[0];
+    // Quando a faixa para (parar ou trocar a transmissão), o programa para de capturar
+    const pararOriginal = faixa.stop.bind(faixa);
+    faixa.stop = () => {
+      pararOriginal();
+      try { no.disconnect(); } catch { /* ok */ }
+      soltar();
+    };
+    SOM_PROGRAMA.set(faixa, { nome: r.nome, voz: !!r.voz });
+    stream.addTrack(faixa);
   }
 
   // Versão do motor Chromium (Chrome, Edge, Opera...). Só manda o som de UMA janela a partir da 141.
@@ -1284,10 +1335,17 @@
     S.audioCaptado = !!at;
     S.evitarEco = false;
     if (PROGRAMA) {
-      // O programa já tira o próprio som da captura. Se um dia não conseguir, pausa as outras transmissões aqui.
-      if (at && at.getSettings?.().restrictOwnAudio !== true) S.evitarEco = true;
-      if (!at && S.som !== 'nenhum') toast(`${trocou ? 'Tela trocada, mas sem som' : 'A transmissão começou sem som'}: o Windows não liberou o som do computador.`, 7000);
-      else if (trocou) toast('Tela trocada!');
+      const doPrograma = at ? SOM_PROGRAMA.get(at) : null;
+      // Som do computador: o programa já tira o próprio som da captura. Se um dia não
+      // conseguir, pausa as outras transmissões aqui para não voltarem.
+      if (at && !doPrograma && at.getSettings?.().restrictOwnAudio !== true) S.evitarEco = true;
+      if (doPrograma) {
+        toast(`${trocou ? 'Tela trocada! ' : ''}Mandando só o som de ${doPrograma.nome}.${doPrograma.voz ? ' Atenção: é um programa de chamada, quem está nela vai se ouvir.' : ''}`, doPrograma.voz ? 9000 : 4000);
+      } else if (!at && S.som !== 'nenhum' && !SEM_SOM_ESCOLHIDO.has(stream)) {
+        toast(`${trocou ? 'Tela trocada, mas sem som' : 'A transmissão começou sem som'}: o Windows não liberou o som.`, 7000);
+      } else if (trocou) {
+        toast('Tela trocada!');
+      }
       return aplicarMudoEco();
     }
     const somDoSistema = !!at && (superficie === 'monitor' || S.som === 'pc' || /system|sistema/i.test(at.label || ''));
@@ -1850,7 +1908,7 @@
     });
 
     const som = $('#somSelect');
-    if (PROGRAMA) som.innerHTML = '<option value="pc">Som do computador (sem eco)</option><option value="nenhum">Sem som</option>';
+    if (PROGRAMA) som.innerHTML = '<option value="pc">Escolher na hora de compartilhar</option><option value="nenhum">Sem som</option>';
     som.value = S.som;
     $('#programaDica').hidden = !!PROGRAMA || !NO_WINDOWS;
     const dicaSom = () => {
@@ -1859,7 +1917,7 @@
       if (PROGRAMA) {
         el.hidden = S.som === 'nenhum';
         el.classList.remove('aviso');
-        el.textContent = 'Vai todo o som do computador, menos o que toca aqui no Caras E Telas: ninguém ouve o próprio som de volta. Chamadas de voz em outros programas (Discord, WhatsApp) também entram.';
+        el.textContent = 'Na janela de compartilhar você escolhe o som: só da janela, só de um programa (bom para jogo em tela cheia) ou o do computador todo. Nos dois primeiros, a voz do Discord não vai junto.';
         return;
       }
       el.classList.toggle('aviso', pc);
