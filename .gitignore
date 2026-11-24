@@ -3,3 +3,7 @@ data.json
 data.json.tmp
 *-conexoes.json
 *-conexoes.json.tmp
+*-problemas.json
+*-problemas.json.tmp
+*-trafego.json
+*-trafego.json.tmp

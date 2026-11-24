@@ -89,11 +89,13 @@ function aplicarDados(raw) {
   if (Array.isArray(raw.mutes)) data.mutes = raw.mutes;
 }
 
-async function upstash(comando) {
+async function upstash(comando, { semContar = false } = {}) {
+  const corpo = JSON.stringify(comando);
+  if (!semContar) contarTrafego('banco', Buffer.byteLength(corpo) + 400);
   const r = await fetch(UPSTASH_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${UPSTASH_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(comando),
+    body: corpo,
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
@@ -155,6 +157,122 @@ async function gravar() {
   } finally {
     salvando = false;
   }
+}
+
+// ---------- Dados guardados à parte (problemas relatados, tráfego) ----------
+// Cada um fica numa chave própria do Upstash (ou num arquivo ao lado do data.json), para não
+// pesar a cada mensagem salva.
+function guardadoSeparado(sufixo, padrao, { semContar = false } = {}) {
+  const chave = `${CHAVE_UPSTASH}:${sufixo}`;
+  const arquivo = DATA_FILE.replace(/\.json$/i, '') + `-${sufixo}.json`;
+  const g = { dados: padrao(), ok: true, timer: null, sujo: false, gravando: false };
+  g.carregar = async () => {
+    try {
+      const raw = USA_UPSTASH
+        ? await upstash(['GET', chave], { semContar })
+        : await fs.promises.readFile(arquivo, 'utf8').catch((e) => (e.code === 'ENOENT' ? null : Promise.reject(e)));
+      const d = raw ? JSON.parse(raw) : null;
+      if (d && typeof d === 'object' && !Array.isArray(d)) g.dados = { ...padrao(), ...d };
+    } catch (e) {
+      g.ok = false; // não sobrescreve o que não conseguiu ler
+      console.warn(`  Não consegui ler ${sufixo}:`, e.message);
+    }
+  };
+  // adiar = false: não empurra a gravação para depois a cada mudança (para o que muda o tempo todo)
+  g.salvar = (ms = 5000, adiar = true) => {
+    g.sujo = true;
+    if (g.timer && !adiar) return;
+    clearTimeout(g.timer);
+    g.timer = setTimeout(g.gravar, ms);
+  };
+  g.gravar = async () => {
+    g.timer = null;
+    if (!g.ok || !g.sujo) return;
+    if (g.gravando) { g.timer = setTimeout(g.gravar, 1000); return; }
+    g.gravando = true;
+    g.sujo = false;
+    try {
+      const conteudo = JSON.stringify(g.dados);
+      if (USA_UPSTASH) {
+        await upstash(['SET', chave, conteudo], { semContar });
+      } else {
+        await fs.promises.writeFile(arquivo + '.tmp', conteudo);
+        await fs.promises.rename(arquivo + '.tmp', arquivo);
+      }
+    } catch (e) {
+      g.sujo = true;
+      console.warn(`Não consegui salvar ${sufixo}:`, e.message);
+      g.timer = setTimeout(g.gravar, 15000);
+    } finally {
+      g.gravando = false;
+    }
+  };
+  g.terminar = async () => {
+    clearTimeout(g.timer);
+    while (g.gravando) await new Promise((ok) => setTimeout(ok, 50));
+    await g.gravar();
+  };
+  return g;
+}
+
+// ---------- Tráfego do servidor (o plano grátis do Render inclui 5 GB de saída por mês) ----------
+// Conta o que o servidor manda para fora: páginas, imagens do chat, eventos em tempo real,
+// pedidos da página e o que vai para o banco. É uma estimativa: o número oficial está no Render.
+const LIMITE_TRAFEGO_GB = Number(process.env.LIMITE_TRAFEGO_GB) > 0 ? Number(process.env.LIMITE_TRAFEGO_GB) : 5;
+const mesAtual = () => new Date().toISOString().slice(0, 7);
+const inicioDoMes = () => { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1); };
+const TRAFEGO = guardadoSeparado('trafego', () => ({ mes: mesAtual(), desde: Date.now(), bytes: {}, avisos: [] }), { semContar: true });
+function contarTrafego(tipo, n) {
+  if (!(n > 0)) return;
+  let d = TRAFEGO.dados;
+  if (d.mes !== mesAtual()) d = TRAFEGO.dados = { mes: mesAtual(), desde: inicioDoMes(), bytes: {}, avisos: [] };
+  d.bytes[tipo] = (d.bytes[tipo] || 0) + n;
+  TRAFEGO.salvar(5 * 60e3, false);
+  // avisa os admins online quando passa de 80% e de 95%
+  const total = Object.values(d.bytes).reduce((a, b) => a + b, 0);
+  for (const marca of [80, 95]) {
+    if (total >= (LIMITE_TRAFEGO_GB * 1e9 * marca) / 100 && !d.avisos.includes(marca)) {
+      d.avisos.push(marca);
+      avisarAdmins(`O servidor já usou ${marca}% do tráfego grátis do mês (${(total / 1e9).toFixed(2)} GB de ${LIMITE_TRAFEGO_GB} GB). Se passar, o Render suspende o site até o mês que vem. Veja em Painel de admin → Servidor.`);
+    }
+  }
+}
+const tamanhoDe = (c) => (typeof c === 'string' ? Buffer.byteLength(c) : c?.length || 0);
+function medirResposta(res, tipo) {
+  const escrever = res.write;
+  const terminar = res.end;
+  res.write = function (chunk, ...resto) {
+    if (chunk && typeof chunk !== 'function') contarTrafego(tipo, tamanhoDe(chunk));
+    return escrever.call(this, chunk, ...resto);
+  };
+  res.end = function (chunk, ...resto) {
+    if (chunk && typeof chunk !== 'function') contarTrafego(tipo, tamanhoDe(chunk));
+    contarTrafego(tipo, 300); // cabeçalhos, mais ou menos
+    return terminar.call(this, chunk, ...resto);
+  };
+}
+function trafegoParaAdmin() {
+  const d = TRAFEGO.dados.mes === mesAtual() ? TRAFEGO.dados : { mes: mesAtual(), desde: inicioDoMes(), bytes: {} };
+  return { mes: d.mes, desde: Math.max(d.desde || 0, inicioDoMes()), inicioDoMes: inicioDoMes(), bytes: d.bytes, limiteGB: LIMITE_TRAFEGO_GB };
+}
+
+// ---------- Problemas relatados e erros da página (só admins veem) ----------
+const PROBLEMAS = guardadoSeparado('problemas', () => ({ relatos: [], erros: [] }));
+const DIAS_PROBLEMAS = 30;
+function limparProblemasVelhos() {
+  const limite = Date.now() - DIAS_PROBLEMAS * 864e5;
+  const d = PROBLEMAS.dados;
+  d.relatos = (Array.isArray(d.relatos) ? d.relatos : []).filter((x) => x.t >= limite).slice(-100);
+  d.erros = (Array.isArray(d.erros) ? d.erros : []).filter((x) => x.ultima >= limite).slice(-150);
+}
+function avisarAdmins(texto) {
+  for (const x of users.values()) if (x.admin && x.joined && !x.kicked) enviar(x, { type: 'avisoAdmin', texto });
+}
+const textoLimpo = (t, max) => (typeof t === 'string' ? t.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, max) : '');
+function limiteDe(u, campo, max, janela) {
+  const agora = Date.now();
+  if (!u[campo] || agora - u[campo].desde > janela) u[campo] = { desde: agora, n: 0 };
+  return ++u[campo].n > max;
 }
 
 // ---------- Registro de conexões (só admins veem) ----------
@@ -481,6 +599,8 @@ function visaoAdmin() {
   return {
     users: [...users.values()].filter((u) => u.joined && !u.kicked).map((u) => ({ ...publicUser(u), ip: u.ip, muted: silencioDe(u) })),
     bans: data.bans,
+    problemasNovos: PROBLEMAS.dados.relatos.filter((r) => !r.lido).length,
+    trafego: trafegoParaAdmin(),
     settings: {
       ...configPublica(),
       adminFromEnv: !!ADMIN_ENV_HASH,
@@ -754,6 +874,29 @@ async function acaoAdmin(u, body, res) {
   switch (body.action) {
     case 'list':
       return json(res, 200, visaoAdmin());
+
+    case 'problemas':
+      limparProblemasVelhos();
+      return json(res, 200, {
+        dias: DIAS_PROBLEMAS,
+        relatos: PROBLEMAS.dados.relatos.slice().reverse(),
+        erros: PROBLEMAS.dados.erros.slice().sort((a, b) => b.ultima - a.ultima),
+      });
+
+    case 'ler-problemas':
+      for (const r of PROBLEMAS.dados.relatos) r.lido = true;
+      PROBLEMAS.salvar();
+      return json(res, 200, { ok: true });
+
+    case 'apagar-relato':
+      PROBLEMAS.dados.relatos = PROBLEMAS.dados.relatos.filter((r) => r.id !== String(body.id));
+      PROBLEMAS.salvar();
+      return json(res, 200, { ok: true });
+
+    case 'limpar-erros':
+      PROBLEMAS.dados.erros = [];
+      PROBLEMAS.salvar();
+      return json(res, 200, { ok: true });
 
     case 'conexoes':
       limparRegistroVelho();
@@ -1139,6 +1282,48 @@ async function api(req, res, url) {
       return json(res, 200, { ok: true });
     }
 
+    case 'erro': {
+      // erro que aconteceu na página de alguém: junta os iguais e conta quantas vezes
+      if (limiteDe(u, 'limErro', 20, 10 * 60e3)) return json(res, 200, { ok: true });
+      const msg = textoLimpo(body.msg, 300);
+      if (!msg) return json(res, 400, { error: 'erro vazio' });
+      const onde = textoLimpo(body.onde, 200);
+      const versao = textoLimpo(body.versao, 30);
+      limparProblemasVelhos();
+      const lista = PROBLEMAS.dados.erros;
+      let e = lista.find((x) => x.msg === msg && x.onde === onde);
+      if (!e) {
+        e = { msg, onde, vezes: 0, primeira: Date.now(), ultima: 0, quem: [], aparelhos: [], versoes: [] };
+        lista.push(e);
+      }
+      e.vezes++;
+      e.ultima = Date.now();
+      const juntar = (arr, v) => { if (v && !arr.includes(v) && arr.length < 6) arr.push(v); };
+      juntar(e.quem, u.name);
+      juntar(e.aparelhos, aparelhoDe(req));
+      juntar(e.versoes, versao);
+      PROBLEMAS.salvar(10000);
+      return json(res, 200, { ok: true });
+    }
+
+    case 'relatar': {
+      if (limiteDe(u, 'limRelato', 5, 10 * 60e3)) return json(res, 429, { error: 'Muitos relatos seguidos. Espere uns minutos.' });
+      const texto = textoLimpo(body.texto, 1000);
+      if (!texto) return json(res, 400, { error: 'Conte o que aconteceu' });
+      let info = null;
+      if (body.info && typeof body.info === 'object') {
+        const j = JSON.stringify(body.info);
+        info = j.length <= 12000 ? JSON.parse(j) : { aviso: 'informações grandes demais, cortadas' };
+      }
+      limparProblemasVelhos();
+      PROBLEMAS.dados.relatos.push({
+        id: crypto.randomBytes(5).toString('hex'), t: Date.now(), nome: u.name, ip: u.ip, aparelho: aparelhoDe(req), texto, info, lido: false,
+      });
+      PROBLEMAS.salvar(2000);
+      avisarAdmins(`${u.name} relatou um problema. Veja no Painel de admin, em Problemas.`);
+      return json(res, 200, { ok: true });
+    }
+
     case 'caneta': {
       // quem transmite escolhe quem pode desenhar na tela dele
       if (!u.live) return json(res, 409, { error: 'Você não está transmitindo' });
@@ -1275,6 +1460,8 @@ const server = http.createServer((req, res) => {
   } catch {
     return json(res, 400, { error: 'endereço inválido' });
   }
+  const p = url.pathname;
+  medirResposta(res, p === '/api/img' ? 'imagens' : p === '/api/events' || p === '/api/poll' ? 'tempoReal' : p.startsWith('/api/') ? 'api' : 'pagina');
   if (url.pathname.startsWith('/api/')) {
     api(req, res, url).catch((e) => {
       console.error(e);
@@ -1326,6 +1513,8 @@ async function iniciar() {
   }
   await carregarDados();
   await carregarRegistro();
+  await TRAFEGO.carregar();
+  await PROBLEMAS.carregar();
   garantirSenhaAdmin();
   server.listen(PORT, () => {
     console.log(`\n  ${nomeServidor()} rodando em http://localhost:${PORT}`);
@@ -1353,6 +1542,8 @@ async function desligar() {
   await Promise.race([Promise.all([
     (async () => { while (salvando) await new Promise((ok) => setTimeout(ok, 50)); await gravar(); })(),
     (async () => { while (gravandoRegistro) await new Promise((ok) => setTimeout(ok, 50)); clearTimeout(registroTimer); await gravarRegistro(); })(),
+    TRAFEGO.terminar(),
+    PROBLEMAS.terminar(),
   ]), espera]);
   process.exit(0);
 }

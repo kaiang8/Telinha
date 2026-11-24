@@ -929,4 +929,53 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
   background: color-mix(in srgb, var(--pop-1) 72%, transparent); border: 1px solid var(--borda-vidro);
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
 }
-.versao-rail { margin-top: auto; margin-bottom: 10px; }
+.rail-ajuda { margin-top: auto; width: 36px; height: 36px; border-radius: 50%; color: var(--suave); }
+.rail-ajuda svg.i { width: 20px; height: 20px; }
+.versao-rail { margin: -6px 0 10px; }
+
+/* ---------- Atalhos de voz, volume de cada voz, problemas, tráfego ---------- */
+.vo-atalhos { display: grid; gap: 8px; }
+.vo-atalho { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.vo-atalho > span { flex: 1; min-width: 170px; font-size: 13.5px; color: var(--texto); }
+.vo-atalho kbd, .sb-atalho kbd { min-width: 64px; text-align: center; }
+.sala-member[data-pessoa], .person-chip[data-pessoa] { cursor: pointer; }
+.sala-member[data-pessoa]:hover .ellipsis { text-decoration: underline; text-underline-offset: 2px; }
+.vol-voz {
+  position: fixed; z-index: 60; width: 260px; padding: 12px 14px; display: grid; gap: 8px; border-radius: 16px;
+  background: linear-gradient(180deg, var(--pop-1), var(--pop-2)); border: 1px solid var(--borda-vidro);
+  box-shadow: inset 0 1px 0 var(--realce), var(--sombra-flutuante);
+}
+.vv-topo { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--texto-forte); }
+.vv-topo .avatar { width: 28px; height: 28px; font-size: 12px; flex: none; }
+.vv-linha { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--suave); }
+.vv-pct { font-variant-numeric: tabular-nums; color: var(--texto-forte); }
+.vol-voz input[type=range] { width: 100%; accent-color: var(--p2); }
+.vv-rodape { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.vv-rodape .vo-dica { margin: 0; }
+.relatar { display: grid; gap: 12px; }
+.relatar textarea {
+  width: 100%; resize: vertical; min-height: 90px; padding: 10px 12px; border-radius: 10px; font: inherit; color: var(--texto-forte); outline: none;
+  background: linear-gradient(180deg, var(--campo-1), var(--campo-2)); border: 1px solid var(--linha-forte);
+}
+.relatar textarea:focus { border-color: var(--foco); }
+.rp-detalhes summary, .ap-relato summary { cursor: pointer; font-size: 13px; color: var(--p-texto); font-weight: 600; }
+.rp-detalhes pre, .ap-relato pre {
+  margin: 8px 0 0; max-height: 220px; overflow: auto; padding: 10px; border-radius: 10px; font-size: 12px; line-height: 1.45;
+  white-space: pre-wrap; word-break: break-word; background: var(--codigo); border: 1px solid var(--linha); color: var(--texto);
+}
+.ap-relato { padding: 12px 0; border-top: 1px solid var(--linha); }
+.ap-relato:first-of-type { border-top: 0; padding-top: 4px; }
+.ap-relato-topo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ap-relato-topo .btn { margin-left: auto; }
+.ap-relato-texto { margin: 6px 0 !important; color: var(--texto-forte) !important; font-size: 14px !important; white-space: pre-wrap; }
+.ap-erro { padding: 8px 0; border-top: 1px solid var(--linha); }
+.ap-erro:first-of-type { border-top: 0; }
+.ap-erro-msg { font-weight: 600; color: var(--texto-forte); font-size: 13.5px; word-break: break-word; }
+.ap-section h4 .btn { margin-left: auto; }
+.trafego-barra { height: 12px; border-radius: 8px; background: var(--codigo); border: 1px solid var(--linha); overflow: hidden; margin: 8px 0 10px; }
+.trafego-barra > div { height: 100%; border-radius: 8px; background: var(--gel-verde); min-width: 2px; }
+.trafego-barra.alerta > div { background: var(--gel-laranja); }
+.trafego-barra.perigo > div { background: var(--gel-vermelho); }
+.trafego-partes { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 4px; font-size: 13px; color: var(--suave); }
+.trafego-partes li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px dashed var(--linha); }
+.trafego-partes li span:last-child { font-variant-numeric: tabular-nums; color: var(--texto-forte); font-weight: 600; }

@@ -196,9 +196,17 @@ O PAINEL (escudo dourado ao lado do nome do servidor)
     dele. Recarregar a página ou cair e voltar logo em seguida conta
     como a mesma visita. Fica guardado por 30 dias (no máximo 500
     entradas) e dá para limpar.
+  - Problemas: os relatos enviados pelo botão "Relatar problema" (com
+    as informações técnicas de quem relatou) e os erros que
+    aconteceram na página de alguém (os iguais viram uma linha só,
+    com quantas vezes e com quem). Os admins online recebem um aviso
+    quando chega um relato. Fica guardado por 30 dias.
   - Banidos: lista de banidos, com o botão para desbanir.
-  - Servidor: nome, senha de entrada, trancar a entrada, aviso para
-    todos, limpar canal e trocar a senha de admin.
+  - Servidor: tráfego do mês (quanto dos 5 GB grátis do Render já foi
+    usado, a previsão para o fim do mês e o que mais gasta; os admins
+    online recebem um aviso em 80% e em 95%), nome, senha de entrada,
+    trancar a entrada, aviso para todos, limpar canal e trocar a senha
+    de admin.
   - Comandos: a lista de comandos do chat.
 
 COMANDOS NO CHAT (digite / para ver as sugestões)
@@ -371,6 +379,8 @@ CONFIGURAÇÕES (variáveis de ambiente)
 
   ADMIN_SENHA       Senha de admin. Se não definir, uma é gerada e
                     aparece na janela/no log do servidor.
+  LIMITE_TRAFEGO_GB Tráfego grátis por mês do seu plano no Render, para
+                    o medidor do painel de admin (padrão: 5).
   UPSTASH_REDIS_REST_URL
   UPSTASH_REDIS_REST_TOKEN
                     Banco Upstash para guardar os dados. Sem eles,
@@ -433,6 +443,13 @@ DICAS
                       ajustar na mão olhando a barra) e supressão de
                       ruído. A janela tem um teste com uma barra que
                       fica verde quando o microfone abre.
+    Atalhos: nas Opções de áudio dá para gravar uma tecla que liga e
+    desliga o microfone e outra que muta a sala (Ctrl ou Alt com uma
+    tecla, ou F1 a F24). No programa, funcionam até dentro de jogos,
+    com um somzinho de confirmação.
+    Volume de cada voz: clique no nome de alguém da sala (na lista da
+    esquerda ou em cima da transmissão) para mudar o volume da voz
+    dessa pessoa (até 200%) ou silenciá-la só para você.
     Ao lado de "Conectado à sala" ficam as barrinhas da rede: verde
     (boa), amarela (instável) ou vermelha (ruim), com o ping. Passe o
     mouse para ver o ping com cada pessoa e a perda de pacotes.
@@ -461,6 +478,10 @@ DICAS
     caneta, o botão "Testar na minha tela" desenha um círculo vermelho
     só para você conferir, e a linha ao lado diz se a camada está
     pronta ou por que não pode aparecer.
+  - Relatar problema: o ponto de interrogação no canto de baixo, à
+    esquerda. Conte o que aconteceu; dá para mandar junto (ou não) as
+    informações técnicas: versões, navegador, rede, voz e os últimos
+    erros. Vai só para os admins.
   - Versão: aparece pequena no canto de baixo da tela de entrada e no
     pé da coluna da esquerda. No navegador é a do site; no programa é
     a do programa instalado, em laranja quando ele está desatualizado

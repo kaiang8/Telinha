@@ -29,6 +29,7 @@
     fone: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4.5" height="7" rx="1.5"/><rect x="16.5" y="14" width="4.5" height="7" rx="1.5"/>',
     foneOff: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4.5" height="7" rx="1.5"/><rect x="16.5" y="14" width="4.5" height="7" rx="1.5"/><path d="M3 3l18 18"/>',
     engrenagem: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    ajuda: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.2a2.6 2.6 0 0 1 5 .9c0 1.8-2.5 2.2-2.5 3.8"/><path d="M12 17.2h.01"/>',
     caneta: '<path d="M4 20l4.2-1 10.3-10.3a2.2 2.2 0 0 0-3.2-3.2L5 15.8 4 20z"/><path d="M13.8 7l3.2 3.2"/>',
     paleta: '<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.4-.5-.8-.5-1.3 0-1 .8-1.8 1.8-1.8h2.1A5.3 5.3 0 0 0 22 9.7C21.6 5.9 17.4 3 12 3z"/><circle cx="7.5" cy="11.5" r="1.2"/><circle cx="10.5" cy="7.5" r="1.2"/><circle cx="15.5" cy="7.5" r="1.2"/>',
     retry: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
@@ -389,6 +390,10 @@
       case 'renamed': return onRenamed(m);
       case 'sb': return onSomTocado(m);
       case 'tinta': return onTinta(m);
+      case 'avisoAdmin':
+        toast(m.texto, 10000);
+        if (P.aberto && P.aba === 'problemas') carregarProblemas();
+        return atualizarPainel();
     }
   }
 
@@ -736,7 +741,7 @@
       const cls = [c.id === S.view && 'active', S.unread.has(c.id) && 'unread'].filter(Boolean).join(' ');
       h += `<div class="channel ${cls}" data-ch="${esc(c.id)}">${icon('screen')}<span class="ch-name">${esc(c.name)}</span>${aoVivo ? '<span class="live-badge">ao vivo</span>' : ''}${del(c)}</div>`;
       if (membros.length) {
-        h += '<div class="sala-members">' + membros.map((u) => `<div class="sala-member">${avatarVoz(u)}<span class="ellipsis">${esc(u.name)}</span>${coroa(u)}${vozIcones(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('') + '</div>';
+        h += '<div class="sala-members">' + membros.map((u) => `<div class="sala-member"${u.id !== S.myId ? ` data-pessoa="${esc(u.id)}" title="Volume da voz de ${esc(u.name)}"` : ''}>${avatarVoz(u)}<span class="ellipsis">${esc(u.name)}</span>${coroa(u)}${vozIcones(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('') + '</div>';
       }
     }
     $('#channels').innerHTML = h;
@@ -820,7 +825,7 @@
     if (!c || c.type !== 'sala') return;
     const naSala = S.sala === c.id;
     const pessoas = S.users.filter((u) => u.sala === c.id);
-    $('#stagePeople').innerHTML = pessoas.map((u) => `<div class="person-chip">${avatarVoz(u)}<span>${esc(u.name)}${u.id === S.myId ? ' (você)' : ''}</span>${coroa(u)}${vozIcones(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('');
+    $('#stagePeople').innerHTML = pessoas.map((u) => `<div class="person-chip"${u.id !== S.myId ? ` data-pessoa="${esc(u.id)}" title="Volume da voz de ${esc(u.name)}"` : ''}>${avatarVoz(u)}<span>${esc(u.name)}${u.id === S.myId ? ' (você)' : ''}</span>${coroa(u)}${vozIcones(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('');
 
     const vivos = naSala ? pessoas.filter((u) => u.live) : [];
     sincronizarTiles(vivos.map((u) => u.id));
@@ -1863,6 +1868,8 @@
       atalho: a,
       sensibilidade: sens,
       ruido: x.ruido !== false,
+      atalhoMudo: atalhoDeVoz(x.atalhoMudo),
+      atalhoSurdo: atalhoDeVoz(x.atalhoSurdo),
     };
   }
   const VOZ = {
@@ -2152,6 +2159,7 @@
       v.audio.srcObject = null;
     }
     try { v.src?.disconnect(); } catch { /* ok */ }
+    try { v.ganho?.disconnect(); } catch { /* ok */ }
     VOZ.ultimaFala.delete(id);
   }
   function fecharTodaVoz() {
@@ -2222,7 +2230,28 @@
   // ----- ouvir os outros -----
   function aplicarSomDaVoz(id, v) {
     if (!v.audio) return;
-    v.audio.muted = VOZ.surdo || !!userById(id)?.silenciado;
+    const cfg = volumeDaVoz(id);
+    v.calado = VOZ.surdo || !!userById(id)?.silenciado || cfg.mudo;
+    const vol = v.calado ? 0 : cfg.v;
+    if (vol > 1 && v.src) {
+      // acima de 100%: o som passa por um amplificador
+      const c = audioCtx();
+      if (!v.ganho) {
+        v.ganho = c.createGain();
+        v.src.connect(v.ganho);
+        v.ganho.connect(c.destination);
+      }
+      v.ganho.gain.value = vol;
+      v.audio.muted = true; // continua tocando (o navegador precisa), mas sem som por aqui
+    } else {
+      if (v.ganho) {
+        try { v.ganho.disconnect(); } catch { /* ok */ }
+        try { v.src?.disconnect(v.ganho); } catch { /* ok */ }
+        v.ganho = null;
+      }
+      v.audio.muted = v.calado;
+      v.audio.volume = Math.min(1, vol);
+    }
   }
   function ouvirVoz(id, v, stream) {
     if (!v.audio) {
@@ -2231,16 +2260,18 @@
       definirSaida(v.audio);
     }
     v.audio.srcObject = stream;
-    aplicarSomDaVoz(id, v);
     v.audio.play().catch(() => { /* destrava no próximo clique */ });
     try {
       const c = audioCtx();
       try { v.src?.disconnect(); } catch { /* ok */ }
+      try { v.ganho?.disconnect(); } catch { /* ok */ }
+      v.ganho = null;
       v.src = c.createMediaStreamSource(stream);
       v.analisador = c.createAnalyser();
       v.analisador.fftSize = 512;
       v.src.connect(v.analisador);
     } catch { v.analisador = null; }
+    aplicarSomDaVoz(id, v);
   }
   function destravarVozes() {
     for (const v of VOZ.pcs.values()) if (v.audio?.paused && v.audio.srcObject) v.audio.play().catch(() => {});
@@ -2254,7 +2285,7 @@
     const agora = Date.now();
     if (VOZ.aberto && transmitindoVoz()) VOZ.ultimaFala.set(S.myId, agora);
     for (const [id, v] of VOZ.pcs) {
-      if (!v.analisador || v.audio?.muted) continue;
+      if (!v.analisador || v.calado) continue;
       v.analisador.getFloatTimeDomainData(bufVoz);
       let soma = 0;
       for (const x of bufVoz) soma += x * x;
@@ -2327,12 +2358,144 @@
   // ícones de mudo / sala muda ao lado do nome de cada pessoa da sala
   function vozIcones(u) {
     if (!u.sala) return '';
+    const paraMim = u.id !== S.myId && VOLUMES_VOZ[u.name]?.mudo ? `<span class="voz-icone" title="Silenciado para você">${icon('mute')}</span>` : '';
+    return paraMim + vozIconesDoUsuario(u);
+  }
+  function vozIconesDoUsuario(u) {
     if (u.silenciado) return `<span class="voz-icone vermelho" title="Silenciado por um admin">${icon('micOff')}</span>`;
     if (u.surdo) return `<span class="voz-icone" title="Mutou a sala">${icon('foneOff')}</span>`;
     if (u.mudo) return `<span class="voz-icone" title="Microfone desligado">${icon('micOff')}</span>`;
     return '';
   }
   const avatarVoz = (u) => avatar(u).replace('<div class="avatar', `<div data-voz="${esc(u.id)}" class="avatar`);
+
+  // ----- atalhos para mutar o microfone e mutar a sala -----
+  // Valem as mesmas regras dos atalhos globais dos sons: Ctrl ou Alt com uma tecla, ou F1 a F24
+  // (assim não atrapalham a digitação em outros programas). No programa funcionam dentro do jogo.
+  function atalhoDeVoz(a) {
+    const teclas = /^(Key[A-Z]|Digit\d|Numpad\d|F([1-9]|1\d|2[0-4])|Space|Tab|Enter|Backspace|Insert|Delete|Home|End|PageUp|PageDown|Arrow(Up|Down|Left|Right)|Numpad(Add|Subtract|Multiply|Divide|Decimal))$/;
+    if (!a || typeof a !== 'object' || a.meta || typeof a.code !== 'string' || !teclas.test(a.code)) return null;
+    if (!a.ctrl && !a.alt && !/^F\d/.test(a.code)) return null;
+    return { code: a.code, ctrl: !!a.ctrl, alt: !!a.alt, shift: !!a.shift };
+  }
+  // som curtinho de confirmação (só você ouve): sobe ao ligar, desce ao desligar
+  function somDeConfirmacao(sobe, grave) {
+    const c = audioCtx();
+    if (!c) return;
+    if (c.state !== 'running') c.resume().catch(() => {});
+    const base = grave ? 392 : 587.3;
+    const notas = sobe ? [base, base * 1.335] : [base * 1.335, base];
+    const t0 = c.currentTime + 0.02;
+    notas.forEach((f, i) => {
+      const o = c.createOscillator();
+      const g = c.createGain();
+      o.type = 'triangle';
+      o.frequency.value = f;
+      const t = t0 + i * 0.09;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.16, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+      o.connect(g).connect(c.destination);
+      o.start(t);
+      o.stop(t + 0.18);
+    });
+  }
+  function alternarMudoPorAtalho() {
+    if (silenciado()) return toast('Um admin silenciou você: o microfone fica desligado até o silêncio acabar.');
+    alternarMudo();
+    const ligado = !VOZ.mudo && !VOZ.surdo;
+    somDeConfirmacao(ligado, false);
+    toast(ligado ? 'Microfone ligado' : 'Microfone desligado', 1800);
+  }
+  function alternarSurdoPorAtalho() {
+    alternarSurdo();
+    somDeConfirmacao(!VOZ.surdo, true);
+    toast(VOZ.surdo ? 'Sala mutada: você não ouve nada e o microfone desligou' : 'Som da sala de volta', 2200);
+  }
+
+  // ----- volume de cada voz (só muda o que você ouve) -----
+  // Guardado pelo nome, como o volume das transmissões. Até 100% o som sai pelo caminho normal
+  // (o cancelamento de eco funciona melhor assim); acima disso passa por um amplificador.
+  const VOLUMES_VOZ = salvo.volVoz && typeof salvo.volVoz === 'object' ? { ...salvo.volVoz } : {};
+  function volumeDaVoz(id) {
+    const x = VOLUMES_VOZ[userById(id)?.name];
+    return {
+      v: typeof x?.v === 'number' ? Math.min(2, Math.max(0, x.v)) : 1,
+      mudo: x?.mudo === true,
+    };
+  }
+  function guardarVolumeDaVoz(id, mudanca) {
+    const nome = userById(id)?.name;
+    if (!nome) return;
+    const novo = { ...volumeDaVoz(id), ...mudanca };
+    if (novo.v === 1 && !novo.mudo) delete VOLUMES_VOZ[nome];
+    else VOLUMES_VOZ[nome] = novo;
+    salvar({ volVoz: VOLUMES_VOZ });
+    const v = VOZ.pcs.get(id);
+    if (v) aplicarSomDaVoz(id, v);
+  }
+  function fecharVolumeDaVoz() {
+    const el = $('#volVoz');
+    if (!el) return;
+    el.remove();
+    if (VOZ.volumeMudou) { VOZ.volumeMudou = false; renderTudo(); }
+  }
+  function abrirVolumeDaVoz(id, ancora) {
+    const u = userById(id);
+    if (!u || id === S.myId) return;
+    const jaAberto = $('#volVoz')?.dataset.uid === id;
+    fecharVolumeDaVoz();
+    if (jaAberto) return;
+    const cfg = volumeDaVoz(id);
+    const el = document.createElement('div');
+    el.className = 'vol-voz';
+    el.id = 'volVoz';
+    el.dataset.uid = id;
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', `Volume da voz de ${u.name}`);
+    el.innerHTML = `<div class="vv-topo">${avatar(u)}<strong class="ellipsis">${esc(u.name)}</strong></div>
+      <div class="vv-linha"><span>Volume da voz</span><span class="vv-pct">${Math.round(cfg.v * 100)}%</span></div>
+      <input type="range" min="0" max="2" step="0.05" value="${cfg.v}" aria-label="Volume da voz de ${esc(u.name)}">
+      <label class="sons-check"><input type="checkbox" class="vv-mudo"${cfg.mudo ? ' checked' : ''}> Silenciar para mim</label>
+      <div class="vv-rodape"><span class="vo-dica">Só muda o que você ouve.</span><button type="button" class="btn sm ghost vv-reset">100%</button></div>`;
+    document.body.appendChild(el);
+    const r = ancora.getBoundingClientRect();
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const x = Math.min(innerWidth - w - 8, Math.max(8, r.left + r.width / 2 - w / 2));
+    const y = r.bottom + 8 + h < innerHeight ? r.bottom + 8 : Math.max(8, r.top - h - 8);
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    const faixa = el.querySelector('input[type=range]');
+    const pct = el.querySelector('.vv-pct');
+    faixa.addEventListener('input', () => {
+      const v = Number(faixa.value);
+      pct.textContent = `${Math.round(v * 100)}%`;
+      guardarVolumeDaVoz(id, { v });
+    });
+    el.querySelector('.vv-mudo').addEventListener('change', (e) => {
+      guardarVolumeDaVoz(id, { mudo: e.target.checked });
+      VOZ.volumeMudou = true;
+    });
+    el.querySelector('.vv-reset').addEventListener('click', () => {
+      faixa.value = '1';
+      pct.textContent = '100%';
+      guardarVolumeDaVoz(id, { v: 1 });
+    });
+    faixa.focus();
+  }
+  // clicar em alguém da sala (na lista da esquerda ou em cima da transmissão) abre o volume
+  document.addEventListener('click', (e) => {
+    const alvo = e.target.closest?.('[data-pessoa]');
+    if (alvo) {
+      e.preventDefault();
+      return abrirVolumeDaVoz(alvo.dataset.pessoa, alvo);
+    }
+    if ($('#volVoz') && !e.target.closest('#volVoz')) fecharVolumeDaVoz();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('#volVoz')) { e.preventDefault(); fecharVolumeDaVoz(); }
+  }, true);
 
   // ----- janela "Opções de áudio" -----
   async function abrirOpcoesAudio() {
@@ -2370,6 +2533,15 @@
           <p class="vo-dica" id="voMedDica"></p>
         </div>
         <label class="sons-check"><input type="checkbox" id="voRuido"${cfg.ruido ? ' checked' : ''}> Supressão de ruído (tira barulho de teclado, ventilador e fundo)</label>
+        <div class="vo-atalhos"><span class="ap-rotulo">Atalhos</span>
+          <div class="vo-atalho"><span>Ligar e desligar o microfone</span><kbd data-ver="atalhoMudo"></kbd>
+            <button type="button" class="btn sm" data-gravar="atalhoMudo">Gravar</button><button type="button" class="btn sm ghost" data-limpar="atalhoMudo">Tirar</button></div>
+          <div class="vo-atalho"><span>Mutar e desmutar a sala</span><kbd data-ver="atalhoSurdo"></kbd>
+            <button type="button" class="btn sm" data-gravar="atalhoSurdo">Gravar</button><button type="button" class="btn sm ghost" data-limpar="atalhoSurdo">Tirar</button></div>
+          <p class="vo-dica">Use Ctrl ou Alt com uma tecla (ex.: Ctrl+M) ou uma das teclas F1 a F24. ${PROGRAMA
+            ? 'Funcionam até dentro de jogos, com um somzinho de confirmação.'
+            : 'No navegador, só com esta janela em foco. No programa para Windows, funcionam até dentro de jogos.'}</p>
+        </div>
         <p class="vo-dica">O cancelamento de eco fica sempre ligado. Com fone de ouvido o som fica ainda melhor.</p>
       </div>`,
       aoConfirmar: () => {},
@@ -2387,8 +2559,49 @@
       cfg = { ...VOZ.cfg };
       guardarVoz();
       atualizarMicrofone();
+      sincronizarAtalhos();
       mostrar();
     };
+    // gravar os atalhos de microfone e de sala (usa a mesma gravação dos sons)
+    const gravarAtalho = (campo, btn) => {
+      if (SB.gravando) return;
+      btn.textContent = 'Aperte as teclas…';
+      btn.classList.add('primary');
+      SB.gravando = (novo, cancelou) => {
+        SB.gravando = null;
+        btn.textContent = 'Gravar';
+        btn.classList.remove('primary');
+        if (!cancelou) {
+          const a = atalhoDeVoz(novo);
+          const outro = campo === 'atalhoMudo' ? 'atalhoSurdo' : 'atalhoMudo';
+          const ptt = cfg.modo === 'ptt' && cfg.atalho;
+          if (!a) toast('Use Ctrl ou Alt junto com uma tecla (ex.: Ctrl+M), ou uma das teclas F1 a F24.', 6000);
+          else if (mesmoAtalho(a, ATALHO_PARAR)) toast('Alt+0 já é o atalho de "Parar sons".');
+          else if (ptt && ptt.code === a.code && !!ptt.ctrl === a.ctrl && !!ptt.alt === a.alt && !!ptt.shift === a.shift) toast('Essa já é a tecla do apertar-para-falar.');
+          else {
+            if (mesmoAtalho(cfg[outro], a)) cfg[outro] = null;
+            const som = SB.slots.find((x) => mesmoAtalho(x.atalho, a));
+            if (som) {
+              som.atalho = null;
+              guardarSB();
+              toast(`O atalho ${textoAtalho(a)} saiu do som "${som.nome}".`, 5000);
+            }
+            cfg[campo] = a;
+          }
+        }
+        aplicar();
+      };
+      sincronizarAtalhos(); // solta os atalhos globais enquanto grava
+    };
+    caixa.addEventListener('click', (e) => {
+      const g = e.target.closest('[data-gravar]');
+      if (g) return gravarAtalho(g.dataset.gravar, g);
+      const l = e.target.closest('[data-limpar]');
+      if (l) {
+        cfg[l.dataset.limpar] = null;
+        aplicar();
+      }
+    });
     const mostrar = () => {
       if (!document.body.contains(caixa)) return;
       const aviso = !S.sala ? 'Você não está numa sala: é só um teste.'
@@ -2397,6 +2610,8 @@
       $('#voSens').hidden = cfg.modo !== 'voz';
       marca.hidden = cfg.modo !== 'voz';
       $('#voAtalho').textContent = cfg.atalho ? textoAtalho(cfg.atalho) : 'nenhuma';
+      for (const k of caixa.querySelectorAll('[data-ver]')) k.textContent = cfg[k.dataset.ver] ? textoAtalho(cfg[k.dataset.ver]) : 'nenhum';
+      for (const b of caixa.querySelectorAll('[data-limpar]')) b.hidden = !cfg[b.dataset.limpar];
       limiar.disabled = cfg.sensibilidade === 'auto';
       $('#voMedDica').textContent = cfg.modo === 'ptt'
         ? (cfg.atalho ? `Segure ${textoAtalho(cfg.atalho)} e fale: a barra fica verde enquanto você segura.` : 'Escolha uma tecla para poder falar.')
@@ -2513,6 +2728,7 @@
       VOZ.aoMedir = null;
       VOZ.teste = false;
       VOZ.cancelarGravacao?.();
+      if (SB.gravando) SB.gravando(null, true);
       atualizarMicrofone();
     });
     obs.observe($('#modal'), { attributes: true, attributeFilter: ['hidden'] });
@@ -2684,6 +2900,7 @@
     const barras = [1, 2, 3].map((n) => `<rect x="${(n - 1) * 5}" y="${12 - n * 4}" width="3.4" height="${n * 4}" rx="1"${nivel !== null && n <= nivel ? ' class="on"' : ''}/>`).join('');
     el.innerHTML = `<svg viewBox="0 0 14 12" aria-hidden="true">${barras}</svg>${ms !== null ? `<span>${ms} ms</span>` : nivel === 0 ? '<span>offline</span>' : ''}`;
     const titulo = [nivel === null ? 'Rede: medindo' : NOMES_NIVEL[nivel], ...linhas].join('\n');
+    REDE.ultimo = titulo.replace(/\n/g, '; ');
     el.title = titulo;
     el.setAttribute('aria-label', titulo.replace(/\n/g, '. '));
   }
@@ -2723,6 +2940,166 @@
     }
   }
   for (const id of ['#loginVersao', '#railVersao']) $(id).addEventListener('click', () => { if (VERSAO.detalhe) toast(VERSAO.detalhe, VERSAO.antigo ? 9000 : 4000); });
+
+  // ================= Problemas: erros da página e "Relatar problema" =================
+  // Erros que acontecem na página vão sozinhos para o painel de admin (iguais viram uma linha só).
+  // O botão "Relatar problema" manda o que a pessoa escreveu e, se ela deixar, um diagnóstico:
+  // versões, navegador, rede, voz, caneta e os últimos erros. Só admins veem.
+  const ERROS = { recentes: [], enviados: new Set() };
+  function anotarErro(msg, onde) {
+    msg = String(msg || '').slice(0, 300);
+    onde = String(onde || '').slice(0, 200);
+    if (!msg || /ResizeObserver loop|Script error\.?$|chrome-extension:|moz-extension:/i.test(msg + onde)) return;
+    ERROS.recentes.push({ t: Date.now(), msg, onde });
+    if (ERROS.recentes.length > 15) ERROS.recentes.shift();
+    const chave = `${msg}|${onde}`;
+    if (!S.token || ERROS.enviados.has(chave) || ERROS.enviados.size >= 15) return;
+    ERROS.enviados.add(chave);
+    api('erro', { msg, onde, versao: VERSAO.texto }).catch(() => {});
+  }
+  window.addEventListener('error', (e) => {
+    const arq = String(e.filename || '').replace(location.origin, '');
+    anotarErro(e.message || e.error?.message, arq ? `${arq}:${e.lineno || 0}` : '');
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason;
+    const linha = String(r?.stack || '').split('\n').find((l) => l.includes(location.origin)) || '';
+    anotarErro(`(promessa) ${r?.message || r}`, linha.replace(location.origin, '').trim());
+  });
+
+  async function coletarDiagnostico() {
+    const pc = (pcx) => pcx?.connectionState || 'nenhuma';
+    const nome = (id) => userById(id)?.name || id;
+    const sn = (x) => (x ? 'sim' : 'não');
+    const d = {
+      'Versão do site': VERSAO.texto || null,
+      Programa: null,
+      Navegador: navigator.userAgent,
+      Tela: `${screen.width}x${screen.height} (zoom ${Math.round((window.devicePixelRatio || 1) * 100)}%), janela ${innerWidth}x${innerHeight}`,
+      'Conexão com o servidor': `${S.usarPolling ? 'long-polling' : 'tempo real'}${$('#connBanner').hidden ? '' : ', CAIU agora'}${navigator.onLine ? '' : ', sem internet'}`,
+      Sala: S.sala ? nomeSala(S.sala) : 'fora de sala',
+      Transmitindo: S.live ? `sim (som: ${S.som}, qualidade: ${S.quality}, com som: ${sn(S.audioCaptado)})` : 'não',
+      Assistindo: [...S.inc].map(([id, c]) => `${nome(id)}: ${c.state}${c.stream ? '' : ', sem vídeo'}`),
+      'Mandando vídeo para': [...S.out].map(([id, c]) => `${nome(id)}: ${pc(c.pc)}`),
+      Rede: REDE.ultimo || 'sem medição',
+      Voz: {
+        Microfone: VOZ.mic ? `ligado (${VOZ.mic.stream.getAudioTracks()[0]?.label || 'sem nome'})` : 'desligado',
+        Mudo: sn(VOZ.mudo),
+        'Sala muda': sn(VOZ.surdo),
+        'Silenciado por admin': sn(silenciado()),
+        Modo: VOZ.cfg.modo === 'ptt' ? `apertar para falar (${VOZ.cfg.atalho ? textoAtalho(VOZ.cfg.atalho) : 'sem tecla'})` : 'quando fala',
+        Sensibilidade: VOZ.cfg.sensibilidade === 'auto' ? 'automática' : `${VOZ.cfg.sensibilidade} dB`,
+        'Supressão de ruído': sn(VOZ.cfg.ruido),
+        Saída: VOZ.cfg.saida ? (saidaAtual ? 'escolhida' : 'escolhida, mas não encontrada') : 'padrão do sistema',
+        Conexões: [...VOZ.pcs].map(([id, v]) => `${nome(id)}: ${pc(v.pc)}`),
+      },
+      'Erros recentes': ERROS.recentes.slice(-10).map((x) => `${new Date(x.t).toLocaleTimeString('pt-BR')} ${x.msg}${x.onde ? ` (${x.onde})` : ''}`),
+    };
+    if (PROGRAMA) {
+      try { d.Programa = (await PROGRAMA.info())?.versao || '?'; } catch { d.Programa = '?'; }
+      if (PROGRAMA.tintaEstado) {
+        try {
+          const c = await PROGRAMA.tintaEstado();
+          d.Caneta = c ? { 'Windows (build)': c.windows, Telas: c.telas, Compartilhando: c.fonte || 'nada', Problema: c.motivo || 'nenhum' } : 'sem resposta';
+        } catch { d.Caneta = 'erro ao consultar'; }
+      }
+    }
+    return d;
+  }
+  // diagnóstico em linhas "chave: valor" (para mostrar antes de enviar e no painel de admin)
+  function linhasDoDiagnostico(obj, prefixo = '') {
+    const r = [];
+    for (const [k, v] of Object.entries(obj || {})) {
+      if (v && typeof v === 'object' && !Array.isArray(v)) r.push(...linhasDoDiagnostico(v, `${prefixo}${k} › `));
+      else if (Array.isArray(v)) r.push(`${prefixo}${k}: ${v.length ? v.join('; ') : '(nenhum)'}`);
+      else r.push(`${prefixo}${k}: ${v === null || v === undefined ? '—' : v}`);
+    }
+    return r;
+  }
+  async function abrirRelatarProblema() {
+    const diag = await coletarDiagnostico();
+    abrirModal({
+      titulo: 'Relatar um problema',
+      ok: 'Enviar',
+      corpo: `<div class="relatar">
+        <p class="vo-dica">O relato vai para os admins do servidor, que veem no painel de admin.</p>
+        <label class="vo-campo"><span class="ap-rotulo">O que aconteceu?</span>
+          <textarea id="rpTexto" name="texto" rows="4" maxlength="1000" required placeholder="Ex.: comecei a transmitir e o Beto não ouvia o som do jogo"></textarea></label>
+        <label class="sons-check"><input type="checkbox" id="rpInfo" checked> Mandar junto as informações técnicas (ajudam a descobrir o problema)</label>
+        <details class="rp-detalhes"><summary>Ver o que vai junto</summary><pre>${esc(linhasDoDiagnostico(diag).join('\n'))}</pre></details>
+      </div>`,
+      aoConfirmar: async () => {
+        const texto = $('#rpTexto').value.trim();
+        if (!texto) throw new Error('Conte em poucas palavras o que aconteceu');
+        await api('relatar', { texto, info: $('#rpInfo').checked ? diag : null });
+        toast('Problema enviado para os admins. Valeu!');
+      },
+    });
+    setTimeout(() => $('#rpTexto')?.focus(), 50);
+  }
+
+  // ----- painel de admin: aba Problemas -----
+  async function carregarProblemas() {
+    try {
+      P.problemas = await adm('problemas');
+      if (P.aba === 'problemas' && P.problemas.relatos.some((r) => !r.lido)) adm('ler-problemas').catch(() => {});
+    } catch (e) {
+      toast(e.message);
+    }
+    renderPainel();
+  }
+  function abaProblemas() {
+    const r = P.problemas;
+    if (!r) {
+      if (!P.carregandoProblemas) {
+        P.carregandoProblemas = true;
+        carregarProblemas().finally(() => { P.carregandoProblemas = false; });
+      }
+      return '<div class="ap-empty">Carregando…</div>';
+    }
+    const relatos = r.relatos.map((x) => `<div class="ap-relato${x.lido ? '' : ' novo'}" data-relato="${esc(x.id)}">
+        <div class="ap-relato-topo"><strong>${esc(x.nome)}</strong>${x.lido ? '' : '<span class="ap-tag orange">novo</span>'}
+          <span class="muted small">${esc(quandoCurto(x.t))} · ${esc(x.aparelho)} · ${esc(x.ip || '')}</span>
+          <button class="btn sm ghost" data-act="apagar-relato">Apagar</button></div>
+        <p class="ap-relato-texto">${esc(x.texto)}</p>
+        ${x.info ? `<details><summary>Informações técnicas</summary><pre>${esc(linhasDoDiagnostico(x.info).join('\n'))}</pre></details>` : '<p class="muted small">Sem informações técnicas.</p>'}
+      </div>`).join('');
+    const erros = r.erros.map((x) => `<div class="ap-erro">
+        <div class="ap-erro-msg">${esc(x.msg)}</div>
+        <div class="muted small">${x.onde ? `${esc(x.onde)} · ` : ''}${x.vezes} ${x.vezes === 1 ? 'vez' : 'vezes'} · última ${esc(quandoCurto(x.ultima))}
+          · ${esc((x.quem || []).join(', '))}${x.versoes?.length ? ` · ${esc(x.versoes.join(', '))}` : ''}</div>
+        ${x.aparelhos?.length ? `<div class="muted small">${esc(x.aparelhos.join('; '))}</div>` : ''}
+      </div>`).join('');
+    return `<p class="ap-hint">Relatos enviados pelo botão "Relatar problema" (o ponto de interrogação no canto de baixo, à esquerda) e erros que aconteceram na página de alguém. Ficam guardados por ${r.dias} dias.</p>
+      <div class="ap-section"><h4>Relatos</h4>${relatos || '<p>Nenhum relato. 🎉</p>'}</div>
+      <div class="ap-section"><h4>Erros da página ${r.erros.length ? `<button class="btn sm ghost" data-act="limpar-erros">Limpar</button>` : ''}</h4>
+        ${erros || '<p>Nenhum erro registrado.</p>'}</div>`;
+  }
+
+  // ----- painel de admin: tráfego (na aba Servidor) -----
+  function secaoTrafego(t) {
+    if (!t) return '';
+    const total = Object.values(t.bytes || {}).reduce((a, b) => a + b, 0);
+    const limite = t.limiteGB * 1e9;
+    const pct = Math.min(100, (total / limite) * 100);
+    const gb = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(2).replace('.', ',')} GB`
+      : b >= 1e6 ? `${(b / 1e6).toFixed(b >= 1e8 ? 0 : 1).replace('.', ',')} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`);
+    const agora = Date.now();
+    const fimDoMes = new Date(new Date(t.inicioDoMes).setUTCMonth(new Date(t.inicioDoMes).getUTCMonth() + 1)).getTime();
+    const passou = Math.max(agora - t.desde, 3600e3);
+    const previsto = total + (total / passou) * Math.max(0, fimDoMes - agora);
+    const NOMES = { pagina: 'Abrir o site', imagens: 'Imagens do chat', tempoReal: 'Mensagens e avisos em tempo real', api: 'Pedidos da página', banco: 'Banco de dados (Upstash)' };
+    const partes = Object.entries(t.bytes || {}).sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `<li><span>${esc(NOMES[k] || k)}</span><span>${gb(v)}</span></li>`).join('');
+    const nivel = pct >= 95 ? 'perigo' : pct >= 80 ? 'alerta' : '';
+    const contandoDesde = t.desde > t.inicioDoMes + 864e5
+      ? ` Contando desde ${new Date(t.desde).toLocaleDateString('pt-BR')} (antes disso não era medido).` : '';
+    return `<div class="ap-section"><h4>Tráfego do servidor este mês</h4>
+      <div class="trafego-barra ${nivel}" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct)}" aria-label="Tráfego usado"><div style="width:${pct.toFixed(1)}%"></div></div>
+      <p><b>${gb(total)}</b> de ${t.limiteGB} GB (${pct < 1 && total > 0 ? 'menos de 1' : Math.round(pct)}%). No ritmo atual, o mês fecha em uns <b>${gb(previsto)}</b>.${contandoDesde}</p>
+      ${partes ? `<ul class="trafego-partes">${partes}</ul>` : ''}
+      <p>É uma estimativa: o número oficial está no painel do Render, em Billing. Se passar do limite sem cartão cadastrado, o Render suspende o site até o mês seguinte. A voz e as transmissões não contam aqui: vão direto entre vocês.</p></div>`;
+  }
 
   // ================= Programa desatualizado =================
   // O servidor diz qual é a versão mais nova do programa; se a deste for mais antiga, avisa
@@ -3371,6 +3748,8 @@
     $('#logoutBtn').innerHTML = icon('logout');
     $('#aparenciaBtn').innerHTML = icon('paleta');
     $('#audioBtn').innerHTML = icon('engrenagem');
+    $('#ajudaBtn').innerHTML = icon('ajuda');
+    $('#ajudaBtn').addEventListener('click', () => abrirRelatarProblema().catch((e) => toast(e.message)));
     $('#vozOpcoesBtn').innerHTML = icon('engrenagem');
     for (const sel of ['#micBtn', '#vpMic']) $(sel).addEventListener('click', alternarMudo);
     for (const sel of ['#surdoBtn', '#vpSurdo']) $(sel).addEventListener('click', alternarSurdo);
@@ -3881,12 +4260,13 @@
     const abas = [
       ['pessoas', 'Pessoas', d ? d.users.length : ''],
       ['conexoes', 'Conexões', ''],
+      ['problemas', 'Problemas', d?.problemasNovos ? d.problemasNovos : ''],
       ['banidos', 'Banidos', d ? d.bans.length : ''],
       ['servidor', 'Servidor', ''],
       ['comandos', 'Comandos', ''],
     ];
     let corpo = '<div class="ap-empty">Carregando…</div>';
-    if (d) corpo = { pessoas: abaPessoas, conexoes: abaConexoes, banidos: abaBanidos, servidor: abaServidor, comandos: abaComandos }[P.aba](d);
+    if (d) corpo = { pessoas: abaPessoas, conexoes: abaConexoes, problemas: abaProblemas, banidos: abaBanidos, servidor: abaServidor, comandos: abaComandos }[P.aba](d);
     // preserva o que estava sendo digitado
     const digitando = {};
     $('#adminPanel').querySelectorAll('input[id], select[id]').forEach((el) => { digitando[el.id] = el.value; });
@@ -3972,7 +4352,7 @@
   function abaServidor(d) {
     const st = d.settings;
     const canais = S.channels.map((c) => `<option value="${esc(c.id)}"${c.id === S.view ? ' selected' : ''}>${esc(nomeCanal(c.id))}</option>`).join('');
-    return `
+    return `${secaoTrafego(d.trafego)}
       <div class="ap-section"><h4>Nome do servidor</h4>
         <div class="ap-row"><input id="apNome" data-keep maxlength="40" value="${esc(st.serverName)}"><button class="btn sm primary" data-act="salvar-nome">Salvar</button></div></div>
       <div class="ap-section"><h4>Senha de entrada ${st.needsPassword ? '<span class="ap-tag gold">ativa</span>' : '<span class="ap-tag">sem senha</span>'}</h4>
@@ -4073,6 +4453,7 @@
       P.aba = tab.dataset.tab;
       P.form = null;
       if (P.aba === 'conexoes' && P.conexoes) carregarPainel(); // atualiza sem piscar a lista
+      if (P.aba === 'problemas') carregarProblemas();
       return renderPainel();
     }
     const b = e.target.closest('[data-act]');
@@ -4104,6 +4485,13 @@
           return feito(`${n} foi banido.${r.soAparelho ? ' (Só o navegador: o IP é o mesmo de outra pessoa online.)' : ''}`);
         }
         case 'unban': await adm('unban', { id: b.closest('[data-ban]').dataset.ban }); return feito('Banimento removido.');
+        case 'apagar-relato':
+          await adm('apagar-relato', { id: b.closest('[data-relato]').dataset.relato });
+          return carregarProblemas();
+        case 'limpar-erros':
+          await adm('limpar-erros');
+          toast('Erros apagados.');
+          return carregarProblemas();
         case 'filtrar-ip': {
           P.filtroCon = b.dataset.ip;
           const campo = document.getElementById('apFiltroCon');
@@ -4212,6 +4600,8 @@
     // gravando um atalho novo: solta todos, senão o Windows "engole" a tecla antes da página
     sincronia = setTimeout(async () => {
       const lista = SB.gravando ? [] : [
+        ...(VOZ.cfg.atalhoMudo ? [{ id: 'voz-mudo', ...VOZ.cfg.atalhoMudo }] : []),
+        ...(VOZ.cfg.atalhoSurdo ? [{ id: 'voz-surdo', ...VOZ.cfg.atalhoSurdo }] : []),
         { id: 'parar', ...ATALHO_PARAR },
         ...SB.slots.filter((s) => s.atalho).map((s) => ({ id: s.id, ...s.atalho })),
       ];
@@ -4229,6 +4619,8 @@
   if (PROGRAMA) {
     PROGRAMA.aoAtalho((id) => {
       if (SB.gravando || !S.started) return;
+      if (id === 'voz-mudo') return alternarMudoPorAtalho();
+      if (id === 'voz-surdo') return alternarSurdoPorAtalho();
       if (id === 'parar') return pararTodos();
       if (SB.slots.some((s) => s.id === id)) tocarSom(id, 'atalho');
     });
@@ -4373,6 +4765,13 @@
     const digitando = e.target.closest?.('input, textarea, select, [contenteditable="true"]');
     if (digitando && !comModificador) return; // escrevendo no chat: teclas simples não disparam sons
     const ev = atalhoDoEvento(e);
+    for (const [campo, id, fazer] of [['atalhoMudo', 'voz-mudo', alternarMudoPorAtalho], ['atalhoSurdo', 'voz-surdo', alternarSurdoPorAtalho]]) {
+      if (mesmoAtalho(VOZ.cfg[campo], ev)) {
+        e.preventDefault();
+        if (!GLOBAIS.has(id)) fazer(); // no programa, o atalho global já cuidou
+        return;
+      }
+    }
     if (mesmoAtalho(ATALHO_PARAR, ev)) {
       e.preventDefault();
       if (GLOBAIS.has('parar')) return; // o programa já cuidou pelo atalho global
@@ -4513,6 +4912,13 @@
         const nome = String(fd.get('nome') || '').trim().slice(0, 24);
         if (!nome) throw new Error('Dê um nome para o som');
         if (atalho && mesmoAtalho(atalho, ATALHO_PARAR)) throw new Error('Alt+0 já é o atalho de "Parar sons".');
+        for (const [campo, nomeDoAtalho] of [['atalhoMudo', 'ligar/desligar o microfone'], ['atalhoSurdo', 'mutar a sala']]) {
+          if (atalho && mesmoAtalho(atalho, VOZ.cfg[campo])) {
+            VOZ.cfg = validarCfgVoz({ ...VOZ.cfg, [campo]: null });
+            guardarVoz();
+            toast(`O atalho ${textoAtalho(atalho)} deixou de ${nomeDoAtalho}.`, 5000);
+          }
+        }
         const outro = atalho && SB.slots.find((s) => s.id !== slot.id && mesmoAtalho(s.atalho, atalho));
         if (outro) {
           outro.atalho = null;
