@@ -10,7 +10,9 @@ O que tem:
   - Salas de tela: entre na sala e clique em "Compartilhar tela".
     Todo mundo na sala vê. Várias pessoas podem transmitir ao mesmo
     tempo.
-  - Sem microfone. Se quiser, dá para mandar o som da aba ou do
+  - Voz: microfone com "quando eu falo" ou apertar-para-falar, mudo,
+    mutar a sala e o contorno verde em quem está falando. Veja
+    "Voz" nas DICAS. Dá também para mandar o som da aba ou do
     sistema junto com a tela.
   - Qualidade: 720p, 1080p 30 fps, 1080p 60 fps ou "texto nítido".
   - Destacar uma transmissão, tela cheia, janela flutuante e volume
@@ -20,9 +22,10 @@ O que tem:
     encerrar transmissões, apagar mensagens, limpar canais, criar,
     renomear e apagar canais, trocar o nome e a senha do servidor,
     trancar a entrada, mandar avisos e dar admin para outras pessoas.
-  - PROGRAMA PARA WINDOWS (opcional): os atalhos dos sons funcionam
-    até dentro de jogos e dá para mandar o som de um programa só
-    (a voz do Discord não volta para ninguém). Veja a parte 5.
+  - PROGRAMA PARA WINDOWS (opcional): os atalhos dos sons e o
+    apertar-para-falar funcionam até dentro de jogos e dá para mandar
+    o som de um programa só (a voz do Discord não volta para
+    ninguém). Veja a parte 5.
 
 Só precisa do Node.js 18 ou mais novo (https://nodejs.org).
 
@@ -195,7 +198,7 @@ COMANDOS NO CHAT (digite / para ver as sugestões)
   /kick <nome> [motivo]   expulsar (a pessoa pode voltar)
   /ban <nome> [motivo]    banir
   /unban <nome>           desbanir
-  /mute <nome> [minutos]  silenciar no chat (sem minutos = até tirar)
+  /mute <nome> [minutos]  silenciar no chat e na voz (sem minutos = até tirar)
   /unmute <nome>          tirar o silêncio
   /parar <nome>           encerrar a transmissão de alguém
   /tirar <nome>           tirar alguém da sala de tela
@@ -257,6 +260,8 @@ abre o mesmo site, numa janela própria, com duas vantagens:
 
   - Os atalhos dos sons funcionam até com você dentro de um jogo
     (os que usam Ctrl ou Alt, e as teclas F1 a F12).
+  - O apertar-para-falar também funciona com o jogo na frente (no
+    navegador, só com a janela do site em foco).
   - Você escolhe de onde vem o som, na própria janela de
     compartilhar:
       Só desta janela     o som da janela que você está mostrando
@@ -302,11 +307,15 @@ O QUE O PROGRAMA FAZ PARA NÃO VIRAR PORTA DE ENTRADA
   - Não abre portas nem roda servidor no seu PC: só faz conexões de
     saída, como um navegador.
   - Só libera o que precisa: capturar a tela (sempre por um
-    seletor que você escolhe), copiar o link de convite e tela
-    cheia. Câmera, microfone, USB e localização ficam bloqueados.
+    seletor que você escolhe), o microfone (só o som, e só quando
+    você liga), copiar o link de convite e tela cheia. Câmera, USB e
+    localização ficam bloqueados.
   - Os recursos de depuração do Electron vêm desligados.
   - O ajudante de som (som-programa.exe) só lê o som do programa que
     você escolheu: não usa a internet e não grava nada no disco.
+    No apertar-para-falar, ele olha só a tecla que você escolheu
+    (apertada ou solta) e não vê nenhuma outra. Com o microfone
+    desligado, nem isso.
   - Instala só para o seu usuário, sem pedir senha de administrador.
   - Antes de publicar uma versão, o GitHub abre o programa e confere
     se ele bloqueia sites de fora, janelas novas e acesso ao sistema.
@@ -316,9 +325,11 @@ SOBRE O SEU IP
     pelo programa.
   - As imagens do chat passam pelo servidor. Assim, um link de
     "capturador de IP" postado no chat não pega o IP de ninguém.
-  - O vídeo vai direto entre os computadores, criptografado. Por
-    isso, quem está NA MESMA SALA consegue, tecnicamente, descobrir
-    o seu IP, como em qualquer chamada de vídeo. Deixe a senha do
+  - O vídeo e a voz vão direto entre os computadores, criptografados.
+    Por isso, quem está NA MESMA SALA consegue, tecnicamente,
+    descobrir o seu IP, como em qualquer chamada de vídeo. O
+    servidor só deixa essa conexão acontecer entre quem está na
+    mesma sala. Deixe a senha do
     servidor ligada (comando /senha) e passe só para quem você
     confia.
   - Saber um IP não dá acesso ao computador: o roteador e o firewall
@@ -385,6 +396,27 @@ DICAS
     principal (botões e seleção) e a do fundo (as ondas atrás dos
     painéis). A escolha fica guardada só no seu navegador ou programa:
     cada amigo usa a que quiser.
+  - Voz: ao entrar numa sala o microfone começa desligado. Os botões
+    ficam embaixo da sala (e no painel verde, à esquerda):
+      Microfone       liga e desliga (mudo). No mudo, o microfone fica
+                      desligado de verdade.
+      Fone            muta a sala: você para de ouvir as vozes, as
+                      transmissões e os sons, e o seu microfone desliga
+                      junto. Ao desmutar, o microfone volta como estava.
+      Engrenagem      Opções de áudio: qual microfone, "Quando eu
+                      falo" ou "Apertar para falar" (você grava a
+                      tecla, uma combinação ou o botão do meio/lateral
+                      do mouse), sensibilidade (no automático ela se
+                      ajusta ao barulho do seu ambiente; dá para
+                      ajustar na mão olhando a barra) e supressão de
+                      ruído. A janela tem um teste com uma barra que
+                      fica verde quando o microfone abre.
+    Quem está falando ganha um contorno verde na foto. Ao lado do nome
+    aparece quem está mudo ou mutou a sala. Use fone de ouvido para o
+    melhor som: sem fone, o cancelamento de eco segura a maior parte,
+    mas o som de um filme alto pode vazar. Silenciado por um admin
+    (/mute), o microfone desliga e os outros param de ouvir a pessoa.
+    A voz funciona no navegador do celular também.
   - Para transmitir, use Chrome, Edge, Firefox ou Opera no computador,
     ou o programa para Windows (parte 5).
     No celular dá para assistir e conversar.

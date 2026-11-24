@@ -65,9 +65,13 @@
           <div class="vp-status" id="vpStatus">Na sala</div>
           <div class="vp-where ellipsis" id="vpWhere"></div>
         </div>
-        <button class="icon-btn" id="vpShare" title="Compartilhar tela"></button>
-        <button class="icon-btn" id="vpSwap" title="Trocar tela (sem parar a transmissão)" hidden></button>
-        <button class="icon-btn danger" id="vpLeave" title="Sair da sala"></button>
+        <div class="vp-botoes">
+          <button class="icon-btn" id="vpMic"></button>
+          <button class="icon-btn" id="vpSurdo"></button>
+          <button class="icon-btn" id="vpShare" title="Compartilhar tela"></button>
+          <button class="icon-btn" id="vpSwap" title="Trocar tela (sem parar a transmissão)" hidden></button>
+          <button class="icon-btn danger" id="vpLeave" title="Sair da sala"></button>
+        </div>
       </div>
 
       <div class="user-panel">
@@ -76,6 +80,7 @@
           <div id="meName" class="ellipsis"></div>
           <div class="muted small" id="meStatus">Online</div>
         </div>
+        <button class="icon-btn" id="audioBtn" title="Opções de áudio" aria-label="Opções de áudio"></button>
         <button class="icon-btn" id="aparenciaBtn" title="Aparência: tema e cores"></button>
         <button class="icon-btn" id="logoutBtn" title="Sair do servidor"></button>
       </div>
@@ -140,6 +145,11 @@
               <p class="sons-aviso" id="sbAviso"></p>
               <div class="sons-grade" id="sbGrade"></div>
               <p class="sons-dica" id="sonsDica">Clique num som ou use o atalho. Os atalhos só funcionam com esta janela do navegador em foco (dentro de um jogo, o navegador não recebe as teclas). Com Alt+0, todos os sons param.</p>
+            </div>
+            <div class="voz-botoes">
+              <button class="btn redondo" id="micBtn" hidden></button>
+              <button class="btn redondo" id="surdoBtn" hidden></button>
+              <button class="btn redondo" id="vozOpcoesBtn" title="Opções de áudio" aria-label="Opções de áudio" hidden></button>
             </div>
             <button class="btn" id="sonsBtn" title="Soundboard: sons que todo mundo ouve na sua transmissão" hidden></button>
             <button class="btn" id="ajustesBtn" title="Som, qualidade e upload da sua transmissão" hidden></button>

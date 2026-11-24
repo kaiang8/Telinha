@@ -92,15 +92,17 @@ function configurarSessaoDoSite(ses) {
   ses.setPermissionRequestHandler((wc, permissao, responder, detalhes) => {
     const url = detalhes?.requestingUrl || wc?.getURL?.() || '';
     let ok = daJanelaPrincipal(wc, url) && PERMISSOES.has(permissao);
-    // Até o Electron 44 a captura de tela chegava como "media" sem câmera nem microfone.
+    // "media": microfone (só áudio, nunca câmera). Até o Electron 44 a captura de tela
+    // também chegava como "media", sem câmera nem microfone.
     if (!ok && permissao === 'media' && daJanelaPrincipal(wc, url)) {
       const tipos = detalhes?.mediaTypes || [];
-      ok = tipos.length === 0;
+      ok = tipos.every((t) => t === 'audio');
     }
     responder(ok);
   });
-  ses.setPermissionCheckHandler((wc, permissao, origem) => (
-    PERMISSOES.has(permissao) && R.origemDe(origem) === SITE_ORIGEM && (!wc || wc === janela?.webContents)
+  ses.setPermissionCheckHandler((wc, permissao, origem, detalhes) => (
+    (PERMISSOES.has(permissao) || (permissao === 'media' && detalhes?.mediaType === 'audio'))
+    && R.origemDe(origem) === SITE_ORIGEM && (!wc || wc === janela?.webContents)
   ));
   ses.setDevicePermissionHandler(() => false); // USB, HID, serial: nunca
   ses.setDisplayMediaRequestHandler(pedidoDeTela, { useSystemPicker: false });
@@ -311,6 +313,21 @@ ipcMain.on('som-porta', (e) => {
   ajudante.anexarPorta(porta);
 });
 
+// ---------- Apertar-para-falar que funciona até dentro do jogo ----------
+// O ajudante vigia só a tecla escolhida e avisa quando ela é apertada e solta.
+ipcMain.handle('ptt', (e, atalho) => {
+  if (!pedidoConfiavel(e)) return { ok: false };
+  if (atalho === null) {
+    ajudante.soltarTecla();
+    return { ok: true };
+  }
+  const t = R.teclaDoPtt(atalho);
+  if (!t) return { ok: false, erro: 'Essa tecla não pode ser usada.' };
+  return ajudante.vigiarTecla(R.argumentosDoPtt(t), (apertado) => {
+    if (janela && !janela.isDestroyed()) janela.webContents.send('ptt', apertado === true);
+  });
+});
+
 // ---------- Janela principal ----------
 async function siteRespondendo(ses) {
   const ctrl = new AbortController();
@@ -386,6 +403,7 @@ function criarJanela() {
   janela.on('closed', () => {
     janela = null;
     ajudante.parar();
+    ajudante.soltarTecla();
   });
 
   const wc = janela.webContents;
@@ -397,6 +415,7 @@ function criarJanela() {
     if (!d.isMainFrame || d.isSameDocument) return;
     globalShortcut.unregisterAll(); // a página nova registra de novo
     ajudante.parar(); // e o som de programa que estava indo para a página antiga
+    ajudante.soltarTecla(); // e a tecla do apertar-para-falar
   });
   wc.on('render-process-gone', () => setTimeout(() => janela && acordarEAbrir(), 1000));
 
@@ -499,6 +518,25 @@ async function testeRapido() {
       .catch((e) => 'erro: ' + e.name + ': ' + e.message)`, true);
     r.capturaComSom = await capturar('{ restrictOwnAudio: true, echoCancellation: false }');
     r.capturaSemSom = await capturar('false');
+    // microfone liberado (a máquina do GitHub não tem microfone: "NotFoundError" já mostra que a
+    // permissão passou); câmera sempre bloqueada
+    const midia = (c) => js(`navigator.mediaDevices.getUserMedia(${c}).then((s) => { const n = s.getTracks().map((t) => t.kind).join(','); s.getTracks().forEach((t) => t.stop()); return 'ok: ' + n; }, (e) => e.name)`, true);
+    r.microfone = await midia('{ audio: true }');
+    r.camera = await midia('{ video: true }');
+    r.ptt = await js("window.carasETelas.ptt({ code: 'F13' })");
+    r.pttRuim = await js("window.carasETelas.ptt({ code: 'Escape' })");
+    await js('window.carasETelas.ptt(null)');
+    const vigia = (args) => new Promise((ok) => {
+      const exe = ajudante.caminho();
+      if (!exe) return ok('indisponível');
+      const p = require('node:child_process').spawn(exe, args, { windowsHide: true });
+      let saida = '';
+      const prazo = setTimeout(() => { p.kill(); ok(`sem resposta (${JSON.stringify(saida)})`); }, 5000);
+      p.stdout.on('data', (d) => { saida += d; if (saida.includes('\n')) p.stdin.end(); });
+      p.on('exit', (c) => { clearTimeout(prazo); ok(saida.trim() === '0' ? `ok (fechou com ${c})` : `saída ${JSON.stringify(saida)}, código ${c}`); });
+    });
+    r.ajudanteTecla = await vigia(R.argumentosDoPtt(R.teclaDoPtt({ code: 'F13' })));
+    r.ajudanteTeclaLayout = await vigia(R.argumentosDoPtt(R.teclaDoPtt({ code: 'KeyV', ctrl: true })));
     // tema nas telas do programa (o CSS entra mesmo com a proteção da página)
     const telaTeste = new BrowserWindow({ show: false, webPreferences: { partition: 'caras-seletor', sandbox: true, contextIsolation: true } });
     await telaTeste.loadFile(tela('carregando.html'));
@@ -518,7 +556,8 @@ async function testeRapido() {
     }
     const ok = r.api === true && r.semNode === true && r.bloqueioExterno === 'bloqueado' && r.listaDeEnderecos === 'bloqueado'
       && r.janelaNova === 'bloqueada' && r.navegacaoExterna === 'bloqueada'
-      && Array.isArray(r.atalhos?.ok) && !r.atalhos.ok.includes('ruim');
+      && Array.isArray(r.atalhos?.ok) && !r.atalhos.ok.includes('ruim')
+      && !String(r.camera).startsWith('ok') && r.pttRuim?.ok === false;
     r.resultado = ok ? 'passou' : 'falhou';
     gravar(ok ? 0 : 1);
   } catch (e) {
@@ -548,6 +587,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
     ajudante.parar();
+    ajudante.soltarTecla();
   });
   app.on('window-all-closed', () => app.quit());
 }

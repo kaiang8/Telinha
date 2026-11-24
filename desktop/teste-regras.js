@@ -131,4 +131,17 @@ t('tema das telas do programa: só cores puras', () => {
   assert.equal(R.validarTema('x'), null);
 });
 
+t('apertar-para-falar: só uma tecla conhecida, com argumentos seguros', () => {
+  assert.deepEqual(R.teclaDoPtt({ code: 'KeyV' }), { scan: 0x2f, ctrl: false, alt: false, shift: false });
+  assert.deepEqual(R.argumentosDoPtt(R.teclaDoPtt({ code: 'KeyV', ctrl: true })), ['--segurar', '--scan', '47', '--ctrl']);
+  assert.deepEqual(R.argumentosDoPtt(R.teclaDoPtt({ code: 'F13' })), ['--segurar', '--vk', '124']);
+  assert.deepEqual(R.argumentosDoPtt(R.teclaDoPtt({ code: 'MouseForward', shift: true })), ['--segurar', '--vk', '6']);
+  assert.deepEqual(R.argumentosDoPtt(R.teclaDoPtt({ code: 'ControlLeft', ctrl: true, alt: 1 })), ['--segurar', '--vk', '162']);
+  assert.deepEqual(R.teclaDoPtt({ code: 'Numpad0' }), { vk: 0x60, ctrl: false, alt: false, shift: false });
+  assert.deepEqual(R.teclaDoPtt({ code: 'IntlRo', alt: true }), { scan: 0x73, ctrl: false, alt: true, shift: false });
+  for (const ruim of [null, 'KeyV', {}, { code: 'MetaLeft' }, { code: 'Escape' }, { code: '__proto__' }, { code: 'toString' }, { code: 'KeyV --capturar 4' }, { code: 7 }]) {
+    assert.equal(R.teclaDoPtt(ruim), null, JSON.stringify(ruim));
+  }
+});
+
 console.log(`\n${n} grupos de testes passaram.`);

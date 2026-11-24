@@ -11,6 +11,10 @@
 //       Som do programa (e dos processos filhos dele) em PCM 16 bits estéreo no stdout.
 //       A 1ª linha do stderr diz se deu certo: {"ok":true} ou {"erro":"...","hr":"0x..."}.
 //       Para quando o stdin fecha (o programa principal fechou) ou quando não consegue escrever.
+//   som-programa.exe --segurar (--vk N | --scan N) [--ctrl] [--alt] [--shift]
+//       Apertar-para-falar: vigia UMA tecla (ou botão do mouse) e escreve "1" quando ela é
+//       apertada e "0" quando é solta. Não vê nenhuma outra tecla. --scan é a posição física
+//       da tecla (vira a tecla certa em qualquer layout de teclado).
 //
 // Não abre rede, não grava arquivos e não precisa de administrador.
 
@@ -33,7 +37,7 @@
 #include <string>
 #include <vector>
 
-static const char* VERSAO = "1";
+static const char* VERSAO = "2";
 
 // ---------------------------------------------------------------- texto e JSON
 static std::string utf8(const std::wstring& w) {
@@ -440,6 +444,34 @@ static int capturar(DWORD pid, DWORD taxa) {
   return 0;
 }
 
+// ---------------------------------------------------------------- --segurar
+static bool apertada(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
+
+static int segurar(DWORD vk, DWORD scan, bool ctrl, bool alt, bool shift) {
+  CreateThread(nullptr, 0, vigiarEntrada, nullptr, 0, nullptr);
+  HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+  int estado = -1;
+  DWORD proximaTraducao = 0;
+  while (!g_parar) {
+    // tecla de digitar: traduz a posição física com o layout do programa em primeiro plano
+    if (scan && GetTickCount() >= proximaTraducao) {
+      DWORD tid = GetWindowThreadProcessId(GetForegroundWindow(), nullptr);
+      UINT v = MapVirtualKeyExW(scan, MAPVK_VSC_TO_VK_EX, GetKeyboardLayout(tid));
+      if (v) vk = v;
+      proximaTraducao = GetTickCount() + 1000;
+    }
+    bool ok = vk && apertada((int)vk)
+      && (!ctrl || apertada(VK_CONTROL)) && (!alt || apertada(VK_MENU)) && (!shift || apertada(VK_SHIFT));
+    if ((int)ok != estado) {
+      estado = ok;
+      DWORD escritos = 0;
+      if (!WriteFile(out, ok ? "1\n" : "0\n", 2, &escritos, nullptr)) break; // o programa principal fechou
+    }
+    Sleep(10);
+  }
+  return 0;
+}
+
 // ---------------------------------------------------------------- início
 static bool numero(const wchar_t* s, DWORD& v, bool zeroVale = false) {
   if (!s || !*s) return false;
@@ -453,8 +485,8 @@ static bool numero(const wchar_t* s, DWORD& v, bool zeroVale = false) {
 int wmain(int argc, wchar_t** argv) {
   _setmode(_fileno(stdout), _O_BINARY);
   if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED))) return 3;
-  DWORD pid = 0, taxa = 48000, ignorar = 0;
-  bool modoListar = false, modoCapturar = false;
+  DWORD pid = 0, taxa = 48000, ignorar = 0, vk = 0, scan = 0;
+  bool modoListar = false, modoCapturar = false, modoSegurar = false, ctrl = false, alt = false, shift = false;
   for (int i = 1; i < argc; i++) {
     std::wstring a = argv[i];
     const wchar_t* prox = i + 1 < argc ? argv[i + 1] : nullptr;
@@ -463,11 +495,18 @@ int wmain(int argc, wchar_t** argv) {
     else if (a == L"--ignorar" && numero(prox, ignorar, true)) i++; // 0 = não ignorar ninguém
     else if (a == L"--capturar" && numero(prox, pid)) { modoCapturar = true; i++; }
     else if (a == L"--taxa" && numero(prox, taxa)) i++;
+    else if (a == L"--segurar") modoSegurar = true;
+    else if (a == L"--vk" && numero(prox, vk) && vk <= 0xFE) i++;
+    else if (a == L"--scan" && numero(prox, scan) && scan <= 0xE0FF) i++;
+    else if (a == L"--ctrl") ctrl = true;
+    else if (a == L"--alt") alt = true;
+    else if (a == L"--shift") shift = true;
     else { status("{\"erro\":\"argumento\"}"); return 1; }
   }
   if (taxa < 8000 || taxa > 192000) { status("{\"erro\":\"taxa\"}"); return 1; }
   if (modoListar) return listar(ignorar);
   if (modoCapturar) return capturar(pid, taxa);
-  status("{\"erro\":\"use --listar ou --capturar\"}");
+  if (modoSegurar && (vk || scan)) return segurar(vk, scan, ctrl, alt, shift);
+  status("{\"erro\":\"use --listar, --capturar ou --segurar\"}");
   return 1;
 }

@@ -201,7 +201,10 @@ const expulsos = new Map(); // token -> motivo (para avisar quem foi expulso)
 const CORES = ['#ffb23f', '#ff9a76', '#ff6b81', '#f78fd3', '#c39bff', '#9fa8ff', '#6cc6ff', '#4fe0d0', '#43d9a3', '#c3e86b'];
 
 function publicUser(u) {
-  return { id: u.id, name: u.name, color: u.color, sala: u.sala, live: u.live, admin: !!u.admin };
+  return {
+    id: u.id, name: u.name, color: u.color, sala: u.sala, live: u.live, admin: !!u.admin,
+    mudo: !!u.mudo, surdo: !!u.surdo, silenciado: silencioDe(u) > Date.now(),
+  };
 }
 function listaUsuarios() {
   return [...users.values()].filter((u) => u.joined && !u.kicked).map(publicUser);
@@ -600,6 +603,9 @@ async function acaoAdmin(u, body, res) {
       data.mutes.push({ ip: ipCompartilhado(alvo) ? null : alvo.ip, device: alvo.device || null, name: alvo.name, until });
       salvar();
       enviar(alvo, { type: 'muted', until, by: u.name });
+      broadcastPresenca(); // os outros param de ouvir a voz de quem foi silenciado
+      // quando o silêncio acaba sozinho, avisa todo mundo para voltarem a ouvir
+      if (until - Date.now() < 2 ** 31 - 1) setTimeout(broadcastPresenca, until - Date.now() + 500).unref();
       return json(res, 200, { ok: true, until });
     }
 
@@ -608,6 +614,7 @@ async function acaoAdmin(u, body, res) {
       data.mutes = data.mutes.filter((m) => !((m.device && m.device === alvo.device) || (m.ip && m.ip === alvo.ip)));
       salvar();
       enviar(alvo, { type: 'muted', until: 0, by: u.name });
+      broadcastPresenca();
       return json(res, 200, { ok: true });
     }
 
@@ -908,6 +915,8 @@ async function api(req, res, url) {
       if (body.sala != null && (!sala || sala.type !== 'sala')) return json(res, 400, { error: 'sala inválida' });
       u.sala = sala ? sala.id : null;
       u.live = !!(u.sala && body.live);
+      if (typeof body.mudo === 'boolean') u.mudo = body.mudo; // microfone desligado
+      if (typeof body.surdo === 'boolean') u.surdo = body.surdo; // som da sala desligado
       broadcastPresenca();
       return json(res, 200, { ok: true });
     }
@@ -915,6 +924,8 @@ async function api(req, res, url) {
     case 'signal': {
       const alvo = users.get(String(body.to));
       if (!alvo || alvo === u || alvo.kicked) return json(res, 404, { error: 'usuário não encontrado' });
+      // Conexões (vídeo e voz) só entre quem está na mesma sala: ninguém de fora consegue nem tentar
+      if (!u.sala || alvo.sala !== u.sala) return json(res, 409, { error: 'vocês não estão na mesma sala' });
       enviar(alvo, { type: 'signal', from: u.id, data: body.data });
       return json(res, 200, { ok: true });
     }

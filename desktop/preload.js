@@ -1,9 +1,10 @@
 'use strict';
 // Ponte mínima entre o site e o programa. A página NÃO recebe Node.js nem o ipcRenderer:
-// só estas três funções, e o programa confere se o pedido veio mesmo do site.
+// só estas funções, e o programa confere se o pedido veio mesmo do site.
 const { contextBridge, ipcRenderer } = require('electron');
 
 let ouvinte = null;
+let ouvintePtt = null;
 
 function limparAtalhos(lista) {
   if (!Array.isArray(lista)) return [];
@@ -30,6 +31,16 @@ contextBridge.exposeInMainWorld('carasETelas', {
   // Som de um programa só: a página pede depois de escolher a tela
   somDoPrograma: (taxa) => ipcRenderer.invoke('som-do-programa', Number(taxa)),
   pararSomDoPrograma: (id) => ipcRenderer.invoke('parar-som-do-programa', Number(id)),
+  // Apertar-para-falar global: o programa avisa quando a tecla é apertada e solta
+  ptt: (a) => ipcRenderer.invoke('ptt', a && typeof a === 'object' ? {
+    code: String(a.code ?? '').slice(0, 24), ctrl: a.ctrl === true, alt: a.alt === true, shift: a.shift === true,
+  } : null),
+  aoPtt: (fn) => {
+    if (typeof fn !== 'function') return;
+    if (ouvintePtt) ipcRenderer.removeListener('ptt', ouvintePtt);
+    ouvintePtt = (_e, v) => fn(v === true);
+    ipcRenderer.on('ptt', ouvintePtt);
+  },
   // Tema escolhido no site: o programa usa nas telas dele (carregando, seletor de tela)
   aparencia: (dados) => ipcRenderer.invoke('aparencia', {
     escuro: dados?.escuro === true,

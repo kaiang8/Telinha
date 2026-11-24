@@ -282,10 +282,12 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 }
 
 .voice-panel {
-  display: flex; align-items: center; gap: 2px; padding: 10px 8px 10px 10px; border-top: 1px solid var(--linha);
+  display: flex; flex-direction: column; gap: 6px; padding: 10px 8px 8px 10px; border-top: 1px solid var(--linha);
   background: linear-gradient(180deg, var(--verde-faixa-1), var(--verde-faixa-2));
 }
-.vp-info { flex: 1; min-width: 0; cursor: pointer; padding: 2px 4px; border-radius: 6px; }
+.vp-info { min-width: 0; cursor: pointer; padding: 2px 4px; border-radius: 6px; }
+.vp-botoes { display: flex; gap: 4px; }
+.vp-botoes .icon-btn { flex: 1; width: auto; height: 32px; border-radius: 9px; }
 .vp-info:hover .vp-where { text-decoration: underline; }
 .vp-status { color: var(--verde-texto); font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 6px; }
 .vp-status.live { color: var(--ao-vivo); }
@@ -753,3 +755,34 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
 }
 @keyframes sbChip { 0% { opacity: 0; transform: translate(-50%, 8px); } 10%, 75% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, -6px); } }
 @media (max-width: 720px) { #sonsBtn, .sons { display: none !important; } }
+
+/* ---------- Voz ---------- */
+.voz-botoes { display: flex; gap: 6px; padding-right: 6px; margin-right: 2px; border-right: 1px solid var(--linha); }
+.btn.redondo { width: 40px; padding: 0; }
+.btn.desligado { color: #fff; border-color: #a5161f; text-shadow: 0 1px 1px rgba(80, 0, 0, .4); background: var(--gel-vermelho); }
+.icon-btn.desligado { color: var(--ao-vivo); }
+.icon-btn.desligado:hover { color: var(--ao-vivo); }
+/* contorno verde em quem está falando */
+.avatar.falando { box-shadow: 0 0 0 2px var(--moldura-avatar), 0 0 0 4px #3fcf4f, 0 0 14px 2px rgba(63, 207, 79, .55); }
+.sala-member .avatar.falando, .person-chip .avatar.falando { box-shadow: 0 0 0 1.5px var(--moldura-avatar), 0 0 0 3.5px #3fcf4f, 0 0 10px 1px rgba(63, 207, 79, .55); }
+.voz-icone { display: inline-flex; color: var(--fraco); flex: none; }
+.voz-icone svg.i { width: 14px; height: 14px; }
+.voz-icone.vermelho { color: var(--ao-vivo); }
+
+/* janela "Opções de áudio" */
+.voz-opcoes { display: grid; gap: 16px; }
+.vo-campo { display: block; }
+#voDispositivo {
+  width: 100%; height: 40px; padding: 0 10px; border-radius: 10px; color: var(--texto-forte); outline: none;
+  background: linear-gradient(180deg, var(--campo-1), var(--campo-2)); border: 1px solid var(--linha-forte);
+}
+#voDispositivo:focus { border-color: var(--foco); }
+.medidor { position: relative; height: 14px; margin: 2px 0 10px; border-radius: 8px; background: var(--codigo); border: 1px solid var(--linha); overflow: hidden; }
+.medidor .nivel { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 8px; background: linear-gradient(180deg, var(--sup-1), var(--fraco)); transition: width .06s linear; }
+.medidor .nivel.aberto { background: var(--gel-verde); }
+.medidor .marca { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1px; border-radius: 2px; background: var(--texto-forte); box-shadow: 0 0 0 1px var(--borda-vidro); }
+#voSens { display: grid; gap: 6px; }
+#voLimiar { width: 100%; accent-color: var(--p2); }
+#voLimiar:disabled { opacity: .5; }
+.vo-dica { margin: 6px 0 0; font-size: 12.5px; color: var(--suave); line-height: 1.45; }
+@media (max-width: 720px) { .voz-botoes { border-right: 0; padding-right: 0; } }

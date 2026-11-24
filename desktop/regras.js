@@ -150,7 +150,50 @@ function cssDoTema(tema) {
   return `html:root { ${linhas.join(' ')} }`;
 }
 
+// ---- apertar-para-falar: qual tecla o ajudante vigia ----
+// Teclas de digitar vão pela posição física (scan code), que o ajudante traduz com o layout
+// do teclado da pessoa. As outras vão direto pelo código de tecla do Windows (VK).
+const SCAN = {
+  Digit1: 0x02, Digit2: 0x03, Digit3: 0x04, Digit4: 0x05, Digit5: 0x06, Digit6: 0x07, Digit7: 0x08, Digit8: 0x09, Digit9: 0x0a, Digit0: 0x0b,
+  Minus: 0x0c, Equal: 0x0d,
+  KeyQ: 0x10, KeyW: 0x11, KeyE: 0x12, KeyR: 0x13, KeyT: 0x14, KeyY: 0x15, KeyU: 0x16, KeyI: 0x17, KeyO: 0x18, KeyP: 0x19,
+  BracketLeft: 0x1a, BracketRight: 0x1b,
+  KeyA: 0x1e, KeyS: 0x1f, KeyD: 0x20, KeyF: 0x21, KeyG: 0x22, KeyH: 0x23, KeyJ: 0x24, KeyK: 0x25, KeyL: 0x26,
+  Semicolon: 0x27, Quote: 0x28, Backquote: 0x29, Backslash: 0x2b,
+  KeyZ: 0x2c, KeyX: 0x2d, KeyC: 0x2e, KeyV: 0x2f, KeyB: 0x30, KeyN: 0x31, KeyM: 0x32, Comma: 0x33, Period: 0x34, Slash: 0x35,
+  IntlBackslash: 0x56, IntlRo: 0x73,
+};
+const VK = {
+  MouseMiddle: 0x04, MouseBack: 0x05, MouseForward: 0x06,
+  Backspace: 0x08, Tab: 0x09, Enter: 0x0d, CapsLock: 0x14, Space: 0x20,
+  PageUp: 0x21, PageDown: 0x22, End: 0x23, Home: 0x24, ArrowLeft: 0x25, ArrowUp: 0x26, ArrowRight: 0x27, ArrowDown: 0x28,
+  Insert: 0x2d, Delete: 0x2e,
+  NumpadMultiply: 0x6a, NumpadAdd: 0x6b, NumpadSubtract: 0x6d, NumpadDecimal: 0x6e, NumpadDivide: 0x6f, NumpadEnter: 0x0d,
+  ShiftLeft: 0xa0, ShiftRight: 0xa1, ControlLeft: 0xa2, ControlRight: 0xa3, AltLeft: 0xa4, AltRight: 0xa5,
+};
+for (let i = 0; i <= 9; i++) VK[`Numpad${i}`] = 0x60 + i;
+for (let i = 1; i <= 24; i++) VK[`F${i}`] = 0x6f + i;
+
+// { code, ctrl, alt, shift } → { vk } ou { scan }, mais os modificadores; null se não der
+function teclaDoPtt(a) {
+  if (!a || typeof a !== 'object' || typeof a.code !== 'string') return null;
+  const code = a.code;
+  const t = Object.hasOwn(VK, code) ? { vk: VK[code] } : Object.hasOwn(SCAN, code) ? { scan: SCAN[code] } : null;
+  if (!t) return null;
+  // modificador sozinho ou botão do mouse: vale do jeito que for apertado
+  const solto = /^(Control|Shift|Alt)(Left|Right)$|^Mouse/.test(code);
+  return { ...t, ctrl: !solto && a.ctrl === true, alt: !solto && a.alt === true, shift: !solto && a.shift === true };
+}
+function argumentosDoPtt(t) {
+  const args = ['--segurar', t.vk ? '--vk' : '--scan', String(t.vk || t.scan)];
+  if (t.ctrl) args.push('--ctrl');
+  if (t.alt) args.push('--alt');
+  if (t.shift) args.push('--shift');
+  return args;
+}
+
 module.exports = {
+  teclaDoPtt, argumentosDoPtt,
   validarTema, cssDoTema,
   SITE_PADRAO, origemDe, siteValido, podeNavegar, podeAbrirFora, requisicaoPermitida,
   teclaDoCodigo, aceleradorDe, validarAtalhos,

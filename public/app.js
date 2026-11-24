@@ -24,6 +24,11 @@
     send: '<path d="M4 12 20 4l-4 16-4-7z"/><path d="m12 13 8-9"/>',
     link: '<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/>',
     logout: '<path d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3M16 17l5-5-5-5M21 12H9"/>',
+    mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>',
+    micOff: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7M4 4l16 16"/>',
+    fone: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4.5" height="7" rx="1.5"/><rect x="16.5" y="14" width="4.5" height="7" rx="1.5"/>',
+    foneOff: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4.5" height="7" rx="1.5"/><rect x="16.5" y="14" width="4.5" height="7" rx="1.5"/><path d="M3 3l18 18"/>',
+    engrenagem: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
     paleta: '<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.4-.5-.8-.5-1.3 0-1 .8-1.8 1.8-1.8h2.1A5.3 5.3 0 0 0 22 9.7C21.6 5.9 17.4 3 12 3z"/><circle cx="7.5" cy="11.5" r="1.2"/><circle cx="10.5" cy="7.5" r="1.2"/><circle cx="15.5" cy="7.5" r="1.2"/>',
     retry: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
     shield: '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>',
@@ -411,7 +416,7 @@
     // Reconectou no meio de uma sala? Avisa o servidor de novo.
     if (S.sala) {
       try {
-        await api('state', { sala: S.sala, live: S.live });
+        await api('state', { sala: S.sala, live: S.live, ...estadoVoz() });
       } catch {
         sairDaSalaLocal();
       }
@@ -724,7 +729,7 @@
       const cls = [c.id === S.view && 'active', S.unread.has(c.id) && 'unread'].filter(Boolean).join(' ');
       h += `<div class="channel ${cls}" data-ch="${esc(c.id)}">${icon('screen')}<span class="ch-name">${esc(c.name)}</span>${aoVivo ? '<span class="live-badge">ao vivo</span>' : ''}${del(c)}</div>`;
       if (membros.length) {
-        h += '<div class="sala-members">' + membros.map((u) => `<div class="sala-member">${avatar(u)}<span class="ellipsis">${esc(u.name)}</span>${coroa(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('') + '</div>';
+        h += '<div class="sala-members">' + membros.map((u) => `<div class="sala-member">${avatarVoz(u)}<span class="ellipsis">${esc(u.name)}</span>${coroa(u)}${vozIcones(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('') + '</div>';
       }
     }
     $('#channels').innerHTML = h;
@@ -793,6 +798,7 @@
       sb.classList.toggle('active', S.live);
       $('#vpSwap').hidden = !S.live;
     }
+    renderVoz();
   }
 
   // ================= Palco (salas de tela) =================
@@ -801,7 +807,7 @@
     if (!c || c.type !== 'sala') return;
     const naSala = S.sala === c.id;
     const pessoas = S.users.filter((u) => u.sala === c.id);
-    $('#stagePeople').innerHTML = pessoas.map((u) => `<div class="person-chip">${avatar(u)}<span>${esc(u.name)}${u.id === S.myId ? ' (você)' : ''}</span>${coroa(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('');
+    $('#stagePeople').innerHTML = pessoas.map((u) => `<div class="person-chip">${avatarVoz(u)}<span>${esc(u.name)}${u.id === S.myId ? ' (você)' : ''}</span>${coroa(u)}${vozIcones(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('');
 
     const vivos = naSala ? pessoas.filter((u) => u.live) : [];
     sincronizarTiles(vivos.map((u) => u.id));
@@ -826,6 +832,9 @@
     $('#leaveBtn').innerHTML = `${icon('logout')} Sair da sala`;
     $('#ajustesBtn').hidden = !naSala;
     $('#sonsBtn').hidden = !naSala;
+    $('#micBtn').hidden = !naSala;
+    $('#surdoBtn').hidden = !naSala;
+    $('#vozOpcoesBtn').hidden = !naSala;
     if (!naSala) { $('#ajustesPanel').hidden = true; $('#sonsPanel').hidden = true; }
     if (!$('#sonsPanel').hidden) avisoSons();
     $('#sendVolWrap').hidden = !(naSala && S.live && S.envio && S.audioCaptado);
@@ -926,7 +935,7 @@
       return;
     }
     const v = volumeDe(t.uid);
-    const mudo = t.userMuted || S.evitarEco;
+    const mudo = t.userMuted || S.evitarEco || VOZ.surdo;
     if (t.gain) {
       t.video.muted = true; // o som sai pelo Web Audio, não pelo vídeo
       t.gain.gain.setTargetAtTime(mudo ? 0 : v, t.gain.context.currentTime, 0.02);
@@ -1179,7 +1188,7 @@
     blip('join');
     renderTudo();
     try {
-      await api('state', { sala: id, live: false });
+      await api('state', { sala: id, live: false, ...estadoVoz() });
     } catch (e) {
       toast('Não foi possível entrar na sala: ' + e.message);
       sairDaSalaLocal();
@@ -1188,6 +1197,10 @@
     }
     sincronizarStreams();
     renderTudo();
+    if (VOZ.mudo && !VOZ.dicaMudo) {
+      VOZ.dicaMudo = true;
+      toast('Seu microfone está desligado. Clique no microfone para falar.', 5000);
+    }
   }
 
   function sairDaSalaLocal() {
@@ -1197,13 +1210,16 @@
     S.sala = null;
     S.focus = null;
     patchMe();
+    fecharTodaVoz();
+    definirPtt(false);
+    atualizarMicrofone();
   }
 
   function sairDaSala() {
     if (!S.sala) return;
     sairDaSalaLocal();
     blip('leave');
-    api('state', { sala: null, live: false }).catch(() => {});
+    api('state', { sala: null, live: false, ...estadoVoz() }).catch(() => {});
     renderTudo();
   }
 
@@ -1401,7 +1417,7 @@
     blip('live');
     renderTudo();
     try {
-      await api('state', { sala: S.sala, live: true });
+      await api('state', { sala: S.sala, live: true, ...estadoVoz() });
     } catch (e) {
       toast('Erro ao começar a transmissão: ' + e.message);
       pararTransmissao();
@@ -1485,7 +1501,7 @@
     S.evitarEco = false;
     aplicarMudoEco();
     patchMe();
-    if (!silencioso) api('state', { sala: S.sala, live: false }).catch(() => {});
+    if (!silencioso) api('state', { sala: S.sala, live: false, ...estadoVoz() }).catch(() => {});
     renderTudo();
   }
 
@@ -1631,6 +1647,7 @@
       const espectadores = vizinhosDeSala();
       for (const vid of [...S.out.keys()]) if (!espectadores.has(vid)) fecharOut(vid);
     }
+    sincronizarVoz();
   }
 
   function novaInc(sid) {
@@ -1716,6 +1733,10 @@
       else if (d.k === 'restart') { if (quemQueroAssistir().has(from)) { S.tries.set(from, 0); assistir(from); } }
       else if (d.k === 'ice' && d.to === 'viewer') iceComoEspectador(from, d);
       else if (d.k === 'ice' && d.to === 'sharer') iceComoTransmissor(from, d);
+      else if (d.k === 'voz-offer') await vozOferta(from, d);
+      else if (d.k === 'voz-answer') await vozResposta(from, d);
+      else if (d.k === 'voz-ice') vozIce(from, d);
+      else if (d.k === 'voz-oi') { if (S.sala && S.myId < from && vizinhosDeSala().has(from)) iniciarVoz(from).catch(() => {}); }
     } catch (e) {
       console.warn('Erro de sinalização', e);
     }
@@ -1784,6 +1805,660 @@
       c.pending.push(d);
       if (c.pending.length > 200) c.pending.shift();
     }
+  }
+
+  // ================= Voz (microfone) =================
+  // Cada pessoa da sala se liga por voz com todas as outras (quem tem o id "menor" faz a
+  // oferta, o outro responde). O microfone passa pela porta de voz (voz-portao.js): ela abre
+  // quando a pessoa fala, ou só com o apertar-para-falar. No mudo, o microfone é desligado
+  // de verdade (o sistema nem mostra o microfone em uso).
+  function validarCfgVoz(c) {
+    const x = c && typeof c === 'object' ? c : {};
+    const sens = x.sensibilidade === 'auto' || (typeof x.sensibilidade === 'number' && x.sensibilidade >= -90 && x.sensibilidade <= 0) ? x.sensibilidade : 'auto';
+    const a = x.atalho && typeof x.atalho === 'object' && typeof x.atalho.code === 'string' && /^[A-Za-z0-9]{2,24}$/.test(x.atalho.code)
+      ? { code: x.atalho.code, ctrl: !!x.atalho.ctrl, alt: !!x.atalho.alt, shift: !!x.atalho.shift } : null;
+    return {
+      dispositivo: typeof x.dispositivo === 'string' ? x.dispositivo.slice(0, 300) : '',
+      modo: x.modo === 'ptt' ? 'ptt' : 'voz',
+      atalho: a,
+      sensibilidade: sens,
+      ruido: x.ruido !== false,
+    };
+  }
+  const VOZ = {
+    cfg: validarCfgVoz(salvo.voz),
+    mudo: salvo.vozMudo !== false, // na primeira vez começa mudo; depois lembra a escolha
+    surdo: salvo.vozSurdo === true,
+    mudoAntes: null,
+    mic: null,
+    pcs: new Map(),
+    tentativas: new Map(),
+    esperando: new Set(),
+    teste: false,
+    ptt: false,
+    pttGlobal: '',
+    gravandoPtt: false,
+    aberto: false,
+    falando: new Set(),
+    ultimaFala: new Map(),
+    modulo: null,
+    versao: 0,
+    aoMedir: null,
+  };
+  const silenciado = () => S.mutedUntil > Date.now();
+  function estadoVoz() { return { mudo: VOZ.mudo || silenciado(), surdo: VOZ.surdo }; }
+  function guardarVoz() { salvar({ voz: VOZ.cfg, vozMudo: VOZ.mudo, vozSurdo: VOZ.surdo }); }
+  const transmitindoVoz = () => !!S.sala && !VOZ.mudo && !VOZ.surdo && !silenciado();
+
+  function erroMic(e) {
+    if (e?.name === 'NotAllowedError') {
+      return PROGRAMA
+        ? 'O Windows bloqueou o microfone. Libere em Configurações → Privacidade e segurança → Microfone → "Permitir que aplicativos da área de trabalho acessem o microfone".'
+        : 'O navegador não deixou usar o microfone. Libere no cadeado ao lado do endereço do site e tente de novo.';
+    }
+    if (e?.name === 'NotFoundError') return 'Nenhum microfone encontrado. Conecte um e tente de novo.';
+    if (e?.name === 'NotReadableError') return 'O microfone está ocupado por outro programa ou com problema.';
+    return `Não consegui ligar o microfone${e?.message ? `: ${e.message}` : '.'}`;
+  }
+
+  function trocarFaixaVoz(v, faixa) {
+    const tr = v.pc.getTransceivers().find((t) => t.receiver.track?.kind === 'audio' && t.currentDirection !== 'stopped');
+    if (tr) tr.sender.replaceTrack(faixa).catch(() => {});
+  }
+
+  function soltarMicrofone() {
+    const m = VOZ.mic;
+    if (!m) return;
+    VOZ.mic = null;
+    m.stream.getTracks().forEach((t) => t.stop());
+    try { m.src.disconnect(); } catch { /* ok */ }
+    try { m.portao.disconnect(); } catch { /* ok */ }
+    m.faixa.stop();
+    for (const v of VOZ.pcs.values()) trocarFaixaVoz(v, null);
+    VOZ.aberto = false;
+  }
+
+  function aplicarPortao() {
+    const modo = transmitindoVoz() ? VOZ.cfg.modo : 'mudo';
+    VOZ.mic?.portao.port.postMessage({ modo, limiar: VOZ.cfg.sensibilidade === 'auto' ? null : VOZ.cfg.sensibilidade, ptt: VOZ.ptt });
+    // No programa, o apertar-para-falar vale até dentro do jogo (o programa vigia a tecla)
+    if (PROGRAMA?.ptt && !VOZ.gravandoPtt) {
+      const vigiar = (modo === 'ptt' || (VOZ.teste && VOZ.cfg.modo === 'ptt')) && VOZ.cfg.atalho;
+      const quer = vigiar ? VOZ.cfg.atalho : null;
+      const chave = quer ? JSON.stringify(quer) : '';
+      if (chave !== VOZ.pttGlobal) {
+        VOZ.pttGlobal = chave;
+        if (!quer) definirPtt(false);
+        PROGRAMA.ptt(quer).catch(() => { VOZ.pttGlobal = ''; });
+      }
+    }
+  }
+
+  function desligarPorErro() {
+    VOZ.teste = false; // o teste da janela de opções para até a pessoa mudar algo nela
+    if (transmitindoVoz()) {
+      VOZ.mudo = true;
+      guardarVoz();
+      if (S.sala) api('state', { sala: S.sala, live: S.live, ...estadoVoz() }).catch(() => {});
+    }
+    aplicarPortao();
+    renderTudo();
+  }
+
+
+  async function atualizarMicrofone() {
+    const quer = VOZ.teste || transmitindoVoz();
+    if (!quer) {
+      VOZ.versao++;
+      VOZ.pedido = null;
+      soltarMicrofone();
+      aplicarPortao();
+      renderVoz();
+      return;
+    }
+    const m = VOZ.mic;
+    if (m && m.dispositivo === VOZ.cfg.dispositivo && m.ruido === VOZ.cfg.ruido) {
+      aplicarPortao();
+      renderVoz();
+      return;
+    }
+    // já tem um pedido igual em andamento (evita pedir a permissão duas vezes)
+    if (VOZ.pedido && VOZ.pedido.dispositivo === VOZ.cfg.dispositivo && VOZ.pedido.ruido === VOZ.cfg.ruido) return;
+    const versao = ++VOZ.versao;
+    const pedido = { dispositivo: VOZ.cfg.dispositivo, ruido: VOZ.cfg.ruido };
+    VOZ.pedido = pedido;
+    try {
+      await ligarMicrofone(versao);
+    } finally {
+      if (VOZ.pedido === pedido) VOZ.pedido = null;
+    }
+  }
+
+  async function ligarMicrofone(versao) {
+    soltarMicrofone();
+    const c = audioCtx();
+    if (!navigator.mediaDevices?.getUserMedia || !c?.audioWorklet) {
+      toast('Este navegador não deixa usar o microfone.');
+      return desligarPorErro();
+    }
+    const pedir = (semDispositivo) => navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: VOZ.cfg.ruido,
+        autoGainControl: true,
+        channelCount: 1,
+        ...(VOZ.cfg.dispositivo && !semDispositivo ? { deviceId: { exact: VOZ.cfg.dispositivo } } : {}),
+      },
+      video: false,
+    });
+    let stream = null;
+    let erro = null;
+    try {
+      stream = await pedir(false);
+    } catch (e) {
+      erro = e;
+      if (VOZ.cfg.dispositivo && (e.name === 'OverconstrainedError' || e.name === 'NotFoundError')) {
+        try {
+          stream = await pedir(true);
+          toast('O microfone escolhido não foi encontrado: usando o padrão do sistema.');
+        } catch (e2) { erro = e2; }
+      }
+    }
+    if (!stream) {
+      if (versao === VOZ.versao) {
+        toast(erroMic(erro), 10000);
+        desligarPorErro();
+      }
+      return;
+    }
+    try {
+      VOZ.modulo ||= c.audioWorklet.addModule('/voz-portao.js');
+      await VOZ.modulo;
+    } catch {
+      VOZ.modulo = null;
+      stream.getTracks().forEach((t) => t.stop());
+      toast('Não consegui preparar o microfone. Recarregue a página.');
+      return desligarPorErro();
+    }
+    if (versao !== VOZ.versao) {
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    if (c.state !== 'running') c.resume().catch(() => {});
+    const src = c.createMediaStreamSource(stream);
+    const portao = new AudioWorkletNode(c, 'portao-de-voz', {
+      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 1, channelCountMode: 'explicit',
+    });
+    const destino = c.createMediaStreamDestination();
+    destino.channelCount = 1;
+    src.connect(portao).connect(destino);
+    portao.port.onmessage = (e) => medicaoVoz(e.data);
+    const faixa = destino.stream.getAudioTracks()[0];
+    VOZ.mic = { stream, src, portao, destino, faixa, dispositivo: VOZ.cfg.dispositivo, ruido: VOZ.cfg.ruido };
+    stream.getAudioTracks()[0]?.addEventListener('ended', () => {
+      if (VOZ.mic?.stream !== stream) return;
+      soltarMicrofone();
+      toast('O microfone foi desconectado.');
+      atualizarMicrofone();
+    });
+    for (const v of VOZ.pcs.values()) trocarFaixaVoz(v, faixa);
+    aplicarPortao();
+    renderVoz();
+  }
+
+  function medicaoVoz(d) {
+    if (!d || typeof d.nivel !== 'number') return;
+    VOZ.aberto = !!d.aberto;
+    if (VOZ.aoMedir) VOZ.aoMedir(d);
+  }
+
+  // ----- apertar-para-falar -----
+  const BOTOES_MOUSE = { 1: 'MouseMiddle', 3: 'MouseBack', 4: 'MouseForward' };
+  const ehModificador = (code) => /^(Control|Shift|Alt)(Left|Right)$/.test(code);
+  function definirPtt(apertado) {
+    if (VOZ.ptt === apertado) return;
+    VOZ.ptt = apertado;
+    VOZ.mic?.portao.port.postMessage({ ptt: apertado });
+  }
+  // No navegador (ou programa antigo) a tecla só funciona com a janela em foco
+  const pttNaPagina = () => VOZ.cfg.modo === 'ptt' && !!VOZ.cfg.atalho && !PROGRAMA?.ptt && !VOZ.gravandoPtt;
+  function combinaPtt(code, e) {
+    const a = VOZ.cfg.atalho;
+    if (!a || a.code !== code) return false;
+    if (ehModificador(code) || code.startsWith('Mouse')) return true;
+    // os modificadores escolhidos precisam estar apertados; outros a mais não atrapalham
+    return (!a.ctrl || e.ctrlKey) && (!a.alt || e.altKey) && (!a.shift || e.shiftKey);
+  }
+  window.addEventListener('keydown', (e) => {
+    if (!pttNaPagina() || e.repeat || !combinaPtt(e.code, e)) return;
+    const digitando = e.target.closest?.('input, textarea, select, [contenteditable="true"]');
+    if (digitando && !e.ctrlKey && !e.altKey && e.key.length === 1) return; // escrevendo no chat
+    definirPtt(true);
+  }, true);
+  window.addEventListener('keyup', (e) => {
+    const a = VOZ.cfg.atalho;
+    if (!VOZ.ptt || PROGRAMA?.ptt || !a) return;
+    const soltouModificador = (a.ctrl && /^Control/.test(e.code)) || (a.alt && /^Alt/.test(e.code)) || (a.shift && /^Shift/.test(e.code));
+    if (a.code === e.code || soltouModificador) definirPtt(false);
+  }, true);
+  window.addEventListener('mousedown', (e) => {
+    const code = BOTOES_MOUSE[e.button];
+    if (code && pttNaPagina() && VOZ.cfg.atalho?.code === code) {
+      e.preventDefault();
+      definirPtt(true);
+    }
+  }, true);
+  window.addEventListener('mouseup', (e) => {
+    const code = BOTOES_MOUSE[e.button];
+    if (code && VOZ.cfg.atalho?.code === code && !PROGRAMA?.ptt) {
+      e.preventDefault();
+      definirPtt(false);
+    }
+  }, true);
+  window.addEventListener('blur', () => { if (!PROGRAMA?.ptt) definirPtt(false); });
+  PROGRAMA?.aoPtt?.((apertado) => { if (!VOZ.gravandoPtt) definirPtt(!!apertado); });
+
+  // ----- conexões de voz -----
+  function sincronizarVoz() {
+    const vizinhos = S.sala ? vizinhosDeSala() : new Set();
+    for (const id of [...VOZ.pcs.keys()]) if (!vizinhos.has(id)) fecharVoz(id);
+    for (const id of vizinhos) {
+      if (VOZ.pcs.has(id)) continue;
+      if (S.myId < id) iniciarVoz(id).catch(() => {});
+      else if (!VOZ.esperando.has(id)) {
+        // quem responde espera a oferta; se ela não vier, pede de novo
+        VOZ.esperando.add(id);
+        setTimeout(() => {
+          VOZ.esperando.delete(id);
+          if (!VOZ.pcs.has(id) && vizinhosDeSala().has(id)) sinal(id, { k: 'voz-oi' });
+        }, 4000);
+      }
+    }
+    for (const [id, v] of VOZ.pcs) aplicarSomDaVoz(id, v);
+    atualizarMicrofone();
+  }
+
+  function novaVoz(id) {
+    fecharVoz(id);
+    const pc = new RTCPeerConnection({ iceServers: S.iceServers });
+    const v = { pc, sess: null, pending: [], audio: null, src: null, analisador: null, timer: 0 };
+    VOZ.pcs.set(id, v);
+    pc.onicecandidate = (e) => {
+      if (e.candidate && v.sess) sinal(id, { k: 'voz-ice', sess: v.sess, c: e.candidate.toJSON() });
+    };
+    pc.ontrack = (e) => ouvirVoz(id, v, e.streams[0] || new MediaStream([e.track]));
+    pc.onconnectionstatechange = () => {
+      if (VOZ.pcs.get(id) !== v) return;
+      clearTimeout(v.timer);
+      const st = pc.connectionState;
+      if (st === 'connected') VOZ.tentativas.set(id, 0);
+      else if (st === 'failed') reconectarVoz(id);
+      else if (st === 'disconnected') {
+        v.timer = setTimeout(() => { if (VOZ.pcs.get(id) === v && pc.connectionState === 'disconnected') reconectarVoz(id); }, 7000);
+      }
+    };
+    return v;
+  }
+
+  function fecharVoz(id) {
+    const v = VOZ.pcs.get(id);
+    if (!v) return;
+    VOZ.pcs.delete(id);
+    clearTimeout(v.timer);
+    try { v.pc.close(); } catch { /* ok */ }
+    if (v.audio) {
+      v.audio.pause();
+      v.audio.srcObject = null;
+    }
+    try { v.src?.disconnect(); } catch { /* ok */ }
+    VOZ.ultimaFala.delete(id);
+  }
+  function fecharTodaVoz() {
+    for (const id of [...VOZ.pcs.keys()]) fecharVoz(id);
+    VOZ.tentativas.clear();
+  }
+
+  async function iniciarVoz(id) {
+    const v = novaVoz(id);
+    v.sess = Math.random().toString(36).slice(2, 10);
+    const tr = v.pc.addTransceiver('audio', { direction: 'sendrecv' });
+    if (VOZ.mic) await tr.sender.replaceTrack(VOZ.mic.faixa).catch(() => {});
+    const oferta = await v.pc.createOffer();
+    if (VOZ.pcs.get(id) !== v) return;
+    await v.pc.setLocalDescription(oferta);
+    sinal(id, { k: 'voz-offer', sess: v.sess, sdp: v.pc.localDescription.toJSON() });
+  }
+
+  async function vozOferta(id, d) {
+    if (!S.sala || typeof d.sess !== 'string') return;
+    const v = novaVoz(id);
+    v.sess = d.sess;
+    await v.pc.setRemoteDescription(d.sdp);
+    const tr = v.pc.getTransceivers()[0];
+    if (tr) {
+      tr.direction = 'sendrecv';
+      if (VOZ.mic) await tr.sender.replaceTrack(VOZ.mic.faixa).catch(() => {});
+    }
+    const resposta = await v.pc.createAnswer();
+    if (VOZ.pcs.get(id) !== v) return;
+    await v.pc.setLocalDescription(resposta);
+    sinal(id, { k: 'voz-answer', sess: v.sess, sdp: v.pc.localDescription.toJSON() });
+    const pend = v.pending;
+    v.pending = [];
+    for (const p of pend) if (p.sess === v.sess) v.pc.addIceCandidate(p.c).catch(() => {});
+  }
+
+  async function vozResposta(id, d) {
+    const v = VOZ.pcs.get(id);
+    if (!v || v.sess !== d.sess || v.pc.signalingState !== 'have-local-offer') return;
+    await v.pc.setRemoteDescription(d.sdp);
+    const pend = v.pending;
+    v.pending = [];
+    for (const p of pend) if (p.sess === v.sess) v.pc.addIceCandidate(p.c).catch(() => {});
+  }
+
+  function vozIce(id, d) {
+    const v = VOZ.pcs.get(id);
+    if (!v) return;
+    if (d.sess === v.sess && v.pc.remoteDescription) v.pc.addIceCandidate(d.c).catch(() => {});
+    else {
+      v.pending.push(d);
+      if (v.pending.length > 100) v.pending.shift();
+    }
+  }
+
+  function reconectarVoz(id) {
+    const n = (VOZ.tentativas.get(id) || 0) + 1;
+    VOZ.tentativas.set(id, n);
+    if (n > 4) return;
+    setTimeout(() => {
+      if (!vizinhosDeSala().has(id)) return;
+      if (S.myId < id) iniciarVoz(id).catch(() => {});
+      else sinal(id, { k: 'voz-oi' });
+    }, 1500 * n);
+  }
+
+  // ----- ouvir os outros -----
+  function aplicarSomDaVoz(id, v) {
+    if (!v.audio) return;
+    v.audio.muted = VOZ.surdo || !!userById(id)?.silenciado;
+  }
+  function ouvirVoz(id, v, stream) {
+    if (!v.audio) {
+      v.audio = new Audio();
+      v.audio.autoplay = true;
+    }
+    v.audio.srcObject = stream;
+    aplicarSomDaVoz(id, v);
+    v.audio.play().catch(() => { /* destrava no próximo clique */ });
+    try {
+      const c = audioCtx();
+      try { v.src?.disconnect(); } catch { /* ok */ }
+      v.src = c.createMediaStreamSource(stream);
+      v.analisador = c.createAnalyser();
+      v.analisador.fftSize = 512;
+      v.src.connect(v.analisador);
+    } catch { v.analisador = null; }
+  }
+  function destravarVozes() {
+    for (const v of VOZ.pcs.values()) if (v.audio?.paused && v.audio.srcObject) v.audio.play().catch(() => {});
+  }
+  document.addEventListener('pointerdown', destravarVozes, true);
+  document.addEventListener('keydown', destravarVozes, true);
+
+  // Quem está falando: contorno verde no avatar
+  const bufVoz = new Float32Array(512);
+  setInterval(() => {
+    const agora = Date.now();
+    if (VOZ.aberto && transmitindoVoz()) VOZ.ultimaFala.set(S.myId, agora);
+    for (const [id, v] of VOZ.pcs) {
+      if (!v.analisador || v.audio?.muted) continue;
+      v.analisador.getFloatTimeDomainData(bufVoz);
+      let soma = 0;
+      for (const x of bufVoz) soma += x * x;
+      if (10 * Math.log10(soma / bufVoz.length + 1e-12) > -55) VOZ.ultimaFala.set(id, agora);
+    }
+    const falando = new Set();
+    for (const [id, t] of VOZ.ultimaFala) if (agora - t < 300) falando.add(id);
+    VOZ.falando = falando;
+    for (const el of document.querySelectorAll('[data-voz]')) el.classList.toggle('falando', falando.has(el.dataset.voz));
+  }, 100);
+
+  // ----- botões -----
+  function mudouVoz() {
+    guardarVoz();
+    for (const [id, v] of VOZ.pcs) aplicarSomDaVoz(id, v);
+    aplicarMudoEco(); // as transmissões também ficam mudas quando a sala está muda
+    if (S.sala) api('state', { sala: S.sala, live: S.live, ...estadoVoz() }).catch(() => {});
+    atualizarMicrofone();
+    renderTudo();
+  }
+  function alternarMudo() {
+    if (VOZ.mudo || VOZ.surdo) {
+      if (silenciado()) return toast('Um admin silenciou você: o microfone fica desligado até o silêncio acabar.');
+      VOZ.mudo = false;
+      if (VOZ.surdo) {
+        VOZ.surdo = false;
+        VOZ.mudoAntes = null;
+      }
+      if (VOZ.cfg.modo === 'ptt' && !VOZ.cfg.atalho) toast('Escolha a tecla do apertar-para-falar em Opções de áudio.', 6000);
+    } else {
+      VOZ.mudo = true;
+    }
+    mudouVoz();
+  }
+  function alternarSurdo() {
+    if (VOZ.surdo) {
+      VOZ.surdo = false;
+      if (VOZ.mudoAntes !== null) VOZ.mudo = VOZ.mudoAntes;
+      VOZ.mudoAntes = null;
+    } else {
+      VOZ.surdo = true;
+      VOZ.mudoAntes = VOZ.mudo;
+      VOZ.mudo = true; // mutar a sala também desliga o microfone
+    }
+    mudouVoz();
+  }
+
+  function renderVoz() {
+    const mudo = VOZ.mudo || silenciado();
+    for (const sel of ['#micBtn', '#vpMic']) {
+      const b = $(sel);
+      if (!b) continue;
+      b.innerHTML = icon(mudo ? 'micOff' : 'mic');
+      b.classList.toggle('desligado', mudo);
+      b.title = silenciado() ? 'Um admin silenciou você' : mudo ? 'Ligar o microfone' : 'Desligar o microfone (mudo)';
+      b.setAttribute('aria-label', b.title);
+      b.setAttribute('aria-pressed', String(mudo));
+    }
+    for (const sel of ['#surdoBtn', '#vpSurdo']) {
+      const b = $(sel);
+      if (!b) continue;
+      b.innerHTML = icon(VOZ.surdo ? 'foneOff' : 'fone');
+      b.classList.toggle('desligado', VOZ.surdo);
+      b.title = VOZ.surdo ? 'Ligar o som da sala' : 'Mutar a sala (você para de ouvir e o microfone desliga)';
+      b.setAttribute('aria-label', b.title);
+      b.setAttribute('aria-pressed', String(VOZ.surdo));
+    }
+  }
+
+  // ícones de mudo / sala muda ao lado do nome de cada pessoa da sala
+  function vozIcones(u) {
+    if (!u.sala) return '';
+    if (u.silenciado) return `<span class="voz-icone vermelho" title="Silenciado por um admin">${icon('micOff')}</span>`;
+    if (u.surdo) return `<span class="voz-icone" title="Mutou a sala">${icon('foneOff')}</span>`;
+    if (u.mudo) return `<span class="voz-icone" title="Microfone desligado">${icon('micOff')}</span>`;
+    return '';
+  }
+  const avatarVoz = (u) => avatar(u).replace('<div class="avatar', `<div data-voz="${esc(u.id)}" class="avatar`);
+
+  // ----- janela "Opções de áudio" -----
+  async function abrirOpcoesAudio() {
+    let cfg = { ...VOZ.cfg };
+    const pct = (db) => Math.max(0, Math.min(100, ((db + 80) / 80) * 100));
+    abrirModal({
+      titulo: 'Opções de áudio',
+      ok: 'Pronto',
+      corpo: `<div class="voz-opcoes" id="vozOpcoes">
+        <label class="vo-campo"><span class="ap-rotulo">Microfone</span>
+          <select id="voDispositivo"><option value="">Padrão do sistema</option></select></label>
+        <div><span class="ap-rotulo">Quando o microfone abre</span>
+          <div class="segmento" role="radiogroup" aria-label="Modo do microfone">
+            <label><input type="radio" name="vmodo" value="voz"${cfg.modo === 'voz' ? ' checked' : ''}><span>Quando eu falo</span></label>
+            <label><input type="radio" name="vmodo" value="ptt"${cfg.modo === 'ptt' ? ' checked' : ''}><span>Apertar para falar</span></label>
+          </div></div>
+        <div id="voPtt">
+          <span class="ap-rotulo">Tecla do apertar-para-falar</span>
+          <div class="sb-atalho"><kbd id="voAtalho"></kbd><button type="button" class="btn sm" id="voGravar">Gravar tecla</button></div>
+          <p class="vo-dica">${PROGRAMA?.ptt
+            ? 'Funciona até dentro de jogos. Pode ser uma tecla, uma combinação ou um botão do mouse (meio ou laterais).'
+            : 'No navegador, só funciona com esta janela em foco. No programa para Windows, funciona até dentro de jogos.'}</p>
+        </div>
+        <div>
+          <span class="ap-rotulo">Teste do microfone</span>
+          <div class="medidor" id="voMedidor" aria-hidden="true"><div class="nivel"></div><div class="marca"></div></div>
+          <div id="voSens">
+            <label class="sons-check"><input type="checkbox" id="voAuto"${cfg.sensibilidade === 'auto' ? ' checked' : ''}> Sensibilidade automática (recomendado)</label>
+            <input type="range" id="voLimiar" min="-80" max="-10" step="1" value="${cfg.sensibilidade === 'auto' ? -50 : cfg.sensibilidade}" aria-label="Sensibilidade do microfone">
+          </div>
+          <p class="vo-dica" id="voMedDica"></p>
+        </div>
+        <label class="sons-check"><input type="checkbox" id="voRuido"${cfg.ruido ? ' checked' : ''}> Supressão de ruído (tira barulho de teclado, ventilador e fundo)</label>
+        <p class="vo-dica">O cancelamento de eco fica sempre ligado. Com fone de ouvido o som fica ainda melhor.</p>
+      </div>`,
+      aoConfirmar: () => {},
+    });
+    $('#modalCancel').hidden = true; // tudo vale na hora
+    const caixa = $('#vozOpcoes');
+    const sel = $('#voDispositivo');
+    const nivel = caixa.querySelector('.medidor .nivel');
+    const marca = caixa.querySelector('.medidor .marca');
+    const limiar = $('#voLimiar');
+
+    const aplicar = () => {
+      VOZ.teste = document.body.contains(caixa);
+      VOZ.cfg = validarCfgVoz(cfg);
+      cfg = { ...VOZ.cfg };
+      guardarVoz();
+      atualizarMicrofone();
+      mostrar();
+    };
+    const mostrar = () => {
+      if (!document.body.contains(caixa)) return;
+      const aviso = !S.sala ? 'Você não está numa sala: é só um teste.'
+        : VOZ.surdo || VOZ.mudo || silenciado() ? 'Seu microfone está desligado: é só um teste, ninguém está ouvindo.' : '';
+      $('#voPtt').hidden = cfg.modo !== 'ptt';
+      $('#voSens').hidden = cfg.modo !== 'voz';
+      marca.hidden = cfg.modo !== 'voz';
+      $('#voAtalho').textContent = cfg.atalho ? textoAtalho(cfg.atalho) : 'nenhuma';
+      limiar.disabled = cfg.sensibilidade === 'auto';
+      $('#voMedDica').textContent = cfg.modo === 'ptt'
+        ? (cfg.atalho ? `Segure ${textoAtalho(cfg.atalho)} e fale: a barra fica verde enquanto você segura.` : 'Escolha uma tecla para poder falar.')
+        : cfg.sensibilidade === 'auto'
+          ? 'Fale normalmente: a barra fica verde quando o microfone abre. No automático, o limite (a marca) acompanha o barulho do seu ambiente.'
+          : 'Arraste para a direita se o microfone abrir com barulho de fundo, ou para a esquerda se cortar a sua voz.';
+      if (aviso) $('#voMedDica').textContent += ` ${aviso}`;
+    };
+    VOZ.aoMedir = (d) => {
+      nivel.style.width = `${pct(d.nivel)}%`;
+      const abre = cfg.modo === 'ptt' ? VOZ.ptt : !!d.voz;
+      nivel.classList.toggle('aberto', abre);
+      marca.style.left = `${pct(d.limiar)}%`;
+      if (cfg.sensibilidade === 'auto') limiar.value = String(Math.round(d.limiar));
+    };
+
+    async function listarMics() {
+      let devs = [];
+      try {
+        devs = (await navigator.mediaDevices.enumerateDevices())
+          .filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications');
+      } catch { devs = []; }
+      if (!document.body.contains(sel)) return;
+      sel.innerHTML = '<option value="">Padrão do sistema</option>'
+        + devs.map((d, i) => `<option value="${esc(d.deviceId)}">${esc(d.label || `Microfone ${i + 1}`)}</option>`).join('');
+      sel.value = devs.some((d) => d.deviceId === cfg.dispositivo) ? cfg.dispositivo : '';
+    }
+
+    caixa.addEventListener('change', (e) => {
+      const t = e.target;
+      if (t.id === 'voDispositivo') cfg.dispositivo = t.value;
+      else if (t.name === 'vmodo') {
+        cfg.modo = t.value;
+        if (cfg.modo === 'ptt' && !cfg.atalho) setTimeout(() => $('#voGravar')?.click(), 50);
+      } else if (t.id === 'voAuto') cfg.sensibilidade = t.checked ? 'auto' : Number(limiar.value);
+      else if (t.id === 'voRuido') cfg.ruido = t.checked;
+      else return;
+      aplicar();
+    });
+    limiar.addEventListener('input', () => {
+      if (cfg.sensibilidade === 'auto') return;
+      cfg.sensibilidade = Number(limiar.value);
+      aplicar();
+    });
+
+    // gravar a tecla do apertar-para-falar
+    $('#voGravar').addEventListener('click', () => {
+      if (VOZ.gravandoPtt) return;
+      const btn = $('#voGravar');
+      VOZ.gravandoPtt = true;
+      definirPtt(false);
+      if (PROGRAMA?.ptt) { VOZ.pttGlobal = ''; PROGRAMA.ptt(null).catch(() => {}); }
+      btn.textContent = 'Aperte a tecla…';
+      btn.classList.add('primary');
+      let modificador = null;
+      const fim = (atalho) => {
+        VOZ.cancelarGravacao = null;
+        window.removeEventListener('keydown', tecla, true);
+        window.removeEventListener('keyup', tecla, true);
+        window.removeEventListener('mousedown', mouse, true);
+        VOZ.gravandoPtt = false;
+        btn.textContent = 'Gravar tecla';
+        btn.classList.remove('primary');
+        if (atalho) cfg.atalho = atalho;
+        aplicar();
+      };
+      const tecla = (e) => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (e.code.startsWith('Meta')) return;
+        if (e.type === 'keydown') {
+          if (e.key === 'Escape') return fim(null);
+          if (ehModificador(e.code)) { modificador = e.code; return; }
+          return fim({ code: e.code, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey });
+        }
+        // soltou um modificador sozinho: a tecla é ele mesmo (Ctrl esquerdo, Alt Gr...)
+        if (modificador === e.code) fim({ code: e.code, ctrl: false, alt: false, shift: false });
+      };
+      const mouse = (e) => {
+        const code = BOTOES_MOUSE[e.button];
+        if (!code) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        fim({ code, ctrl: false, alt: false, shift: false });
+      };
+      VOZ.cancelarGravacao = () => fim(null);
+      window.addEventListener('keydown', tecla, true);
+      window.addEventListener('keyup', tecla, true);
+      window.addEventListener('mousedown', mouse, true);
+    });
+
+    mostrar();
+    // microfone ligado enquanto a janela está aberta (só para o medidor, nada sai se você estiver mudo)
+    VOZ.teste = true;
+    atualizarMicrofone().then(listarMics);
+    const aoMudarDispositivos = () => listarMics();
+    navigator.mediaDevices?.addEventListener?.('devicechange', aoMudarDispositivos);
+    const obs = new MutationObserver(() => {
+      if (!$('#modal').hidden && document.body.contains(caixa)) return;
+      obs.disconnect();
+      navigator.mediaDevices?.removeEventListener?.('devicechange', aoMudarDispositivos);
+      VOZ.aoMedir = null;
+      VOZ.teste = false;
+      VOZ.cancelarGravacao?.();
+      atualizarMicrofone();
+    });
+    obs.observe($('#modal'), { attributes: true, attributeFilter: ['hidden'] });
+    obs.observe($('#modalBody'), { childList: true });
   }
 
   // ================= Aparência: tema claro/escuro e paleta de cores =================
@@ -1964,6 +2639,12 @@
     $('#toggleMembersBtn').innerHTML = icon('people');
     $('#logoutBtn').innerHTML = icon('logout');
     $('#aparenciaBtn').innerHTML = icon('paleta');
+    $('#audioBtn').innerHTML = icon('engrenagem');
+    $('#vozOpcoesBtn').innerHTML = icon('engrenagem');
+    for (const sel of ['#micBtn', '#vpMic']) $(sel).addEventListener('click', alternarMudo);
+    for (const sel of ['#surdoBtn', '#vpSurdo']) $(sel).addEventListener('click', alternarSurdo);
+    for (const sel of ['#audioBtn', '#vozOpcoesBtn']) $(sel).addEventListener('click', abrirOpcoesAudio);
+    renderVoz();
     $('#aparenciaBtn').addEventListener('click', abrirAparencia);
     $('#vpLeave').innerHTML = icon('logout');
     $('#sendBtn').innerHTML = icon('send');
@@ -2184,8 +2865,16 @@
     S.mutedUntil = m.until || 0;
     atualizarComposer();
     if (m.until) {
+      // o microfone fica desligado e só volta quando a própria pessoa ligar de novo
+      VOZ.mudo = true;
+      guardarVoz();
+    }
+    atualizarMicrofone();
+    renderTudo();
+    if (m.until) {
       const longo = m.until - Date.now() > 300 * 864e5;
-      toast(`${m.by} silenciou você no chat ${longo ? 'até segunda ordem' : `até ${hhmm(new Date(m.until))}`}.`, 6000);
+      toast(`${m.by} silenciou você no chat e na voz ${longo ? 'até segunda ordem' : `até ${hhmm(new Date(m.until))}`}.`, 6000);
+      setTimeout(renderVoz, Math.min(m.until - Date.now() + 500, 2 ** 31 - 1));
     } else {
       toast(`${m.by} tirou o seu silêncio. Pode falar de novo!`);
     }
@@ -2257,7 +2946,7 @@
     { nome: 'kick', args: '<nome> [motivo]', desc: 'Expulsar (a pessoa pode voltar)' },
     { nome: 'ban', args: '<nome> [motivo]', desc: 'Banir do servidor' },
     { nome: 'unban', args: '<nome>', desc: 'Tirar o banimento' },
-    { nome: 'mute', args: '<nome> [minutos]', desc: 'Silenciar no chat (sem minutos = até tirar)' },
+    { nome: 'mute', args: '<nome> [minutos]', desc: 'Silenciar no chat e na voz (sem minutos = até tirar)' },
     { nome: 'unmute', args: '<nome>', desc: 'Tirar o silêncio' },
     { nome: 'parar', args: '<nome>', desc: 'Encerrar a transmissão de alguém' },
     { nome: 'tirar', args: '<nome>', desc: 'Tirar alguém da sala de tela' },
@@ -2507,7 +3196,7 @@
       let form = '';
       if (P.form && P.form.uid === u.id) {
         if (P.form.tipo === 'mute') {
-          form = `<div class="ap-form"><span>Silenciar ${esc(u.name)} no chat (ainda pode assistir e transmitir):</span>
+          form = `<div class="ap-form"><span>Silenciar ${esc(u.name)} no chat e na voz (ainda pode assistir e transmitir):</span>
             <select id="apMuteMin"><option value="5">5 minutos</option><option value="15">15 minutos</option><option value="60" selected>1 hora</option><option value="1440">1 dia</option><option value="0">Até eu tirar</option></select>
             <button class="btn sm primary" data-act="mute">Silenciar</button><button class="btn sm ghost" data-act="cancelar">Cancelar</button></div>`;
         } else if (P.form.tipo === 'rename') {
@@ -2816,7 +3505,7 @@
     const naTransmissao = S.live && !!S.envio;
     if (naTransmissao) ganho.connect(S.envio.dest);
     // ouvir aqui (se o som do PC estiver sendo capturado sem filtro, não toca aqui para não ir em dobro)
-    if (!naTransmissao || (SB.ouvir && !S.evitarEco)) ganho.connect(c.destination);
+    if ((!naTransmissao || (SB.ouvir && !S.evitarEco)) && !VOZ.surdo) ganho.connect(c.destination);
     fonte.onended = () => {
       if (tocando.get(id)?.fonte !== fonte) return;
       tocando.delete(id);
@@ -2831,7 +3520,11 @@
   }
 
   // ----- atalhos -----
-  const NOMES_TECLAS = { Space: 'Espaço', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Minus: '-', Equal: '=', Backquote: "'", BracketLeft: '´', BracketRight: '[', Backslash: ']', Semicolon: 'Ç', Quote: '~', Comma: ',', Period: '.', Slash: ';', IntlRo: '/', Insert: 'Insert', Delete: 'Delete', Home: 'Home', End: 'End', PageUp: 'PgUp', PageDown: 'PgDn', Enter: 'Enter', Tab: 'Tab' };
+  const NOMES_TECLAS = {
+    ControlLeft: 'Ctrl esquerdo', ControlRight: 'Ctrl direito', ShiftLeft: 'Shift esquerdo', ShiftRight: 'Shift direito',
+    AltLeft: 'Alt', AltRight: 'Alt Gr', CapsLock: 'Caps Lock', Backspace: 'Backspace', Escape: 'Esc',
+    MouseMiddle: 'Botão do meio do mouse', MouseBack: 'Mouse 4 (lateral)', MouseForward: 'Mouse 5 (lateral)',
+    Space: 'Espaço', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Minus: '-', Equal: '=', Backquote: "'", BracketLeft: '´', BracketRight: '[', Backslash: ']', Semicolon: 'Ç', Quote: '~', Comma: ',', Period: '.', Slash: ';', IntlRo: '/', Insert: 'Insert', Delete: 'Delete', Home: 'Home', End: 'End', PageUp: 'PgUp', PageDown: 'PgDn', Enter: 'Enter', Tab: 'Tab' };
   function nomeTecla(code) {
     if (/^Key[A-Z]$/.test(code)) return code.slice(3);
     if (/^Digit\d$/.test(code)) return code.slice(5);

@@ -128,4 +128,48 @@ function anexarPorta(porta) {
   return true;
 }
 
-module.exports = { caminho, listar, capturar, parar, anexarPorta };
+// ---- apertar-para-falar: o ajudante vigia uma tecla e avisa "1" (apertou) / "0" (soltou) ----
+let tecla = null; // { proc, args }
+
+function soltarTecla() {
+  const t = tecla;
+  tecla = null;
+  if (!t) return;
+  try { t.proc.stdin.end(); } catch { /* ok */ }
+  try { t.proc.kill(); } catch { /* ok */ }
+  t.aoMudar(false);
+}
+
+// args vem de regras.argumentosDoPtt (só números e opções conhecidas)
+function vigiarTecla(args, aoMudar) {
+  const exe = caminho();
+  if (!exe) return { ok: false, erro: 'O ajudante de teclas não está instalado. Reinstale o programa.' };
+  if (tecla && tecla.chave === args.join(' ')) return { ok: true };
+  soltarTecla();
+  const proc = spawn(exe, args, { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
+  const t = { proc, chave: args.join(' '), aoMudar, apertado: false };
+  tecla = t;
+  const mudar = (v) => {
+    if (tecla !== t || t.apertado === v) return;
+    t.apertado = v;
+    aoMudar(v);
+  };
+  let texto = '';
+  proc.stdout.on('data', (d) => {
+    texto = (texto + d).slice(-64);
+    const linhas = texto.split('\n');
+    texto = linhas.pop();
+    const ultima = linhas.filter((l) => l === '1' || l === '0').pop();
+    if (ultima) mudar(ultima === '1');
+  });
+  const fim = () => {
+    if (tecla !== t) return;
+    mudar(false);
+    tecla = null;
+  };
+  proc.on('error', fim);
+  proc.on('exit', fim);
+  return { ok: true };
+}
+
+module.exports = { caminho, listar, capturar, parar, anexarPorta, vigiarTecla, soltarTecla };
