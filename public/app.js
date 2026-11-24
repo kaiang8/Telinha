@@ -209,7 +209,7 @@
         if (cfg.serverName && cfg.serverName !== MARCA) $('#loginSub').textContent = `Entre em ${cfg.serverName} para conversar e assistir junto com a galera.`;
         $('#passField').hidden = !cfg.needsPassword;
         if (cfg.locked) $('#loginSub').textContent = 'O servidor está trancado agora: só admins conseguem entrar.';
-        if (!semAuto && salvo.name && (salvo.adminPassword || !cfg.needsPassword || salvo.password)) {
+        if (!semAuto && salvo.name && (lembreteAdmin() || salvo.adminPassword || !cfg.needsPassword || salvo.password)) {
           entrar(salvo.name, S.myColor, salvo.password || '', true, salvo.adminPassword || '');
         } else {
           $('#nameInput').focus();
@@ -233,16 +233,30 @@
     renderColorPicker();
   });
 
+  // Aparelho lembrado como admin: a chave fica só aqui; o servidor guarda apenas o resumo dela
+  function lembreteAdmin() {
+    const l = lerSalvo().lembreteAdmin;
+    return l && typeof l.token === 'string' && typeof l.id === 'string' ? l : null;
+  }
+  function esquecerEsteAparelho() {
+    const l = lembreteAdmin();
+    salvar({ lembreteAdmin: null, adminPassword: '' });
+    S.adminPassword = '';
+    if (l && S.token) api('esquecer-lembrete', { token: l.token }).catch(() => {});
+  }
+  let tentativasDeEntrada = 0;
   async function entrar(name, color, password, auto, adminPassword = '') {
     if (!name) return;
     const btn = $('#loginBtn');
     btn.disabled = true;
     $('#loginError').textContent = '';
+    if (!auto) tentativasDeEntrada = 0;
     try {
+      const lembrete = !adminPassword ? lembreteAdmin() : null;
       const r = await fetch('/api/join', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, color, password, adminPassword, device: salvo.device }),
+        body: JSON.stringify({ name, color, password, adminPassword, lembrete: lembrete?.token, device: salvo.device }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -256,14 +270,26 @@
       S.myName = name;
       S.myColor = color;
       S.password = password;
-      S.adminPassword = j.admin ? adminPassword : '';
       S.kicked = null;
-      salvar({ name, color, password, adminPassword: S.adminPassword });
+      tentativasDeEntrada = 0;
+      // a senha de admin nunca fica guardada: o aparelho passa a ser lembrado por uma chave
+      const patch = { name, color, password, adminPassword: '' };
+      if (j.lembrete?.id && j.lembrete?.token) patch.lembreteAdmin = j.lembrete;
+      salvar(patch);
+      // sem chave (não deu para lembrar), a senha fica só na memória, para reconectar
+      S.adminPassword = j.admin && !j.lembrete && !j.lembreteId ? adminPassword : '';
       btn.textContent = 'Conectando…';
       conectar();
     } catch (e) {
-      if (e.campo === 'admin') {
-        salvar({ adminPassword: '' });
+      // servidor acordando ou atualizando: tenta de novo sozinho, sem perder nada
+      if (auto && (e instanceof TypeError || e.status >= 500) && tentativasDeEntrada < 40) {
+        tentativasDeEntrada++;
+        $('#loginError').textContent = 'O servidor está acordando. Tentando de novo…';
+        setTimeout(() => entrar(name, color, password, true, adminPassword), 3000);
+        return;
+      }
+      if (e.campo === 'admin' || e.campo === 'lembrete') {
+        salvar({ adminPassword: '', ...(e.campo === 'lembrete' ? { lembreteAdmin: null } : {}) });
         $('#adminField').hidden = false;
         $('#adminToggle').textContent = 'Entrar sem ser admin';
       } else if (e.status === 403) salvar({ password: '' });
@@ -346,13 +372,23 @@
       const r = await fetch('/api/join', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: S.myName, color: S.myColor, password: S.password, adminPassword: S.adminPassword, device: salvo.device }),
+        body: JSON.stringify({
+          name: S.myName, color: S.myColor, password: S.password, adminPassword: S.adminPassword,
+          lembrete: !S.adminPassword && S.isAdmin ? lembreteAdmin()?.token : undefined, device: salvo.device,
+        }),
       });
       if (S.kicked) return;
       if (r.status === 403) {
         const j = await r.json().catch(() => ({}));
         if (j.banned) return foiExpulso({ banned: true, reason: '' });
-        if (j.campo === 'admin') { S.adminPassword = ''; salvar({ adminPassword: '' }); S.rejoinTimer = null; return reentrar(); }
+        if (j.campo === 'admin' || j.campo === 'lembrete') {
+          S.adminPassword = '';
+          S.isAdmin = false;
+          salvar({ adminPassword: '', lembreteAdmin: null });
+          S.rejoinTimer = null;
+          toast('Este aparelho não é mais lembrado como admin. Para voltar, use /admin <senha>.', 8000);
+          return reentrar();
+        }
         salvar({ password: '' });
         location.reload();
         return;
@@ -3895,9 +3931,11 @@
         titulo: 'Sair do servidor',
         ok: 'Sair',
         perigo: true,
-        corpo: '<p>Quer sair? Da próxima vez você vai precisar digitar o apelido de novo.</p>',
+        corpo: `<p>Quer sair? Da próxima vez você vai precisar digitar o apelido de novo.${lembreteAdmin() ? ' Este aparelho também deixa de ser lembrado como admin.' : ''}</p>`,
         aoConfirmar: async () => {
-          salvar({ name: '', password: '', adminPassword: '' });
+          const l = lembreteAdmin();
+          if (l) await api('esquecer-lembrete', { token: l.token }).catch(() => {});
+          salvar({ name: '', password: '', adminPassword: '', lembreteAdmin: null });
           sairDaPagina();
           location.reload();
         },
@@ -4006,8 +4044,7 @@
   function onRole(m) {
     S.isAdmin = !!m.admin;
     if (!m.admin) {
-      S.adminPassword = '';
-      salvar({ adminPassword: '' });
+      esquecerEsteAparelho();
       fecharPainelAdmin();
     }
     toast(m.admin
@@ -4108,9 +4145,11 @@
     switch (nome) {
       case 'admin':
         if (!resto) throw new Error('Use: /admin <senha>');
-        await api('admin-login', { password: resto });
-        S.adminPassword = resto;
-        salvar({ adminPassword: resto });
+        {
+          const r = await api('admin-login', { password: resto });
+          if (r.lembrete?.token) salvar({ lembreteAdmin: r.lembrete, adminPassword: '' });
+          else S.adminPassword = resto;
+        }
         return;
       case 'sairadmin':
         await api('admin-logout');
@@ -4375,8 +4414,9 @@
         <div class="ap-row"><input id="apAdminSenha" data-keep type="password" maxlength="100" placeholder="Nova senha de admin" autocomplete="new-password"><button class="btn sm primary" data-act="admin-senha">Trocar</button></div>`}</div>
       <div class="ap-section"><h4>Onde ficam os dados</h4>
         <p>${st.storage === 'upstash' ? 'No Upstash (banco na nuvem): canais, mensagens, banimentos e configurações sobrevivem a reinícios.' : 'No arquivo <b>data.json</b>, na pasta do servidor. Numa hospedagem grátis, esse arquivo some quando o serviço reinicia: configure o Upstash (veja o LEIA-ME).'}</p></div>
+      ${secaoAparelhos(d)}
       <div class="ap-section"><h4>Modo admin</h4>
-        <p>Sair do modo admin neste navegador. Para voltar, use a senha de admin.</p>
+        <p>Sair do modo admin neste aparelho (ele também deixa de ser lembrado). Para voltar, use a senha de admin.</p>
         <button class="btn sm" data-act="sairadmin">Sair do modo admin</button></div>`;
   }
 
@@ -4435,6 +4475,20 @@
       ${linhas || `<div class="ap-empty">${f ? 'Nada encontrado.' : 'Ninguém entrou ainda.'}</div>`}`;
   }
 
+  // Aparelhos lembrados como admin (não precisam digitar a senha)
+  function secaoAparelhos(d) {
+    const meu = lembreteAdmin()?.id;
+    const lista = (d.aparelhos || []).slice().sort((a, b) => b.usado - a.usado);
+    return `<div class="ap-section"><h4>Aparelhos lembrados como admin</h4>
+      <p>Quem entra com a senha de admin fica lembrado naquele navegador ou programa e não precisa digitar de novo. A senha não fica guardada no aparelho, só uma chave. Esquecer um aparelho faz ele pedir a senha na próxima vez. Trocar a senha de admin esquece todos; sem uso por 180 dias, também.</p>
+      ${lista.length ? `<div class="ap-aparelhos">${lista.map((a) => `<div class="ap-aparelho">
+          <div><b>${esc(a.nome)}</b>${a.id === meu ? ' <span class="ap-tag">este aparelho</span>' : ''}
+            <div class="muted small">${esc(a.aparelho)} · lembrado ${esc(quandoCurto(a.criado))} · último uso ${esc(quandoCurto(a.usado))}</div></div>
+          <button class="btn sm ghost" data-act="esquecer-aparelho" data-id="${esc(a.id)}">Esquecer</button></div>`).join('')}</div>` : '<p>Nenhum aparelho lembrado.</p>'}
+      ${lista.filter((a) => a.id !== meu).length > 0 && lista.length > 1 ? '<button class="btn sm" data-act="esquecer-outros">Esquecer todos, menos este</button>' : ''}
+    </div>`;
+  }
+
   function abaComandos() {
     return `<p class="ap-hint">Digite no chat. Os nomes podem ter espaços e não precisam estar completos: <b>/kick jo</b> funciona se só houver um "Jo…" online.</p>
       <table class="ap-cmds">${COMANDOS.map((c) => `<tr><td>/${c.nome} <span class="args">${esc(c.args)}</span></td><td>${esc(c.desc)}</td></tr>`).join('')}</table>`;
@@ -4485,6 +4539,16 @@
           return feito(`${n} foi banido.${r.soAparelho ? ' (Só o navegador: o IP é o mesmo de outra pessoa online.)' : ''}`);
         }
         case 'unban': await adm('unban', { id: b.closest('[data-ban]').dataset.ban }); return feito('Banimento removido.');
+        case 'esquecer-aparelho': {
+          const id = b.dataset.id;
+          const este = id === lembreteAdmin()?.id;
+          await adm('esquecer-aparelho', { id });
+          if (este) salvar({ lembreteAdmin: null });
+          return feito(este ? 'Este aparelho foi esquecido: na próxima vez, ele pede a senha de admin.' : 'Aparelho esquecido: na próxima vez, ele pede a senha de admin.');
+        }
+        case 'esquecer-outros':
+          await adm('esquecer-aparelhos', { manter: lembreteAdmin()?.id || '' });
+          return feito('Os outros aparelhos foram esquecidos.');
         case 'apagar-relato':
           await adm('apagar-relato', { id: b.closest('[data-relato]').dataset.relato });
           return carregarProblemas();
@@ -4528,9 +4592,9 @@
         }
         case 'admin-senha': {
           const nova = val('apAdminSenha');
-          await adm('admin-password', { senha: nova });
-          S.adminPassword = nova;
-          salvar({ adminPassword: nova });
+          const r = await adm('admin-password', { senha: nova });
+          if (r.lembrete?.token) salvar({ lembreteAdmin: r.lembrete, adminPassword: '' });
+          S.adminPassword = r.lembrete ? '' : nova;
           document.getElementById('apAdminSenha').value = '';
           return feito('Senha de admin trocada.');
         }

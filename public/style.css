@@ -979,3 +979,6 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
 .trafego-partes { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 4px; font-size: 13px; color: var(--suave); }
 .trafego-partes li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px dashed var(--linha); }
 .trafego-partes li span:last-child { font-variant-numeric: tabular-nums; color: var(--texto-forte); font-weight: 600; }
+.ap-aparelhos { display: grid; gap: 6px; margin-bottom: 10px; }
+.ap-aparelho { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--hover); border: 1px solid var(--linha); }
+.ap-aparelho b { color: var(--texto-forte); }

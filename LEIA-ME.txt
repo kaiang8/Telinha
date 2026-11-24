@@ -166,6 +166,18 @@ COMO VIRAR ADMIN
     admin. O admin entra mesmo se o servidor estiver trancado.
   - Ou, já dentro do site, digite no chat:  /admin SUA-SENHA
 
+LEMBRAR O APARELHO (não precisa digitar a senha toda vez)
+  - Depois de entrar uma vez com a senha de admin, aquele navegador ou
+    o programa fica lembrado e entra como admin sozinho, até depois de
+    o servidor reiniciar. O navegador e o programa contam como
+    aparelhos separados: digite a senha uma vez em cada um.
+  - A senha não fica guardada no aparelho: ele recebe uma chave
+    própria, e o banco (Upstash) guarda só um resumo dela.
+  - No painel (aba Servidor), "Aparelhos lembrados como admin" mostra
+    todos, com o botão Esquecer. Um aparelho também é esquecido quando
+    você sai do modo admin ou sai do servidor nele, quando a senha de
+    admin muda, ou depois de 180 dias sem uso.
+
 QUAL É A SENHA DE ADMIN
   - Na nuvem: a que você colocou em ADMIN_SENHA no Render. Para
     trocar, mude a variável lá; o serviço reinicia sozinho.
@@ -182,6 +194,9 @@ ESQUECI A SENHA DE ADMIN
   - No seu PC: edite o iniciar.bat e acrescente, embaixo da linha
     set "ABRIR_NAVEGADOR=1", a linha:
         set "ADMIN_SENHA=sua-senha-nova"
+  - Trocar a senha de admin (no Render ou no painel) faz todos os
+    aparelhos lembrados pedirem a senha nova; no painel, quem trocou
+    continua lembrado.
   - Errou a senha 8 vezes? Aquele IP fica bloqueado por 10 minutos,
     mesmo com a senha certa. Espere, ou reinicie o serviço.
 

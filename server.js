@@ -77,6 +77,7 @@ let data = {
   settings: { locked: false }, // serverName, senhaHash, adminHash, adminGerada
   bans: [],
   mutes: [],
+  lembretes: [], // aparelhos lembrados como admin (só o resumo da chave, nunca a chave)
 };
 let podeSalvar = true;
 
@@ -87,6 +88,7 @@ function aplicarDados(raw) {
   if (raw.settings && typeof raw.settings === 'object') data.settings = { locked: false, ...raw.settings };
   if (Array.isArray(raw.bans)) data.bans = raw.bans;
   if (Array.isArray(raw.mutes)) data.mutes = raw.mutes;
+  if (Array.isArray(raw.lembretes)) data.lembretes = raw.lembretes;
 }
 
 async function upstash(comando, { semContar = false } = {}) {
@@ -419,6 +421,51 @@ function garantirSenhaAdmin() {
   salvar();
 }
 
+// ---------- Aparelhos lembrados como admin ----------
+// Quem entra com a senha de admin ganha uma chave longa e aleatória, guardada só no aparelho.
+// O servidor guarda apenas o resumo (SHA-256) dela. Vale por 180 dias sem uso e deixa de valer
+// sozinha quando a senha de admin muda. Dá para esquecer um aparelho pelo painel de admin.
+const LEMBRETE_DIAS = 180;
+const resumo = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
+let versaoMemo = null;
+function versaoSenhaAdmin() {
+  // marca que muda quando a senha de admin muda (sem guardar nada que revele a senha)
+  if (ADMIN_SENHA_ENV) {
+    if (!data.settings.saltLembrete) {
+      data.settings.saltLembrete = crypto.randomBytes(16).toString('hex');
+      salvar();
+    }
+    if (versaoMemo?.salt !== data.settings.saltLembrete) {
+      versaoMemo = { salt: data.settings.saltLembrete, v: 'e' + resumo(crypto.scryptSync(ADMIN_SENHA_ENV, data.settings.saltLembrete, 32)).slice(0, 16) };
+    }
+    return versaoMemo.v;
+  }
+  return 'p' + resumo(data.settings.adminHash || '').slice(0, 16);
+}
+function limparLembretes() {
+  const limite = Date.now() - LEMBRETE_DIAS * 864e5;
+  const v = versaoSenhaAdmin();
+  const antes = data.lembretes.length;
+  data.lembretes = data.lembretes.filter((r) => r && r.usado >= limite && r.versao === v).slice(-30);
+  if (data.lembretes.length !== antes) salvar();
+}
+function criarLembrete(u, req) {
+  limparLembretes();
+  const token = crypto.randomBytes(32).toString('base64url');
+  const agora = Date.now();
+  const reg = { id: crypto.randomBytes(6).toString('hex'), hash: resumo(token), nome: u.name, aparelho: aparelhoDe(req), criado: agora, usado: agora, versao: versaoSenhaAdmin() };
+  data.lembretes.push(reg);
+  data.lembretes = data.lembretes.slice(-30);
+  salvar();
+  return { id: reg.id, token };
+}
+function lembreteValido(token) {
+  if (typeof token !== 'string' || token.length < 30 || token.length > 100) return null;
+  limparLembretes();
+  const h = resumo(token);
+  return data.lembretes.find((r) => r.hash.length === h.length && crypto.timingSafeEqual(Buffer.from(r.hash), Buffer.from(h))) || null;
+}
+
 // ---------- Proteção contra chute de senha ----------
 const tentativas = new Map(); // ip -> { n, desde }
 const JANELA = 10 * 60e3;
@@ -600,6 +647,7 @@ function visaoAdmin() {
     users: [...users.values()].filter((u) => u.joined && !u.kicked).map((u) => ({ ...publicUser(u), ip: u.ip, muted: silencioDe(u) })),
     bans: data.bans,
     problemasNovos: PROBLEMAS.dados.relatos.filter((r) => !r.lido).length,
+    aparelhos: (limparLembretes(), data.lembretes.map((r) => ({ id: r.id, nome: r.nome, aparelho: r.aparelho, criado: r.criado, usado: r.usado }))),
     trafego: trafegoParaAdmin(),
     settings: {
       ...configPublica(),
@@ -860,7 +908,7 @@ function abrirPoll(req, res, url) {
 }
 
 // ---------- Ações de admin ----------
-async function acaoAdmin(u, body, res) {
+async function acaoAdmin(u, body, res, req) {
   const alvo = body.uid ? users.get(String(body.uid)) : null;
   const precisaAlvo = () => {
     if (!alvo || !alvo.joined || alvo.kicked) {
@@ -874,6 +922,16 @@ async function acaoAdmin(u, body, res) {
   switch (body.action) {
     case 'list':
       return json(res, 200, visaoAdmin());
+
+    case 'esquecer-aparelho':
+      data.lembretes = data.lembretes.filter((r) => r.id !== String(body.id));
+      salvar();
+      return json(res, 200, { ok: true });
+
+    case 'esquecer-aparelhos':
+      data.lembretes = body.manter ? data.lembretes.filter((r) => r.id === String(body.manter)) : [];
+      salvar();
+      return json(res, 200, { ok: true });
 
     case 'problemas':
       limparProblemasVelhos();
@@ -1034,8 +1092,9 @@ async function acaoAdmin(u, body, res) {
       if (s.length < 6) return json(res, 400, { error: 'Use pelo menos 6 caracteres' });
       data.settings.adminHash = hashSenha(s.slice(0, 100));
       delete data.settings.adminGerada;
+      data.lembretes = []; // senha nova: os aparelhos lembrados com a antiga deixam de valer
       salvar();
-      return json(res, 200, { ok: true });
+      return json(res, 200, { ok: true, lembrete: criarLembrete(u, req) });
     }
 
     default:
@@ -1160,11 +1219,23 @@ async function api(req, res, url) {
     if (bloqueado(ip)) return json(res, 429, { error: 'Muitas tentativas erradas. Espere uns minutos e tente de novo.' });
     const device = /^[a-z0-9]{8,40}$/i.test(body.device) ? body.device : '';
     let admin = false;
+    let lembrar = false;
+    let lembreteUsado = null;
     if (body.adminPassword) {
       if (!confereSenha(body.adminPassword, hashAdmin())) {
         falhou(ip);
         registrarRecusa(req, ip, limparNome(body.name, 32), 'senha de admin errada');
         return json(res, 403, { error: 'Senha de admin incorreta', campo: 'admin' });
+      }
+      admin = true;
+      lembrar = body.lembrar !== false;
+    } else if (body.lembrete) {
+      // aparelho lembrado: entra como admin sem digitar a senha
+      lembreteUsado = lembreteValido(body.lembrete);
+      if (!lembreteUsado) {
+        falhou(ip);
+        registrarRecusa(req, ip, limparNome(body.name, 32), 'aparelho de admin esquecido');
+        return json(res, 403, { error: 'Este aparelho não está mais lembrado como admin (a senha mudou ou ele foi esquecido). Digite a senha de admin, ou entre sem ser admin.', campo: 'lembrete' });
       }
       admin = true;
     }
@@ -1212,7 +1283,17 @@ async function api(req, res, url) {
     registrarEntrada(u, req);
     // Se o navegador nunca abrir os eventos, some sozinho.
     armarRemocao(u, 30000);
-    return json(res, 200, { id: u.id, token: u.token, admin });
+    if (lembreteUsado) {
+      lembreteUsado.usado = Date.now();
+      lembreteUsado.nome = name;
+      lembreteUsado.aparelho = aparelhoDe(req);
+      salvar();
+    }
+    return json(res, 200, {
+      id: u.id, token: u.token, admin,
+      ...(lembrar ? { lembrete: criarLembrete(u, req) } : {}),
+      ...(lembreteUsado ? { lembreteId: lembreteUsado.id } : {}),
+    });
   }
 
   // Daqui pra baixo precisa estar logado
@@ -1372,7 +1453,7 @@ async function api(req, res, url) {
       console.log(`! ${u.name} entrou no modo admin`);
       enviar(u, { type: 'role', admin: true });
       broadcastPresenca();
-      return json(res, 200, { ok: true });
+      return json(res, 200, { ok: true, ...(body.lembrar !== false ? { lembrete: criarLembrete(u, req) } : {}) });
     }
 
     case 'admin-logout':
@@ -1383,7 +1464,7 @@ async function api(req, res, url) {
 
     case 'admin':
       if (!soAdmin()) return;
-      return acaoAdmin(u, body, res);
+      return acaoAdmin(u, body, res, req);
 
     case 'channel': {
       if (!soAdmin()) return;
@@ -1446,6 +1527,15 @@ async function api(req, res, url) {
     case 'leave':
       removerUsuario(u);
       return json(res, 200, { ok: true });
+
+    case 'esquecer-lembrete': {
+      // o próprio aparelho pede para ser esquecido (precisa mostrar a chave)
+      const h = typeof body.token === 'string' ? resumo(body.token) : '';
+      const antes = data.lembretes.length;
+      data.lembretes = data.lembretes.filter((r) => r.hash !== h);
+      if (data.lembretes.length !== antes) salvar();
+      return json(res, 200, { ok: true });
+    }
 
     default:
       return json(res, 404, { error: 'rota desconhecida' });
