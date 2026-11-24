@@ -911,3 +911,6 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
 .cp-pessoa.pode .cp-estado { color: var(--verde-texto); font-weight: 600; }
 .cp-pessoa input { width: 18px; height: 18px; accent-color: var(--p2); }
 .cp-vazio { margin: 0; font-size: 13px; color: var(--suave); }
+.cp-programa { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cp-estado-camada { flex: 1; min-width: 200px; font-size: 12.5px; line-height: 1.4; color: var(--verde-texto); }
+.cp-estado-camada.aviso { color: var(--alerta); font-weight: 600; }

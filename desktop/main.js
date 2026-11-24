@@ -346,11 +346,28 @@ const CANETA_POR_CIMA = BUILD_WINDOWS >= 19041;
 
 function mostrarOuEsconderTinta(t) {
   if (t.win.isDestroyed()) return;
-  if (t.querVer && t.posicionada) { if (!t.win.isVisible()) t.win.showInactive(); } else if (t.win.isVisible()) t.win.hide();
+  if (t.querVer && t.posicionada) {
+    if (!t.win.isVisible()) {
+      t.win.setContentProtection(t.protegida); // reforça a cada vez que aparece
+      t.win.showInactive();
+      t.win.setAlwaysOnTop(true, 'screen-saver');
+      t.win.moveTop();
+    }
+  } else if (t.win.isVisible()) {
+    t.win.hide();
+  }
+}
+// Por que a camada não pode aparecer (ou null se pode)
+function motivoSemCamada() {
+  if (process.platform !== 'win32') return 'Só funciona no Windows.';
+  if (!CANETA_POR_CIMA) return `Precisa do Windows 10 versão 2004 ou mais novo (o seu é o build ${BUILD_WINDOWS}). Os desenhos aparecem só no site.`;
+  if (!fonteDaTela) return 'O programa não sabe o que você está compartilhando. Pare a transmissão e compartilhe de novo.';
+  if (fonteDaTela.tipo === 'janela' && !ajudante.caminho()) return 'Falta o ajudante do programa para acompanhar a janela. Reinstale o programa.';
+  return null;
 }
 function garantirTinta() {
   if (tinta && !tinta.win.isDestroyed()) return tinta;
-  if (!CANETA_POR_CIMA || !fonteDaTela || !janela || janela.isDestroyed()) return null;
+  if (motivoSemCamada() || !janela || janela.isDestroyed()) return null;
   const win = new BrowserWindow({
     show: false, frame: false, transparent: true, backgroundColor: '#00000000', title: 'Caneta',
     resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false,
@@ -365,7 +382,7 @@ function garantirTinta() {
   win.setContentProtection(true); // fora da captura da tela
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
-  const t = { win, pronta: win.loadFile(tela('tinta.html')).catch(() => {}), vigia: null, timer: null, querVer: false, posicionada: false };
+  const t = { win, pronta: win.loadFile(tela('tinta.html')).catch(() => {}), vigia: null, timer: null, querVer: false, posicionada: false, protegida: true, onde: '' };
   tinta = t;
   win.on('closed', () => {
     t.vigia?.parar();
@@ -374,16 +391,20 @@ function garantirTinta() {
   });
   const f = fonteDaTela;
   if (f.tipo === 'tela') {
-    const d = screen.getAllDisplays().find((x) => String(x.id) === f.displayId) || screen.getPrimaryDisplay();
+    const telas = screen.getAllDisplays();
+    const d = telas.find((x) => String(x.id) === f.displayId) || screen.getPrimaryDisplay();
     win.setBounds(d.bounds);
     t.posicionada = true;
+    t.onde = telas.length > 1 ? `no meio da tela ${telas.indexOf(d) + 1} (de ${telas.length}), a que você está compartilhando` : 'no meio da sua tela';
   } else {
     // janela: o ajudante avisa onde ela está (e se foi minimizada ou fechada)
     t.vigia = ajudante.vigiarJanela(f.hwnd, (r) => {
       if (tinta !== t || win.isDestroyed()) return;
       if (r.fechada || r.min || !r.vis || r.w < 80 || r.h < 60) {
         t.posicionada = false;
+        t.onde = r.fechada ? 'a janela compartilhada foi fechada' : 'a janela compartilhada está minimizada ou escondida';
       } else {
+        t.onde = 'no meio da janela que você está compartilhando';
         const fisico = { x: r.x, y: r.y, width: r.w, height: r.h };
         win.setBounds(process.platform === 'win32' ? screen.screenToDipRect(null, fisico) : fisico);
         t.posicionada = true;
@@ -406,18 +427,18 @@ function fecharTinta() {
   if (!t.win.isDestroyed()) t.win.destroy();
 }
 ipcMain.handle('tinta', async (e, d) => {
-  if (!pedidoConfiavel(e)) return false;
+  if (!pedidoConfiavel(e)) return { ok: false, motivo: 'pedido recusado' };
   if (d === null) { // parou de transmitir
     fecharTinta();
     fonteDaTela = null;
-    return true;
+    return { ok: true };
   }
   const traco = R.validarTraco(d);
-  if (!traco) return false;
+  if (!traco) return { ok: false, motivo: 'traço inválido' };
   const t = garantirTinta();
-  if (!t) return false;
+  if (!t) return { ok: false, motivo: motivoSemCamada() || 'a camada não abriu' };
   await t.pronta;
-  if (t.win.isDestroyed()) return false;
+  if (t.win.isDestroyed()) return { ok: false, motivo: 'a camada fechou' };
   t.win.webContents.send('tinta', traco);
   t.querVer = true;
   mostrarOuEsconderTinta(t);
@@ -425,7 +446,19 @@ ipcMain.handle('tinta', async (e, d) => {
   // assim a camada não fica por cima do jogo à toa
   clearTimeout(t.timer);
   t.timer = setTimeout(() => { t.querVer = false; mostrarOuEsconderTinta(t); }, 6000);
-  return true;
+  return { ok: true, onde: t.onde, visivel: t.win.isVisible() };
+});
+// Estado da camada, para o painel da caneta mostrar (e ajudar a descobrir problemas)
+ipcMain.handle('tinta-estado', (e) => {
+  if (!pedidoConfiavel(e)) return null;
+  return {
+    versao: app.getVersion(),
+    windows: BUILD_WINDOWS,
+    telas: screen.getAllDisplays().length,
+    fonte: fonteDaTela ? fonteDaTela.tipo : null,
+    motivo: motivoSemCamada(),
+    onde: tinta && !tinta.win.isDestroyed() ? tinta.onde : '',
+  };
 });
 
 // ---------- Janela principal ----------
@@ -598,54 +631,96 @@ ipcMain.handle('buscar-atualizacao', (e) => {
   return true;
 });
 
-// Caneta no teste do GitHub: a camada por cima da tela NÃO pode aparecer na captura
+// Caneta no teste do GitHub:
+//  1) uma janela vermelha comum aparece na captura (prova que o teste enxerga a tela);
+//  2) a camada pintada de vermelho, SEM a proteção, aparece (prova que ela é desenhada no monitor);
+//  3) COM a proteção, some da captura, inclusive depois de esconder e mostrar de novo;
+//  4) no modo janela, a camada fica exatamente em cima da janela compartilhada.
 async function testarCaneta() {
   if (!CANETA_POR_CIMA) return { windows: BUILD_WINDOWS, resultado: 'Windows antigo: desenhos só no site' };
   const d = screen.getPrimaryDisplay();
-  const corNoMeio = async () => {
-    const fontes = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 160, height: 90 } });
+  const corEm = async (fx, fy) => {
+    const fontes = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 320, height: 180 } });
     const f = fontes.find((x) => String(x.display_id) === String(d.id)) || fontes[0];
     if (!f || f.thumbnail.isEmpty()) return null;
     const { width, height } = f.thumbnail.getSize();
     const bmp = f.thumbnail.toBitmap(); // BGRA
-    const i = (Math.floor(height / 2) * width + Math.floor(width / 2)) * 4;
+    const i = (Math.floor(height * fy) * width + Math.floor(width * fx)) * 4;
     return [bmp[i + 2], bmp[i + 1], bmp[i]];
   };
   const vermelho = (c) => !!c && c[0] > 180 && c[1] < 80 && c[2] < 80;
-  // controle: uma janela vermelha comum aparece na captura (prova que o teste enxerga)
+  const r = { windows: BUILD_WINDOWS };
+  const pintar = async (t, ligar) => { t.win.webContents.send('tinta-teste', ligar); await espera(1200); };
+
+  // 1) controle
   const controle = new BrowserWindow({ show: false, frame: false, backgroundColor: '#ff0000', focusable: false, skipTaskbar: true, ...d.bounds });
   controle.setAlwaysOnTop(true, 'screen-saver');
   controle.showInactive();
   await espera(1500);
-  const comControle = await corNoMeio();
+  r.controle = vermelho(await corEm(0.5, 0.5)) ? 'aparece na captura' : 'não apareceu (teste inconclusivo)';
   controle.destroy();
   await espera(600);
-  // a camada da caneta, pintada inteira de vermelho
+
+  // 2) e 3) a camada da tela inteira
   fonteDaTela = { tipo: 'tela', displayId: String(d.id) };
-  const t = garantirTinta();
-  if (!t) return { windows: BUILD_WINDOWS, resultado: 'a camada não abriu' };
+  let t = garantirTinta();
+  if (!t) return { ...r, resultado: 'a camada não abriu' };
   await t.pronta;
-  t.win.webContents.send('tinta-teste', true);
+  t.protegida = false;
+  t.win.setContentProtection(false);
   t.querVer = true;
   mostrarOuEsconderTinta(t);
-  await espera(1500);
-  const comCamada = await corNoMeio();
-  const visivel = t.win.isVisible();
-  // e um traço de verdade chega e é desenhado
-  t.win.webContents.send('tinta-teste', false);
+  await pintar(t, true);
+  r.camadaNoMonitor = vermelho(await corEm(0.5, 0.5)) ? 'desenhada no monitor' : 'NÃO aparece no monitor';
+  t.protegida = true;
+  t.win.setContentProtection(true);
+  await espera(1200);
+  r.camada = vermelho(await corEm(0.5, 0.5)) ? 'APARECE na captura' : 'fora da captura';
+  t.querVer = false;
+  mostrarOuEsconderTinta(t);
+  await espera(500);
+  t.querVer = true;
+  mostrarOuEsconderTinta(t);
+  await espera(1200);
+  r.camadaDepoisDeReaparecer = vermelho(await corEm(0.5, 0.5)) ? 'APARECE na captura' : 'fora da captura';
+  r.camadaVisivel = t.win.isVisible();
+  await pintar(t, false);
   t.win.webContents.send('tinta', R.validarTraco({ tr: 'teste1', c: 0, p: [[0.4, 0.5], [0.6, 0.5]], fim: true, nome: 'Teste' }));
   await espera(400);
-  const pintou = await t.win.webContents.executeJavaScript(`(() => { const c = document.getElementById('tinta');
+  r.tracoPintou = await t.win.webContents.executeJavaScript(`(() => { const c = document.getElementById('tinta');
     const x = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < x.length; i += 4) if (x[i]) n++; return n; })()`);
   fecharTinta();
+
+  // 4) modo janela: uma janela azul de teste fazendo o papel do jogo
+  const b = d.workArea;
+  const alvo = new BrowserWindow({ show: false, frame: false, backgroundColor: '#0050ff', focusable: false, skipTaskbar: true,
+    x: b.x + Math.round(b.width * 0.1), y: b.y + Math.round(b.height * 0.15), width: Math.round(b.width * 0.5), height: Math.round(b.height * 0.5) });
+  alvo.showInactive();
+  await espera(600);
+  fonteDaTela = { tipo: 'janela', hwnd: alvo.getNativeWindowHandle().readUInt32LE(0) };
+  t = garantirTinta();
+  if (t) {
+    await t.pronta;
+    t.protegida = false;
+    t.win.setContentProtection(false);
+    t.querVer = true;
+    await espera(1000); // o ajudante avisa onde a janela está
+    mostrarOuEsconderTinta(t);
+    await pintar(t, true);
+    const ba = alvo.getBounds();
+    const bt = t.win.getBounds();
+    r.janelaPosicao = Math.abs(ba.x - bt.x) <= 2 && Math.abs(ba.y - bt.y) <= 2 && Math.abs(ba.width - bt.width) <= 4 && Math.abs(ba.height - bt.height) <= 4
+      ? 'em cima da janela' : `fora do lugar (janela ${JSON.stringify(ba)}, camada ${JSON.stringify(bt)})`;
+    const cx = (ba.x - d.bounds.x + ba.width / 2) / d.bounds.width;
+    const cy = (ba.y - d.bounds.y + ba.height / 2) / d.bounds.height;
+    r.janelaNoMonitor = vermelho(await corEm(cx, cy)) ? 'desenhada no monitor' : 'NÃO aparece no monitor';
+    fecharTinta();
+  } else {
+    r.janelaPosicao = 'a camada não abriu';
+  }
+  alvo.destroy();
   fonteDaTela = null;
-  return {
-    windows: BUILD_WINDOWS,
-    controle: comControle === null ? 'sem miniatura' : vermelho(comControle) ? 'aparece na captura' : `não apareceu (${comControle})`,
-    camada: comCamada === null ? 'sem miniatura' : vermelho(comCamada) ? 'APARECE na captura' : 'fora da captura',
-    camadaVisivel: visivel,
-    tracoPintou: pintou,
-  };
+  return r;
 }
 
 // ---------- Teste rápido (o GitHub roda o programa uma vez antes de publicar) ----------
@@ -752,8 +827,11 @@ async function testeRapido() {
       && Array.isArray(r.atalhos?.ok) && !r.atalhos.ok.includes('ruim')
       && r.microfone === 'ok: audio' && r.camera === 'NotAllowedError' && r.pttRuim?.ok === false
       // a caneta nunca pode entrar na transmissão (se o teste enxerga a tela, a camada tem que estar fora)
-      && !(r.caneta?.controle === 'aparece na captura' && r.caneta?.camada !== 'fora da captura')
-      && (!r.caneta?.camada || r.caneta.tracoPintou > 0) && r.canetaRuim === false;
+      // a caneta tem que aparecer no monitor e nunca entrar na transmissão
+      && (r.caneta?.controle !== 'aparece na captura' || (r.caneta.camadaNoMonitor === 'desenhada no monitor'
+        && r.caneta.camada === 'fora da captura' && r.caneta.camadaDepoisDeReaparecer === 'fora da captura'
+        && r.caneta.janelaPosicao === 'em cima da janela' && r.caneta.janelaNoMonitor === 'desenhada no monitor'))
+      && (!r.caneta?.camada || r.caneta.tracoPintou > 0) && r.canetaRuim?.ok === false;
     r.resultado = ok ? 'passou' : 'falhou';
     gravar(ok ? 0 : 1);
   } catch (e) {

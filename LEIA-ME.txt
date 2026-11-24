@@ -457,7 +457,10 @@ DICAS
     eles entrem na transmissão. Em jogo de tela cheia exclusiva o
     Windows não deixa nada aparecer por cima: use "tela cheia sem
     bordas" ou janela. Isso precisa do Windows 10 versão 2004 ou mais
-    novo; nos antigos, os desenhos aparecem só no site.
+    novo; nos antigos, os desenhos aparecem só no site. No painel da
+    caneta, o botão "Testar na minha tela" desenha um círculo vermelho
+    só para você conferir, e a linha ao lado diz se a camada está
+    pronta ou por que não pode aparecer.
   - Para transmitir, use Chrome, Edge, Firefox ou Opera no computador,
     ou o programa para Windows (parte 5).
     No celular dá para assistir e conversar.

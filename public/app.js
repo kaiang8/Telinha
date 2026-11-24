@@ -2940,7 +2940,13 @@
     guardarTinta(m.sid, m.tr, { nome: String(m.nome || '').slice(0, 32), c: m.c, pts: m.p, fim: m.fim });
     // no programa, quem transmite vê os traços também por cima da tela de verdade
     if (m.sid === S.myId && S.live && PROGRAMA?.tinta) {
-      PROGRAMA.tinta({ tr: m.tr, c: m.c, p: m.p, fim: m.fim === true, nome: String(m.nome || '') }).catch(() => {});
+      PROGRAMA.tinta({ tr: m.tr, c: m.c, p: m.p, fim: m.fim === true, nome: String(m.nome || '') })
+        .then((r) => {
+          if ((r === false || r?.ok === false) && !CANETA.avisouCamada) {
+            CANETA.avisouCamada = true;
+            toast(`Os desenhos não puderam aparecer por cima da sua tela${r?.motivo ? `: ${r.motivo}` : '.'}`, 9000);
+          }
+        }).catch(() => {});
     }
   }
 
@@ -3043,6 +3049,17 @@
         : `Caneta: ${plural(n, 'pessoa pode', 'pessoas podem')} desenhar na sua tela`;
   }
   function renderCanetaPainel() {
+    const estadoAntes = $('#cpEstado');
+    const guardado = estadoAntes ? { texto: estadoAntes.textContent, classe: estadoAntes.className, teste: estadoAntes.dataset.teste } : null;
+    renderCanetaPainelHtml();
+    const el = $('#cpEstado');
+    if (el && guardado) {
+      el.textContent = guardado.texto;
+      el.className = guardado.classe;
+      if (guardado.teste) el.dataset.teste = guardado.teste;
+    }
+  }
+  function renderCanetaPainelHtml() {
     const pessoas = S.users.filter((u) => vizinhosDeSala().has(u.id)).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
     const cfg = CANETA.cfg;
     $('#canetaPanel').innerHTML = `<strong class="cp-titulo">Caneta na sua tela</strong>
@@ -3058,20 +3075,63 @@
           <span class="cp-estado">${pode ? 'pode desenhar' : 'não pode'}</span>
           <input type="checkbox" data-uid="${esc(u.id)}"${pode ? ' checked' : ''} aria-label="${esc(u.name)} pode desenhar"></label>`;
       }).join('') : '<p class="cp-vazio">Ninguém na sala ainda. Quem entrar segue a escolha acima.</p>'}</div>
+      ${PROGRAMA?.tinta ? '<div class="cp-programa"><button type="button" class="btn sm" id="cpTestar">Testar na minha tela</button><span id="cpEstado"></span></div>' : ''}
       <p class="ajustes-dica${PROGRAMA && !PROGRAMA.tinta ? ' aviso' : ''}">${PROGRAMA?.tinta
         ? 'Os desenhos aparecem aqui no site e também por cima da sua tela de verdade (sem entrar na transmissão). Em jogo de tela cheia exclusiva o Windows não deixa: use tela cheia sem bordas ou janela.'
         : PROGRAMA
           ? 'Seu programa está numa versão antiga, então os desenhos aparecem só aqui dentro. Feche o programa e abra de novo: ele baixa a versão nova e pergunta se pode reiniciar. Depois disso, os desenhos aparecem por cima da sua tela de verdade.'
           : 'Você vê os desenhos aqui no site. No <a href="/baixar" target="_blank" rel="noopener">programa para Windows</a>, eles aparecem também por cima da sua tela de verdade.'}</p>`;
   }
+  // Programa: mostra se a camada por cima da tela está pronta (ou por que não)
+  async function estadoDaCamada() {
+    const el = $('#cpEstado');
+    if (!el || !PROGRAMA?.tintaEstado || el.dataset.teste) return;
+    let st = null;
+    try { st = await PROGRAMA.tintaEstado(); } catch { st = null; }
+    if (!st || !document.body.contains(el) || el.dataset.teste) return;
+    el.className = st.motivo ? 'cp-estado-camada aviso' : 'cp-estado-camada';
+    el.textContent = st.motivo || (st.telas > 1 ? `Pronto: aparece na tela que você está compartilhando (você tem ${st.telas} telas).` : 'Pronto para aparecer na sua tela.');
+  }
+  // Desenha um círculo vermelho só na camada do próprio programa (não vai para a sala)
+  async function testarCamada() {
+    const el = $('#cpEstado');
+    if (!el || !PROGRAMA?.tinta) return;
+    const tr = idDeTraco();
+    const pts = [];
+    for (let i = 0; i <= 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      pts.push([Math.round((0.5 + 0.07 * Math.cos(a)) * 1e4) / 1e4, Math.round((0.5 + 0.12 * Math.sin(a)) * 1e4) / 1e4]);
+    }
+    guardarTinta(S.myId, tr, { nome: 'Teste da caneta', c: 0, pts, fim: true });
+    let r;
+    try {
+      r = await PROGRAMA.tinta({ tr, c: 0, p: pts, fim: true, nome: 'Teste da caneta' });
+    } catch (e) {
+      r = { ok: false, motivo: e.message };
+    }
+    el.dataset.teste = '1';
+    if (r === true || r?.ok) {
+      el.className = 'cp-estado-camada';
+      el.textContent = `Apareceu um círculo vermelho ${r?.onde || 'no meio da sua tela'}? Ele some em uns 4 segundos. Se não apareceu, veja se tem um jogo em tela cheia por cima ou se está olhando para outro monitor.`;
+    } else {
+      el.className = 'cp-estado-camada aviso';
+      el.textContent = `Não deu para desenhar por cima da tela: ${r?.motivo || 'o programa recusou'}`;
+    }
+  }
   function montarCaneta() {
+    $('#canetaPanel').addEventListener('click', (e) => {
+      if (e.target.closest('#cpTestar')) testarCamada();
+    });
     $('#canetaBtn').addEventListener('click', (e) => {
       e.stopPropagation();
       const abrir = $('#canetaPanel').hidden;
       $('#canetaPanel').hidden = !abrir;
       $('#ajustesPanel').hidden = true;
       $('#sonsPanel').hidden = true;
-      if (abrir) renderCanetaPainel();
+      if (abrir) {
+        renderCanetaPainel();
+        estadoDaCamada();
+      }
     });
     document.addEventListener('click', (e) => {
       if (!$('#canetaPanel').hidden && !e.target.closest('#canetaPanel, #canetaBtn')) $('#canetaPanel').hidden = true;
@@ -3097,6 +3157,7 @@
     renderCanetaBtn();
   }
   function encerrarCaneta() {
+    CANETA.avisouCamada = false;
     CANETA.cfg.excecoes.clear();
     CANETA.tintas.delete(S.myId);
     $('#canetaPanel').hidden = true;

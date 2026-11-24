@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('carasETelas', {
     fim: d.fim === true,
     nome: String(d.nome ?? '').slice(0, 32),
   } : null),
+  tintaEstado: () => ipcRenderer.invoke('tinta-estado'),
   // Tema escolhido no site: o programa usa nas telas dele (carregando, seletor de tela)
   aparencia: (dados) => ipcRenderer.invoke('aparencia', {
     escuro: dados?.escuro === true,
