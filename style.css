@@ -276,12 +276,18 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 .tile .t-name { color: #fff; font-weight: 600; font-size: 14px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 2px #000; }
 .tile .icon-btn { color: #fff; background: rgba(0,0,0,.45); }
 .tile .icon-btn:hover { background: rgba(0,0,0,.75); }
-.tile input[type=range] { width: 80px; accent-color: #fff; }
+.tile input[type=range] { width: 100px; accent-color: #fff; }
 .tile .unmute-hint {
   position: absolute; inset: 0; margin: auto; width: max-content; height: max-content; padding: 10px 16px; border-radius: 8px; border: 0;
   background: rgba(0,0,0,.7); color: #fff; font-weight: 600; display: flex; align-items: center; gap: 8px;
 }
-.thumbs .tile .t-bottom input[type=range], .thumbs .tile .unmute-hint { display: none; }
+.stage-grid.focus .thumbs .tile .t-bottom input[type=range],
+.stage-grid.focus .thumbs .tile .vol-pct,
+.stage-grid.focus .thumbs .tile .unmute-hint { display: none; }
+.tile .vol-pct { color: #fff; font-size: 12px; min-width: 38px; text-align: right; font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px #000; }
+.send-vol input[type=range] { width: 120px; accent-color: var(--accent); }
+.send-vol .vol-pct { font-size: 12px; color: var(--muted); min-width: 38px; font-variant-numeric: tabular-nums; }
+@media (hover: none) { .tile .t-bottom { opacity: 1; } }
 .tile:fullscreen { border-radius: 0; outline: 0; }
 
 .stage-empty { flex: 1; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted); }

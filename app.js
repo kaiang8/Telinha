@@ -65,7 +65,9 @@
     evitarEco: false, // pausa o som das outras transmissões enquanto mando o som do PC inteiro
     out: new Map(), // quem está me assistindo: viewerId -> conexão
     inc: new Map(), // quem eu estou assistindo: sharerId -> conexão
-    tries: new Map(), tiles: new Map(), volumes: {},
+    tries: new Map(), tiles: new Map(),
+    volEnvio: typeof salvo.volEnvio === 'number' ? Math.min(2, Math.max(0, salvo.volEnvio)) : 1,
+    envio: null, sendStream: null,
     unread: new Set(), typing: new Map(), collapsed: {},
     showMembers: salvo.showMembers !== false, showSalaChat: salvo.showSalaChat !== false,
     usarPolling: !!salvo.polling, sseWatch: null,
@@ -794,7 +796,10 @@
     $('#shareBtn').hidden = !naSala;
     $('#leaveBtn').hidden = !naSala;
     $('#leaveBtn').innerHTML = `${icon('logout')} Sair da sala`;
-    document.querySelectorAll('.quality').forEach((el) => { el.hidden = !naSala; });
+    document.querySelectorAll('.quality:not(.send-vol)').forEach((el) => { el.hidden = !naSala; });
+    $('#sendVolWrap').hidden = !(naSala && S.live && S.envio);
+    $('#sendVol').value = String(S.volEnvio);
+    $('#sendVolPct').textContent = `${Math.round(S.volEnvio * 100)}%`;
     $('#somSelect').disabled = S.live;
     $('#somSelect').title = S.live ? 'Para mudar o som, pare e comece a transmissão de novo' : '';
     const sb = $('#shareBtn');
@@ -812,17 +817,119 @@
       <div class="t-bottom">
         <span class="t-name"></span>
         <button class="icon-btn" data-act="mute" title="Ligar/desligar som"></button>
-        <input type="range" min="0" max="1" step="0.05" value="1" data-act="vol" title="Volume">
+        <input type="range" min="0" max="2" step="0.05" value="1" data-act="vol" title="Volume desta transmissão (até 200%)">
+        <span class="vol-pct">100%</span>
         <button class="icon-btn" data-act="pip" title="Janela flutuante (picture-in-picture)">${icon('pip')}</button>
         <button class="icon-btn" data-act="focus"></button>
         <button class="icon-btn" data-act="full" title="Tela cheia">${icon('full')}</button>
       </div>`;
-    const t = { el, uid, video: el.querySelector('video'), userMuted: false, autoMuted: false };
-    t.video.volume = S.volumes[uid] ?? 1;
-    el.querySelector('[data-act=vol]').value = t.video.volume;
+    const t = { el, uid, video: el.querySelector('video'), userMuted: false, autoMuted: false, src: null, gain: null, audioId: null };
     S.tiles.set(uid, t);
     return t;
   }
+
+  // ================= Volume =================
+  // O som de cada transmissão passa por um "ganho" do Web Audio: dá para ir de 0% a 200%.
+  const volumes = salvo.volumes && typeof salvo.volumes === 'object' ? salvo.volumes : {};
+  function volumeDe(uid) {
+    const u = userById(uid);
+    const v = u ? volumes[u.name] : undefined;
+    return typeof v === 'number' ? Math.min(2, Math.max(0, v)) : 1;
+  }
+  function guardarVolume(uid, v) {
+    const u = userById(uid);
+    if (!u) return;
+    volumes[u.name] = v;
+    salvar({ volumes });
+  }
+  function audioCtx() {
+    try {
+      actx ||= new (window.AudioContext || window.webkitAudioContext)();
+    } catch {
+      return null;
+    }
+    return actx;
+  }
+  // Os navegadores só liberam o áudio depois de um clique ou tecla na página
+  function destravarAudio() {
+    const c = audioCtx();
+    if (c && c.state === 'suspended') {
+      c.resume().then(() => { for (const t of S.tiles.values()) atualizarTile(t.uid); }).catch(() => {});
+    }
+  }
+  document.addEventListener('pointerdown', destravarAudio, true);
+  document.addEventListener('keydown', destravarAudio, true);
+
+  function ligarAudio(t, stream) {
+    const at = stream ? stream.getAudioTracks()[0] : null;
+    const id = at ? at.id : null;
+    if (t.audioId === id) return;
+    desligarAudio(t);
+    t.audioId = id;
+    if (!at) return;
+    const c = audioCtx();
+    if (!c || !c.createMediaStreamSource) return;
+    try {
+      t.src = c.createMediaStreamSource(new MediaStream([at]));
+      t.gain = c.createGain();
+      t.src.connect(t.gain).connect(c.destination);
+    } catch {
+      desligarAudio(t);
+      t.audioId = id;
+    }
+  }
+  function desligarAudio(t) {
+    try { t.src?.disconnect(); } catch { /* ok */ }
+    try { t.gain?.disconnect(); } catch { /* ok */ }
+    t.src = null;
+    t.gain = null;
+    t.audioId = null;
+  }
+  function aplicarVolume(t) {
+    if (t.uid === S.myId) {
+      t.video.muted = true;
+      return;
+    }
+    const v = volumeDe(t.uid);
+    const mudo = t.userMuted || S.evitarEco;
+    if (t.gain) {
+      t.video.muted = true; // o som sai pelo Web Audio, não pelo vídeo
+      t.gain.gain.setTargetAtTime(mudo ? 0 : v, t.gain.context.currentTime, 0.02);
+    } else {
+      t.video.volume = Math.min(1, v);
+      t.video.muted = mudo || t.autoMuted;
+    }
+  }
+  const audioTravado = (t) => (t.gain ? t.gain.context.state !== 'running' : t.autoMuted);
+
+  // Volume do som que EU mando (quem transmite ajusta para todo mundo)
+  async function prepararEnvio(stream) {
+    S.envio = null;
+    const at = stream.getAudioTracks()[0];
+    const c = audioCtx();
+    if (!at || !c || !c.createMediaStreamDestination) return stream;
+    try {
+      if (c.state !== 'running') await Promise.race([c.resume(), new Promise((ok) => setTimeout(ok, 1500))]);
+      if (c.state !== 'running') return stream; // áudio ainda travado: manda o som original
+      const src = c.createMediaStreamSource(new MediaStream([at]));
+      const gain = c.createGain();
+      gain.gain.value = S.volEnvio;
+      const dest = c.createMediaStreamDestination();
+      src.connect(gain).connect(dest);
+      S.envio = { src, gain, dest };
+      return new MediaStream([...stream.getVideoTracks(), dest.stream.getAudioTracks()[0]]);
+    } catch {
+      S.envio = null;
+      return stream;
+    }
+  }
+  function encerrarEnvio() {
+    if (!S.envio) return;
+    try { S.envio.src.disconnect(); S.envio.gain.disconnect(); } catch { /* ok */ }
+    S.envio.dest.stream.getTracks().forEach((t) => t.stop());
+    S.envio = null;
+  }
+
 
   function sincronizarTiles(ids) {
     const grid = $('#stageGrid');
@@ -835,6 +942,7 @@
     for (const [uid, t] of S.tiles) {
       if (!ids.includes(uid)) {
         if (document.pictureInPictureElement === t.video) document.exitPictureInPicture().catch(() => {});
+        desligarAudio(t);
         t.video.srcObject = null;
         t.el.remove();
         S.tiles.delete(uid);
@@ -862,13 +970,9 @@
 
   function tocarTile(t) {
     const v = t.video;
-    if (t.uid === S.myId) {
-      v.muted = true;
-      v.play().catch(() => {});
-      return;
-    }
-    v.muted = t.userMuted || S.evitarEco;
+    aplicarVolume(t);
     v.play().catch(() => {
+      if (t.uid === S.myId || t.gain) return;
       // O navegador bloqueou o som automático: toca mudo e mostra o botão "clique para ouvir"
       v.muted = true;
       t.autoMuted = true;
@@ -880,7 +984,7 @@
   function aplicarMudoEco() {
     for (const t of S.tiles.values()) {
       if (t.uid === S.myId) continue;
-      t.video.muted = S.evitarEco || t.userMuted || t.autoMuted;
+      aplicarVolume(t);
       atualizarTile(t.uid);
     }
   }
@@ -893,9 +997,12 @@
     t.el.querySelector('.t-name').textContent = self ? 'Você (sua transmissão)' : u ? u.name : '';
     const c = S.inc.get(uid);
     const stream = self ? S.localStream : c?.stream || null;
+    if (!self) ligarAudio(t, stream);
     if (t.video.srcObject !== stream) {
       t.video.srcObject = stream;
       if (stream) tocarTile(t);
+    } else {
+      aplicarVolume(t);
     }
 
     let estado = '';
@@ -923,17 +1030,25 @@
       centro.hidden = false;
       centro.dataset.mode = 'retry';
       centro.innerHTML = `${icon('retry')} Tentar de novo`;
-    } else if (temAudio && t.autoMuted && !S.evitarEco) {
+    } else if (temAudio && audioTravado(t) && !S.evitarEco && !t.userMuted) {
       centro.hidden = false;
       centro.dataset.mode = 'unmute';
       centro.innerHTML = `${icon('mute')} Clique para ouvir`;
     } else {
       centro.hidden = true;
     }
+    const vol = volumeDe(uid);
+    const semSom = t.userMuted || S.evitarEco || vol === 0 || audioTravado(t);
     const mute = t.el.querySelector('[data-act=mute]');
     mute.hidden = !temAudio;
-    mute.innerHTML = icon(t.video.muted ? 'mute' : 'vol');
-    t.el.querySelector('[data-act=vol]').hidden = !temAudio;
+    mute.innerHTML = icon(semSom ? 'mute' : 'vol');
+    const range = t.el.querySelector('[data-act=vol]');
+    range.hidden = !temAudio;
+    range.max = t.gain ? '2' : '1';
+    if (document.activeElement !== range) range.value = String(Math.min(vol, Number(range.max)));
+    const pct = t.el.querySelector('.vol-pct');
+    pct.hidden = !temAudio;
+    pct.textContent = t.userMuted || S.evitarEco ? 'mudo' : `${Math.round(Math.min(vol, Number(range.max)) * 100)}%`;
     t.el.querySelector('[data-act=pip]').hidden = !document.pictureInPictureEnabled;
     const fb = t.el.querySelector('[data-act=focus]');
     fb.innerHTML = icon(S.focus === uid ? 'unfocus' : 'focus');
@@ -955,15 +1070,17 @@
       } else {
         t.autoMuted = false;
         t.userMuted = false;
-        v.muted = S.evitarEco;
+        destravarAudio();
+        aplicarVolume(t);
         v.play().catch(() => {});
       }
     } else if (act === 'mute' && S.evitarEco) {
       toast('Enquanto você manda o som do PC inteiro, o som das outras transmissões fica pausado. Se não, ele volta para elas.', 6000);
     } else if (act === 'mute') {
-      t.userMuted = !v.muted ? true : false;
+      t.userMuted = !t.userMuted;
       t.autoMuted = false;
-      v.muted = t.userMuted;
+      if (!t.userMuted && volumeDe(uid) === 0) guardarVolume(uid, 1);
+      aplicarVolume(t);
     } else if (act === 'pip') {
       if (document.pictureInPictureElement === v) document.exitPictureInPicture().catch(() => {});
       else v.requestPictureInPicture().catch((err) => toast('Não deu para abrir a janela flutuante: ' + err.message));
@@ -985,13 +1102,13 @@
     if (e.target.dataset.act !== 'vol') return;
     const uid = e.target.closest('.tile').dataset.uid;
     const t = S.tiles.get(uid);
-    t.video.volume = Number(e.target.value);
-    S.volumes[uid] = t.video.volume;
-    if (t.video.volume > 0 && t.video.muted && !S.evitarEco) {
-      t.video.muted = false;
+    const v = Number(e.target.value);
+    guardarVolume(uid, v);
+    if (v > 0) {
       t.userMuted = false;
       t.autoMuted = false;
     }
+    aplicarVolume(t);
     atualizarTile(uid);
   });
   function telaCheia(el) {
@@ -1099,6 +1216,13 @@
       vt.addEventListener('ended', () => pararTransmissao());
     }
     S.localStream = stream;
+    S.sendStream = await prepararEnvio(stream);
+    if (!S.sala || S.localStream !== stream) {
+      stream.getTracks().forEach((t) => t.stop());
+      encerrarEnvio();
+      if (S.localStream === stream) { S.localStream = null; S.sendStream = null; }
+      return;
+    }
     S.live = true;
     // Mandando o som do PC inteiro? Avisa sobre chamadas de voz e evita que as
     // outras transmissões tocando aqui voltem para quem está transmitindo.
@@ -1128,6 +1252,8 @@
     S.live = false;
     if (S.localStream) S.localStream.getTracks().forEach((t) => t.stop());
     S.localStream = null;
+    S.sendStream = null;
+    encerrarEnvio();
     for (const vid of [...S.out.keys()]) fecharOut(vid);
     if (S.focus === S.myId) S.focus = null;
     S.evitarEco = false;
@@ -1291,7 +1417,8 @@
     const pc = new RTCPeerConnection({ iceServers: S.iceServers });
     const c = { pc, pending: [], sess: Math.random().toString(36).slice(2, 10) };
     S.out.set(vid, c);
-    for (const t of S.localStream.getTracks()) pc.addTrack(t, S.localStream);
+    const fonte = S.sendStream || S.localStream;
+    for (const t of fonte.getTracks()) pc.addTrack(t, fonte);
     pc.onicecandidate = (e) => {
       if (e.candidate) sinal(vid, { k: 'ice', to: 'viewer', sess: c.sess, c: e.candidate.toJSON() });
     };
@@ -1438,6 +1565,13 @@
     $('#logoutBtn').innerHTML = icon('logout');
     $('#vpLeave').innerHTML = icon('logout');
     $('#sendBtn').innerHTML = icon('send');
+
+    $('#sendVol').addEventListener('input', (e) => {
+      S.volEnvio = Number(e.target.value);
+      salvar({ volEnvio: S.volEnvio });
+      $('#sendVolPct').textContent = `${Math.round(S.volEnvio * 100)}%`;
+      if (S.envio) S.envio.gain.gain.setTargetAtTime(S.volEnvio, S.envio.gain.context.currentTime, 0.02);
+    });
 
     const som = $('#somSelect');
     som.value = S.som;

@@ -102,6 +102,11 @@
                 <option value="nenhum">Sem som</option>
               </select>
             </label>
+            <label class="quality send-vol" id="sendVolWrap" title="Volume do som que você está mandando, para todo mundo" hidden>
+              <span class="muted small">Volume enviado</span>
+              <input type="range" id="sendVol" min="0" max="2" step="0.05" value="1">
+              <span class="vol-pct" id="sendVolPct">100%</span>
+            </label>
             <label class="quality" title="Qualidade da sua transmissão">
               <span class="muted small">Qualidade</span>
               <select id="qualitySelect"></select>
