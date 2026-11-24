@@ -308,7 +308,10 @@ COMO BAIXAR
 ATUALIZAÇÕES
   Mudanças no site chegam na hora (o programa abre o site). Quando
   o próprio programa muda, o GitHub gera uma versão nova e o
-  programa baixa sozinho e pergunta se quer reiniciar.
+  programa baixa sozinho e pergunta se quer reiniciar. Ele procura
+  versão nova ao abrir e a cada 30 minutos, e o site avisa quando o
+  programa está desatualizado. Se o aviso disser para fechar e abrir
+  de novo, é só isso: ele baixa e pergunta se pode reiniciar.
 
 O QUE O PROGRAMA FAZ PARA NÃO VIRAR PORTA DE ENTRADA
   - Só abre o seu site. Qualquer outro endereço é bloqueado lá

@@ -567,10 +567,11 @@ function configurarAtualizacao() {
   autoUpdater.allowPrerelease = false;
   autoUpdater.allowDowngrade = false;
   autoUpdater.on('error', (e) => console.warn('Atualização:', e?.message));
-  let avisou = false;
+  let avisou = '';
   autoUpdater.on('update-downloaded', async (info) => {
-    if (avisou || !janela || janela.isDestroyed()) return;
-    avisou = true;
+    const versao = String(info?.version || '');
+    if (avisou === versao || !janela || janela.isDestroyed()) return;
+    avisou = versao; // avisa de novo se chegar outra versão mais nova depois
     const { response } = await dialog.showMessageBox(janela, {
       type: 'info',
       buttons: ['Reiniciar agora', 'Depois'],
@@ -583,9 +584,19 @@ function configurarAtualizacao() {
     if (response === 0) setImmediate(() => autoUpdater.quitAndInstall(true, true));
   });
   const verificar = () => autoUpdater.checkForUpdates().catch(() => {});
+  verificarAtualizacao = verificar;
   setTimeout(verificar, 15000);
-  setInterval(verificar, 6 * 60 * 60 * 1000);
+  setInterval(verificar, 30 * 60 * 1000); // a cada 30 minutos
 }
+// O site avisa quando sabe que tem versão nova: aí o programa procura na hora (no máximo a cada 5 min)
+let verificarAtualizacao = null;
+let ultimaBusca = 0;
+ipcMain.handle('buscar-atualizacao', (e) => {
+  if (!pedidoConfiavel(e) || !verificarAtualizacao || Date.now() - ultimaBusca < 5 * 60e3) return false;
+  ultimaBusca = Date.now();
+  verificarAtualizacao();
+  return true;
+});
 
 // Caneta no teste do GitHub: a camada por cima da tela NÃO pode aparecer na captura
 async function testarCaneta() {

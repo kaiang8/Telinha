@@ -21,6 +21,7 @@ function limparAtalhos(lista) {
 contextBridge.exposeInMainWorld('carasETelas', {
   programa: true,
   info: () => ipcRenderer.invoke('info'),
+  buscarAtualizacao: () => ipcRenderer.invoke('buscar-atualizacao'),
   atalhos: (lista) => ipcRenderer.invoke('atalhos', limparAtalhos(lista)),
   aoAtalho: (fn) => {
     if (typeof fn !== 'function') return;

@@ -535,7 +535,8 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
 .ajustes .quality select { width: 100%; min-width: 0; font-size: 15px; }
 .ajustes-dica { margin: 2px 0 0; font-size: 12px; line-height: 1.45; color: var(--fraco); }
 .som-dica { margin: -4px 0 2px; padding-left: 108px; }
-.som-dica.aviso { color: var(--alerta); }
+.som-dica.aviso, .ajustes-dica.aviso { color: var(--alerta); }
+.ajustes-dica.aviso { font-weight: 600; }
 @media (max-width: 480px) { .som-dica { padding-left: 0; } }
 .send-vol input[type=range] { width: 120px; accent-color: var(--p2); }
 .send-vol .vol-pct { font-size: 12px; color: var(--suave); min-width: 38px; font-variant-numeric: tabular-nums; }

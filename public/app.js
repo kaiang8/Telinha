@@ -392,6 +392,7 @@
   }
 
   async function onInit(m) {
+    conferirVersaoDoPrograma(m.programa);
     S.myId = m.me.id;
     S.isAdmin = !!m.me.admin;
     S.mutedUntil = m.muted || 0;
@@ -2695,6 +2696,31 @@
   }, 2000);
   window.addEventListener('offline', () => { if (S.sala) medirRede(); });
 
+  // ================= Programa desatualizado =================
+  // O servidor diz qual é a versão mais nova do programa; se a deste for mais antiga, avisa
+  // (e, nas versões que sabem, pede para o programa procurar a atualização na hora).
+  function versaoMaisAntiga(a, b) {
+    const pa = String(a).split('.').map(Number);
+    const pb = String(b).split('.').map(Number);
+    for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) < (pb[i] || 0);
+    return false;
+  }
+  let programaConferido = false;
+  async function conferirVersaoDoPrograma(maisNova) {
+    if (!PROGRAMA || programaConferido || !/^\d+\.\d+\.\d+$/.test(String(maisNova || ''))) return;
+    programaConferido = true;
+    let atual = null;
+    try { atual = (await PROGRAMA.info())?.versao; } catch { atual = null; }
+    if (!atual || !versaoMaisAntiga(atual, maisNova)) return;
+    S.programaAntigo = atual;
+    if (PROGRAMA.buscarAtualizacao) {
+      PROGRAMA.buscarAtualizacao().catch(() => {});
+      toast(`Tem uma versão nova do programa (${maisNova}). Ela está sendo baixada: quando aparecer o aviso, clique em "Reiniciar agora".`, 10000);
+    } else {
+      toast(`Tem uma versão nova do programa (${maisNova}; a sua é a ${atual}). Feche o programa e abra de novo: ele baixa a atualização e pergunta se pode reiniciar.`, 14000);
+    }
+  }
+
   // ================= Caneta: quem assiste desenha por cima da transmissão =================
   // Quem transmite escolhe quem pode desenhar (todos ou ninguém, com exceções). O servidor confere
   // cada traço e repassa para a sala. Os pontos vão de 0 a 1 do quadro do vídeo, então caem no
@@ -3032,9 +3058,11 @@
           <span class="cp-estado">${pode ? 'pode desenhar' : 'não pode'}</span>
           <input type="checkbox" data-uid="${esc(u.id)}"${pode ? ' checked' : ''} aria-label="${esc(u.name)} pode desenhar"></label>`;
       }).join('') : '<p class="cp-vazio">Ninguém na sala ainda. Quem entrar segue a escolha acima.</p>'}</div>
-      <p class="ajustes-dica">${PROGRAMA?.tinta
-        ? 'Os desenhos aparecem aqui no site e também por cima da sua tela de verdade (sem entrar na transmissão).'
-        : 'Você vê os desenhos aqui no site. No <a href="/baixar" target="_blank" rel="noopener">programa para Windows</a>, eles aparecem também por cima da sua tela de verdade.'}</p>`;
+      <p class="ajustes-dica${PROGRAMA && !PROGRAMA.tinta ? ' aviso' : ''}">${PROGRAMA?.tinta
+        ? 'Os desenhos aparecem aqui no site e também por cima da sua tela de verdade (sem entrar na transmissão). Em jogo de tela cheia exclusiva o Windows não deixa: use tela cheia sem bordas ou janela.'
+        : PROGRAMA
+          ? 'Seu programa está numa versão antiga, então os desenhos aparecem só aqui dentro. Feche o programa e abra de novo: ele baixa a versão nova e pergunta se pode reiniciar. Depois disso, os desenhos aparecem por cima da sua tela de verdade.'
+          : 'Você vê os desenhos aqui no site. No <a href="/baixar" target="_blank" rel="noopener">programa para Windows</a>, eles aparecem também por cima da sua tela de verdade.'}</p>`;
   }
   function montarCaneta() {
     $('#canetaBtn').addEventListener('click', (e) => {

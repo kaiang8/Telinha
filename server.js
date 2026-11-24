@@ -386,8 +386,21 @@ function responderPoll(u) {
   json(res, 200, { events });
   if (!u.kicked) armarRemocao(u, 20000); // o navegador deve voltar logo com outro pedido
 }
+// Versão mais nova do programa para Windows (a de desktop/package.json deste mesmo envio):
+// o site avisa quem ainda está numa versão antiga.
+const VERSAO_PROGRAMA = (() => {
+  try {
+    const v = JSON.parse(fs.readFileSync(path.join(__dirname, 'desktop', 'package.json'), 'utf8')).version;
+    return /^\d+\.\d+\.\d+$/.test(v) ? v : null;
+  } catch {
+    return null;
+  }
+})();
 function configPublica() {
-  return { serverName: nomeServidor(), needsPassword: precisaSenha(), locked: !!data.settings.locked };
+  return {
+    serverName: nomeServidor(), needsPassword: precisaSenha(), locked: !!data.settings.locked,
+    ...(VERSAO_PROGRAMA ? { programa: VERSAO_PROGRAMA } : {}),
+  };
 }
 function enviarInit(u) {
   const historico = {};
