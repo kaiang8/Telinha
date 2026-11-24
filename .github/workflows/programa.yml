@@ -4,7 +4,7 @@ name: Programa para Windows
 # Também dá para rodar na mão: aba Actions → "Programa para Windows" → Run workflow.
 on:
   push:
-    branches: [main]
+    branches: [main, 'medicao-*']
     paths:
       - 'desktop/**'
       - '.github/workflows/programa.yml'

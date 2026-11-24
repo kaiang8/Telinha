@@ -480,6 +480,17 @@ async function testeRapido() {
     }
     const js = (codigo, gesto = false) => janela.webContents.executeJavaScript(codigo, gesto);
     await espera(1500);
+    // medição de memória e processador com o site aberto e parado (como fica durante um jogo)
+    await espera(8000);
+    app.getAppMetrics();
+    await espera(5000);
+    const m = app.getAppMetrics();
+    r.medicao = {
+      totalMB: Math.round(m.reduce((t, p) => t + (p.memory?.workingSetSize || 0), 0) / 1024),
+      privadaMB: Math.round(m.reduce((t, p) => t + (p.memory?.privateBytes || 0), 0) / 1024),
+      cpuPct: Math.round(m.reduce((t, p) => t + (p.cpu?.percentCPUUsage || 0), 0) * 10) / 10,
+      processos: m.map((p) => `${p.type}${p.name ? ` (${p.name})` : ''}: ${Math.round((p.memory?.workingSetSize || 0) / 1024)} MB, ${Math.round((p.cpu?.percentCPUUsage || 0) * 10) / 10}%`),
+    };
     r.api = await js("typeof window.carasETelas === 'object' && window.carasETelas.programa === true");
     r.info = await js('window.carasETelas.info()');
     r.atalhos = await js("window.carasETelas.atalhos([{ id: 'teste', code: 'F13' }, { id: 'ruim', code: 'KeyA' }])");
