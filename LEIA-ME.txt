@@ -496,12 +496,12 @@ DICAS
     pronta ou por que não pode aparecer.
   - Reações: passe o mouse na transmissão (no celular, toque nela) e
     aparece uma barrinha com cinco emotes: chorando, apaixonado, fogo,
-    berinjela e gargalhando. Cada clique solta um que sobe flutuando
-    e some em 2 segundos, sem som. Todo mundo da sala que está vendo
-    aquela transmissão vê, inclusive quem transmite (na prévia da
-    própria tela). Dá para mandar até 6 por segundo. Para quem ligou
-    "reduzir movimento" no sistema, o emote aparece parado e só
-    esmaece.
+    berinjela e gargalhando. Cada clique solta um que nasce num ponto
+    sorteado da parte de baixo, sobe balançando, diminui e some em 2
+    segundos, sem som. Todo mundo da sala que está vendo aquela
+    transmissão vê, inclusive quem transmite (na prévia da própria
+    tela). Dá para mandar até 6 por segundo. Os emotes ficam animados
+    mesmo com as animações do Windows desligadas.
   - Relatar problema: o ponto de interrogação no canto de baixo, à
     esquerda. Conte o que aconteceu; dá para mandar junto (ou não) as
     informações técnicas: versões, navegador, rede, voz e os últimos

@@ -2021,11 +2021,17 @@
     const camada = t.el.querySelector('.t-emotes');
     if (camada.childElementCount >= 30) camada.firstElementChild.remove(); // não deixa acumular
     const h = t.el.clientHeight || 300;
-    const tam = Math.round(Math.max(36, Math.min(84, h * 0.13)));
+    const sorteio = (min, max) => min + Math.random() * (max - min);
+    // cada um nasce num ponto diferente da parte de baixo, com tamanho, subida e balanço um pouco diferentes
+    const tam = Math.round(Math.max(40, Math.min(92, h * 0.14)) * sorteio(0.8, 1.2));
     const el = document.createElement('div');
     el.className = `emote-voa emo-${EMOTES[e].id}`;
-    el.style.cssText = `left:${(x * 100).toFixed(1)}%;--tam:${tam}px;--sobe:${Math.round(h * 0.5)}px;--dx:${Math.round((Math.random() - 0.5) * tam)}px`;
-    el.innerHTML = `<div class="ginga" style="animation-delay:-${(Math.random() * 0.9).toFixed(2)}s">${EMOTES[e].svg}</div>`;
+    el.style.cssText = `left:${(x * 100).toFixed(1)}%;bottom:${sorteio(2, 22).toFixed(1)}%;--tam:${tam}px`
+      + `;--sobe:${Math.round(h * sorteio(0.45, 0.72))}px;--dx:${Math.round(sorteio(-0.9, 0.9) * tam)}px`
+      + `;--gira:${sorteio(-14, 14).toFixed(1)}deg`;
+    const lado = Math.random() < 0.5 ? -1 : 1;
+    el.innerHTML = `<div class="ginga" style="--amp:${(lado * sorteio(6, 14)).toFixed(1)}%;--rot:${(lado * sorteio(5, 11)).toFixed(1)}deg`
+      + `;animation-duration:${sorteio(0.55, 0.85).toFixed(2)}s;animation-delay:-${sorteio(0, 0.8).toFixed(2)}s">${EMOTES[e].svg}</div>`;
     camada.appendChild(el);
     setTimeout(() => el.remove(), 2100);
   }
@@ -2035,7 +2041,7 @@
     REACAO.cliques = REACAO.cliques.filter((t) => agora - t < 1000);
     if (REACAO.cliques.length >= 6) return; // no máximo 6 por segundo
     REACAO.cliques.push(agora);
-    const x = Math.round((0.15 + Math.random() * 0.7) * 1000) / 1000;
+    const x = Math.round((0.1 + Math.random() * 0.8) * 1000) / 1000;
     soltarEmote(sid, e, x);
     api('emote', { sid, e, x }).catch((err) => {
       if (/silenciad/i.test(err.message) && agora - (REACAO.avisou || 0) > 5000) { REACAO.avisou = agora; toast(err.message); }

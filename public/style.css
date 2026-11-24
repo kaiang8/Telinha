@@ -764,7 +764,8 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
   .cs-item .desc { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
+  /* os emotes ficam de fora: são curtinhos, só aparecem quando alguém clica, e a graça é a animação */
+  :not(.emote-voa, .emote-voa *, .t-reacao *), ::before, ::after { animation: none !important; transition: none !important; }
 }
 /* sem desfoque de vidro (navegadores antigos): painéis mais opacos para continuar legível */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
@@ -913,18 +914,21 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
 
 .emote-voa {
   position: absolute; bottom: 5%; width: var(--tam); height: var(--tam); margin-left: calc(var(--tam) / -2);
-  animation: emoSobe 2s cubic-bezier(.2, .7, .3, 1) forwards; will-change: transform, opacity;
+  animation: emoSobe 2s cubic-bezier(.3, .55, .45, 1) forwards; will-change: transform, opacity;
 }
-.emote-voa .ginga { width: 100%; height: 100%; animation: emoGinga .9s ease-in-out infinite alternate; }
+.emote-voa .ginga { width: 100%; height: 100%; animation: emoGinga .7s ease-in-out infinite alternate; }
 .emote-voa svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 4px 5px rgba(0, 0, 0, .4)); }
+/* sobe de baixo para cima: começa no tamanho normal e vai diminuindo e esmaecendo */
 @keyframes emoSobe {
-  0% { opacity: 0; transform: translate(0, 0) scale(.3); }
-  10% { opacity: 1; transform: translate(0, calc(var(--sobe) * -.04)) scale(1.18); }
-  18% { transform: translate(calc(var(--dx) * .1), calc(var(--sobe) * -.1)) scale(1); }
-  65% { opacity: 1; }
-  100% { opacity: 0; transform: translate(var(--dx), calc(var(--sobe) * -1)) scale(.86); }
+  0% { opacity: 0; transform: translate(0, 0) scale(.92) rotate(0deg); }
+  7% { opacity: 1; transform: translate(calc(var(--dx) * .04), calc(var(--sobe) * -.05)) scale(1) rotate(calc(var(--gira) * .1)); }
+  40% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), calc(var(--sobe) * -1)) scale(.35) rotate(var(--gira)); }
 }
-@keyframes emoGinga { from { transform: translateX(-7%) rotate(-7deg); } to { transform: translateX(7%) rotate(7deg); } }
+@keyframes emoGinga {
+  from { transform: translateX(calc(var(--amp, 8%) * -1)) rotate(calc(var(--rot, 7deg) * -1)); }
+  to { transform: translateX(var(--amp, 8%)) rotate(var(--rot, 7deg)); }
+}
 
 /* as animações de cada emote: sempre no que está voando, e na barra só ao passar o mouse */
 :is(.emote-voa, .t-reacao:hover, .t-reacao:focus-visible) .emo-rio { animation: emoRio .45s linear infinite; }
@@ -976,12 +980,6 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
 @keyframes emoBoca { from { transform: scaleY(1); } to { transform: scaleY(.82); } }
 @keyframes emoAlegriaE { 0% { transform: translate(0, 0); opacity: 1; } 60% { opacity: 1; } 100% { transform: translate(-10px, 3px) scale(.7); opacity: 0; } }
 @keyframes emoAlegriaD { 0% { transform: translate(0, 0); opacity: 1; } 60% { opacity: 1; } 100% { transform: translate(10px, 3px) scale(.7); opacity: 0; } }
-/* "reduzir movimento" ligado no sistema: o emote aparece parado e só esmaece, sem subir nem balançar */
-@media (prefers-reduced-motion: reduce) {
-  .tile .t-emotes .emote-voa { animation: emoSurge 2s ease forwards !important; bottom: 30%; }
-  .tile .t-emotes .emo-pingo.d3 { opacity: 1; transform: translate(14px, 4px); }
-}
-@keyframes emoSurge { 0% { opacity: 0; } 12%, 65% { opacity: 1; } 100% { opacity: 0; } }
 #canetaBtn.caneta-on { position: relative; }
 #canetaBtn.caneta-on::after {
   content: ''; position: absolute; top: 6px; right: 8px; width: 8px; height: 8px; border-radius: 50%;
