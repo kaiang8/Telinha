@@ -1695,6 +1695,9 @@
         if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded' && r.availableOutgoingBitrate) bwe = r.availableOutgoingBitrate;
         if (r.type === 'remote-inbound-rtp' && r.kind === 'video' && typeof r.fractionLost === 'number') perda = r.fractionLost;
       });
+      // nos primeiros 20 s a estimativa de banda ainda está subindo: não confunde isso com
+      // internet apertada (só a perda de pacotes conta nesse começo)
+      if (Date.now() - (c.desde || 0) < 20000) bwe = 0;
       sinais.push({ bwe, perda });
     }
     if (avaliarRede(sinais, S.out.size)) aplicarOrcamento();
@@ -1832,7 +1835,7 @@
     if (!S.live || !S.localStream) return;
     fecharOut(vid);
     const pc = new RTCPeerConnection({ iceServers: S.iceServers });
-    const c = { pc, pending: [], sess: Math.random().toString(36).slice(2, 10) };
+    const c = { pc, pending: [], sess: Math.random().toString(36).slice(2, 10), desde: Date.now() };
     S.out.set(vid, c);
     const fonte = S.sendStream || S.localStream;
     for (const t of fonte.getTracks()) pc.addTrack(t, fonte);
