@@ -692,6 +692,19 @@ async function testeRapido() {
     r.canetaRuim = await js("window.carasETelas.tinta({ tr: '../x', c: 9, p: [[0, 0]] })");
     await js('window.carasETelas.tinta(null)');
     r.caneta = await testarCaneta().catch((e) => ({ erro: String(e?.message || e) }));
+    // o ajudante acompanha uma janela (aqui, a do próprio programa) e avisa quando ela fecha
+    r.canetaJanela = await new Promise((ok) => {
+      const hwnd = janela.getNativeWindowHandle().readUInt32LE(0);
+      const avisos = [];
+      const v = ajudante.vigiarJanela(hwnd, (x) => avisos.push(x));
+      if (!v) return ok('indisponível');
+      setTimeout(() => { v.parar(); ok(avisos.length ? avisos[0] : 'sem resposta'); }, 2500);
+    });
+    r.canetaJanelaFechada = await new Promise((ok) => {
+      const v = ajudante.vigiarJanela(4294967290, (x) => { v?.parar(); ok(x); });
+      if (!v) ok('indisponível');
+      setTimeout(() => ok('sem resposta'), 2500);
+    });
     r.ptt = await js("window.carasETelas.ptt({ code: 'F13' })");
     r.pttRuim = await js("window.carasETelas.ptt({ code: 'Escape' })");
     await js('window.carasETelas.ptt(null)');
