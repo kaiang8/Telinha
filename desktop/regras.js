@@ -216,8 +216,41 @@ function fonteDaCaneta(fonte) {
   return hwnd && Number(hwnd) > 0 && Number(hwnd) <= 0xffffffff ? { tipo: 'janela', hwnd: Number(hwnd) } : null;
 }
 
+// A captura caiu (a janela sumiu, o jogo trocou de modo de tela...): procura a mesma fonte.
+// Primeiro pelo mesmo id; janela recriada ganha outro id, então vale uma janela com o mesmo
+// nome; tela, pelo mesmo monitor. Nunca pega outra coisa no lugar.
+function acharMesmaFonte(lista, ultima) {
+  if (!Array.isArray(lista) || !ultima || typeof ultima.id !== 'string') return null;
+  const mesma = lista.find((f) => f && f.id === ultima.id);
+  if (mesma) return { fonte: mesma, como: 'mesma fonte' };
+  if (ultima.id.startsWith('window:') && typeof ultima.nome === 'string' && ultima.nome.trim()) {
+    const iguais = lista.filter((f) => f && typeof f.id === 'string' && f.id.startsWith('window:') && f.name === ultima.nome);
+    if (iguais.length === 1) return { fonte: iguais[0], como: 'janela com o mesmo nome' };
+    return null; // nenhuma ou mais de uma com o mesmo nome: não dá para saber qual
+  }
+  if (ultima.id.startsWith('screen:') && ultima.tela) {
+    const tela = lista.find((f) => f && typeof f.id === 'string' && f.id.startsWith('screen:') && String(f.display_id || '') === String(ultima.tela));
+    if (tela) return { fonte: tela, como: 'mesmo monitor' };
+  }
+  return null;
+}
+
+// Perfis de codificação de vídeo da placa (números do Chromium ou nomes) → formatos
+function formatosDosPerfis(perfis) {
+  if (!Array.isArray(perfis)) return [];
+  const nomes = new Set();
+  for (const x of perfis) {
+    const p = x && typeof x === 'object' ? x.profile : x;
+    let n = '';
+    if (typeof p === 'number') n = p >= 0 && p <= 10 ? 'H.264' : p === 11 ? 'VP8' : p >= 12 && p <= 15 ? 'VP9' : p >= 16 && p <= 18 ? 'HEVC' : p >= 24 && p <= 26 ? 'AV1' : '';
+    else if (typeof p === 'string') n = /h264|avc/i.test(p) ? 'H.264' : /vp8/i.test(p) ? 'VP8' : /vp9/i.test(p) ? 'VP9' : /hevc|h265/i.test(p) ? 'HEVC' : /av1/i.test(p) ? 'AV1' : '';
+    if (n) nomes.add(n);
+  }
+  return ['H.264', 'VP8', 'VP9', 'HEVC', 'AV1'].filter((n) => nomes.has(n));
+}
+
 module.exports = {
-  validarTraco, fonteDaCaneta,
+  validarTraco, fonteDaCaneta, acharMesmaFonte, formatosDosPerfis,
   teclaDoPtt, argumentosDoPtt,
   validarTema, cssDoTema,
   SITE_PADRAO, origemDe, siteValido, podeNavegar, podeAbrirFora, requisicaoPermitida,

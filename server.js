@@ -1406,7 +1406,8 @@ async function api(req, res, url) {
           maxPessoas: num(body.maxPessoas, 50), qualidade: textoLimpo(body.qualidade, 12), upload: textoLimpo(body.upload, 6),
           cpuPct: num(body.cpuPct, 100), bandaPct: num(body.bandaPct, 100), mbpsMedio: num(body.mbpsMedio, 1000),
           hardware: typeof body.hardware === 'boolean' ? body.hardware : null,
-          fpsMeta: num(body.fpsMeta, 240), placa: textoLimpo(body.placa, 120),
+          fpsMeta: num(body.fpsMeta, 240), placa: textoLimpo(body.placa, 120), gpu: textoLimpo(body.gpu, 160),
+          fim: ['voce', 'captura', 'pagina', 'sala', 'sala-apagada', 'conexao', 'admin', 'expulso', 'erro'].includes(body.fim) ? body.fim : '',
         });
       } else {
         Object.assign(r, { de: textoLimpo(body.de, 32), perdaPct: num(body.perdaPct, 100), travadas: num(body.travadas, 100000) });

@@ -159,4 +159,30 @@ t('caneta: só traços bem formados chegam à camada por cima da tela', () => {
   assert.equal(R.fonteDaCaneta({ id: 'web-contents-media-stream:1' }), null);
 });
 
+t('transmissão que caiu: só pega de volta a mesma tela ou janela', () => {
+  const lista = [
+    { id: 'screen:0:0', name: 'Tela 1', display_id: '111' },
+    { id: 'screen:1:0', name: 'Tela 2', display_id: '222' },
+    { id: 'window:500:0', name: 'GTA: San Andreas' },
+    { id: 'window:600:0', name: 'Bloco de notas' },
+    { id: 'window:700:0', name: 'Sem título' },
+    { id: 'window:701:0', name: 'Sem título' },
+  ];
+  assert.equal(R.acharMesmaFonte(lista, { id: 'window:500:0', nome: 'GTA: San Andreas' }).como, 'mesma fonte');
+  const recriada = R.acharMesmaFonte(lista, { id: 'window:400:0', nome: 'GTA: San Andreas' });
+  assert.equal(recriada.fonte.id, 'window:500:0');
+  assert.equal(recriada.como, 'janela com o mesmo nome');
+  assert.equal(R.acharMesmaFonte(lista, { id: 'window:400:0', nome: 'Sem título' }), null, 'duas janelas com o mesmo nome');
+  assert.equal(R.acharMesmaFonte(lista, { id: 'window:400:0', nome: 'Jogo fechado' }), null);
+  assert.equal(R.acharMesmaFonte(lista, { id: 'window:400:0', nome: '' }), null);
+  assert.equal(R.acharMesmaFonte(lista, { id: 'screen:5:0', tela: '222' }).fonte.id, 'screen:1:0');
+  assert.equal(R.acharMesmaFonte(lista, { id: 'screen:5:0', tela: '999' }), null);
+  assert.equal(R.acharMesmaFonte(lista, { id: 'screen:5:0', nome: 'Tela 2' }), null, 'tela não vale pelo nome');
+  assert.equal(R.acharMesmaFonte(lista, null), null);
+  assert.equal(R.acharMesmaFonte(null, { id: 'screen:0:0' }), null);
+  assert.deepEqual(R.formatosDosPerfis([{ profile: 1 }, { profile: 3 }, { profile: 12 }, { profile: 24 }]), ['H.264', 'VP9', 'AV1']);
+  assert.deepEqual(R.formatosDosPerfis([{ profile: 'H264PROFILE_MAIN' }, { profile: 'VP8PROFILE_ANY' }]), ['H.264', 'VP8']);
+  assert.deepEqual(R.formatosDosPerfis(null), []);
+});
+
 console.log(`\n${n} grupos de testes passaram.`);

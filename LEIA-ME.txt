@@ -524,7 +524,17 @@ DICAS
     vê embaixo do próprio vídeo a resolução que está saindo e, se cair,
     o motivo: "internet apertada" ou "computador pesado". No painel de
     admin (aba Problemas) fica um resumo de cada transmissão, de quem
-    mandou e de quem assistiu, dizendo o que limitou a imagem.
+    mandou e de quem assistiu, dizendo o que limitou a imagem, por que
+    a transmissão terminou e, no programa, qual é a placa de vídeo.
+  - Transmissão que cai sozinha: se a janela capturada some (o jogo
+    fecha, troca de modo de tela ou reinicia a imagem), o programa
+    (versão 1.4.3 ou mais nova) tenta pegar a mesma janela de novo
+    por uns 10 segundos, sem derrubar quem está assistindo. Se não
+    der, a transmissão para e aparece um aviso explicando o porquê.
+  - Recarregar (F5) ou fechar no meio da transmissão: o site (e o
+    programa a partir da 1.4.3) pergunta antes, porque isso para a
+    transmissão. Se a página recarregar mesmo assim, você volta
+    sozinho para a mesma sala; é só clicar em Compartilhar de novo.
   - Seu upload: cada pessoa assistindo recebe uma cópia do vídeo, então
     a internet de quem transmite é dividida entre todo mundo. O site
     faz essa divisão sozinho e baixa a resolução quando a sala enche

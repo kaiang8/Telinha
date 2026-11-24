@@ -20,7 +20,15 @@ function limparAtalhos(lista) {
 
 contextBridge.exposeInMainWorld('carasETelas', {
   programa: true,
+  // a partir da 1.4.3: o programa pergunta antes de recarregar ou fechar no meio da transmissão
+  confirmaSaida: true,
   info: () => ipcRenderer.invoke('info'),
+  // A janela ou tela da transmissão sumiu: o próximo pedido de tela pega a mesma, sem o seletor
+  retomarTela: () => ipcRenderer.invoke('retomar-tela'),
+  // Falhas do programa (página ou placa de vídeo que caíram), para o registro de erros
+  falhas: () => ipcRenderer.invoke('falhas'),
+  // Nome da placa de vídeo e se ela pode codificar vídeo (para entender a qualidade da transmissão)
+  placa: () => ipcRenderer.invoke('placa'),
   buscarAtualizacao: () => ipcRenderer.invoke('buscar-atualizacao'),
   atalhos: (lista) => ipcRenderer.invoke('atalhos', limparAtalhos(lista)),
   aoAtalho: (fn) => {

@@ -29,6 +29,14 @@ const ID_APP = 'com.kaiang8.carasetelas';
 
 let janela = null;
 let escolhaDeSom = null; // o que a pessoa escolheu no seletor: { modo, pid, nome, quando }
+// Transmissão que caiu: a última tela ou janela escolhida (sobrevive a recarregar a página)
+let ultimaEscolha = null; // { id, nome, tela }
+let retomada = 0; // até quando o próximo pedido de tela pega a mesma fonte, sem o seletor
+let ultimaRetomada = ''; // como achou (para o teste): 'mesma fonte', 'janela com o mesmo nome', 'não achou'...
+let escolhaDeTeste = null; // só no teste do GitHub: qual fonte o "seletor" escolhe
+let saindoDeVez = false; // atualização, desligar o Windows: fecha sem perguntar
+let fechandoJanela = 0; // quando a pessoa clicou no X (para a pergunta dizer "fechar" e não "recarregar")
+let perguntasAoSair = 0; // quantas vezes a página pediu para confirmar (para o teste)
 
 // Preferências do seletor (de onde vem o som), guardadas só neste computador
 const ARQ_PREFS = () => path.join(app.getPath('userData'), 'preferencias.json');
@@ -144,9 +152,11 @@ async function pedidoDeTela(pedido, responder) {
     try { wc = frame ? webContents.fromFrame(frame) : null; } catch { wc = null; }
     if (!frame || frame.parent || !daJanelaPrincipal(wc, frame.url) || !pedido.videoRequested) return responda(null);
 
-    const comSom = !!pedido.audioRequested && process.platform === 'win32';
+    const retomando = retomada > Date.now();
+    retomada = 0;
+    const comSom = !retomando && !!pedido.audioRequested && process.platform === 'win32';
     const [fontes, info] = await Promise.all([
-      desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: true }),
+      desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: retomando ? { width: 0, height: 0 } : { width: 320, height: 180 }, fetchWindowIcons: !retomando }),
       comSom ? ajudante.listar() : Promise.resolve(null),
     ]);
     const proprias = new Set();
@@ -154,6 +164,16 @@ async function pedidoDeTela(pedido, responder) {
       try { proprias.add(w.getMediaSourceId()); } catch { /* ok */ }
     }
     const lista = fontes.filter((f) => !proprias.has(f.id)); // não deixa compartilhar a própria janela (efeito espelho)
+    if (retomando) {
+      // a página pediu a mesma fonte de antes (a captura caiu): nada de seletor, e nunca outra coisa
+      const achou = R.acharMesmaFonte(lista, ultimaEscolha);
+      ultimaRetomada = achou ? achou.como : 'não achou';
+      if (!achou) return responda(null);
+      fecharTinta();
+      fonteDaTela = R.fonteDaCaneta(achou.fonte);
+      ultimaEscolha = { ...ultimaEscolha, id: achou.fonte.id };
+      return responda({ video: achou.fonte }); // o som continua o de antes: a página só troca a imagem
+    }
     // de qual programa é cada janela (para "só o som desta janela")
     const janelas = {};
     if (info) {
@@ -164,9 +184,10 @@ async function pedidoDeTela(pedido, responder) {
     }
     const programas = info ? info.programas : null;
     const escolha = TESTE_RAPIDO
-      ? { fonte: lista.find((f) => f.id.startsWith('screen:')), modo: 'sistema' }
+      ? { fonte: (escolhaDeTeste && lista.find(escolhaDeTeste)) || lista.find((f) => f.id.startsWith('screen:')), modo: 'sistema' }
       : await abrirSeletor(lista, { comSom, programas, janelas });
     if (!escolha?.fonte) return responda(null);
+    ultimaEscolha = { id: escolha.fonte.id, nome: escolha.fonte.name, tela: String(escolha.fonte.display_id || '') };
     const resposta = { video: escolha.fonte };
     // caneta: a camada por cima da tela acompanha o que foi escolhido agora
     fecharTinta();
@@ -282,6 +303,50 @@ function pedidoConfiavel(e) {
   return !!f && !f.parent && daJanelaPrincipal(e.sender, f.url);
 }
 ipcMain.handle('info', (e) => (pedidoConfiavel(e) ? { versao: app.getVersion(), atalhosGlobais: true } : null));
+
+// A captura caiu: o próximo pedido de tela (nos próximos 8 s) pega a mesma tela ou janela
+ipcMain.handle('retomar-tela', (e) => {
+  if (!pedidoConfiavel(e) || !ultimaEscolha) return { ok: false };
+  retomada = Date.now() + 8000;
+  return { ok: true };
+});
+
+// Falhas do programa: a página manda para o registro de erros do admin
+const FALHAS = [];
+function registrarFalha(onde, d) {
+  if (!d || d.reason === 'clean-exit') return;
+  FALHAS.push({ onde, nome: String(d.serviceName || d.name || '').slice(0, 60), motivo: String(d.reason || '').slice(0, 40), codigo: Number(d.exitCode) || 0, quando: Date.now() });
+  if (FALHAS.length > 10) FALHAS.shift();
+  console.warn('[falha]', onde, d.reason, d.exitCode);
+}
+app.on('child-process-gone', (_e, d) => {
+  const onde = d.type === 'GPU' ? 'placa de vídeo' : d.type === 'Utility' ? 'serviço' : String(d.type || 'processo');
+  registrarFalha(onde, d);
+});
+ipcMain.handle('falhas', (e) => (pedidoConfiavel(e) ? FALHAS.splice(0) : []));
+
+// Placa de vídeo: nome e se ela pode codificar vídeo (a transmissão fica muito mais leve quando pode)
+let placaGuardada = null;
+ipcMain.handle('placa', (e) => {
+  if (!pedidoConfiavel(e)) return null;
+  placaGuardada ||= (async () => {
+    const estado = app.getGPUFeatureStatus?.() || {};
+    let info = null;
+    try { info = await Promise.race([app.getGPUInfo('complete'), espera(10000).then(() => null)]); } catch { info = null; }
+    const placas = Array.isArray(info?.gpuDevice) ? info.gpuDevice : [];
+    const ativa = placas.find((d) => d.active) || placas[0] || {};
+    const fabricante = { 4318: 'NVIDIA', 4098: 'AMD', 32902: 'Intel', 5140: 'Microsoft' }[ativa.vendorId] || '';
+    const nome = String(ativa.deviceString || '').trim() || (fabricante ? `${fabricante} (modelo ${Number(ativa.deviceId || 0).toString(16)})` : '');
+    return {
+      nome: nome.slice(0, 80),
+      driver: String(ativa.driverVersion || '').slice(0, 30),
+      codificacao: String(estado.video_encode || ''),
+      codecs: R.formatosDosPerfis(info?.videoEncodeAcceleratorSupportedProfile),
+      outras: placas.length,
+    };
+  })().catch(() => null);
+  return placaGuardada;
+});
 ipcMain.handle('atalhos', (e, lista) => (pedidoConfiavel(e) ? registrarAtalhos(lista) : { ok: [], falhou: [] }));
 
 ipcMain.handle('aparencia', (e, dados) => {
@@ -533,6 +598,9 @@ function criarJanela() {
     },
   });
   janela.once('ready-to-show', () => { if (!TESTE_RAPIDO) janela.show(); });
+  janela.on('close', () => { fechandoJanela = Date.now(); });
+  janela.on('query-session-end', () => { saindoDeVez = true; }); // Windows desligando: não segura
+  janela.on('session-end', () => { saindoDeVez = true; });
   janela.on('closed', () => {
     janela = null;
     ajudante.parar();
@@ -553,7 +621,28 @@ function criarJanela() {
     fecharTinta(); // e a camada da caneta
     fonteDaTela = null;
   });
-  wc.on('render-process-gone', () => setTimeout(() => janela && acordarEAbrir(), 1000));
+  wc.on('render-process-gone', (_e, d) => {
+    registrarFalha('página', d);
+    setTimeout(() => janela && acordarEAbrir(), 1000);
+  });
+  // A página pede confirmação (está transmitindo): pergunta aqui, porque o Electron não pergunta sozinho
+  wc.on('will-prevent-unload', (e) => {
+    perguntasAoSair++;
+    if (saindoDeVez || TESTE_RAPIDO) { e.preventDefault(); return; }
+    const fechar = Date.now() - fechandoJanela < 3000;
+    const r = dialog.showMessageBoxSync(janela, {
+      type: 'warning',
+      buttons: [fechar ? 'Fechar mesmo assim' : 'Recarregar mesmo assim', 'Continuar transmitindo'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+      title: 'Caras E Telas',
+      message: 'Você está transmitindo a sua tela.',
+      detail: fechar ? 'Fechar o programa agora para a transmissão para todo mundo.' : 'Recarregar agora para a transmissão para todo mundo.',
+    });
+    fechandoJanela = 0;
+    if (r === 0) e.preventDefault(); // deixa sair
+  });
 
   // Atalhos do próprio programa (sem menu): recarregar, zoom e tela cheia
   wc.on('before-input-event', (e, input) => {
@@ -614,7 +703,7 @@ function configurarAtualizacao() {
       message: `A versão ${info?.version || 'nova'} do Caras E Telas está pronta.`,
       detail: 'Reinicie para atualizar. Se escolher "Depois", ela é instalada quando você fechar o programa.',
     });
-    if (response === 0) setImmediate(() => autoUpdater.quitAndInstall(true, true));
+    if (response === 0) setImmediate(() => { saindoDeVez = true; autoUpdater.quitAndInstall(true, true); });
   });
   const verificar = () => autoUpdater.checkForUpdates().catch(() => {});
   verificarAtualizacao = verificar;
@@ -724,6 +813,48 @@ async function testarCaneta() {
 }
 
 // ---------- Teste rápido (o GitHub roda o programa uma vez antes de publicar) ----------
+// Janela recriada (como um jogo que troca de modo de tela): fecha o Bloco de Notas no meio da
+// captura e abre outro com o mesmo nome; a retomada tem que achar o novo e, sem ele, recusar.
+async function testarRetomadaDeJanela(js) {
+  const { spawn, execFileSync } = require('node:child_process');
+  const matar = () => { try { execFileSync('taskkill', ['/IM', 'notepad.exe', '/F'], { stdio: 'ignore' }); } catch { /* ok */ } };
+  const abrir = () => { try { spawn('notepad.exe', [], { detached: true, stdio: 'ignore' }).unref(); } catch { /* ok */ } };
+  const acharBloco = async () => {
+    for (let i = 0; i < 20; i++) {
+      const fs = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 0, height: 0 } });
+      const f = fs.find((x) => /notepad|bloco de notas/i.test(x.name));
+      if (f) return f;
+      await espera(500);
+    }
+    return null;
+  };
+  matar();
+  abrir();
+  const primeira = await acharBloco();
+  if (!primeira) { matar(); return { disponivel: false }; }
+  const r = { disponivel: true, nome: primeira.name };
+  escolhaDeTeste = (f) => f.id === primeira.id;
+  r.captura = await js("navigator.mediaDevices.getDisplayMedia({ video: true, audio: false }).then((s) => { window.__teste = s; return 'ok'; }, (e) => 'erro: ' + e.name)", true);
+  escolhaDeTeste = null;
+  await espera(1500);
+  matar();
+  r.depoisDeFechar = await js(`new Promise((ok) => { const t = window.__teste && window.__teste.getVideoTracks()[0]; if (!t) return ok('sem captura');
+    if (t.readyState === 'ended') return ok('acabou'); t.addEventListener('ended', () => ok('acabou')); setTimeout(() => ok('continuou (' + t.readyState + ')'), 8000); })`);
+  abrir();
+  const segunda = await acharBloco();
+  r.reabriu = segunda ? (segunda.id === primeira.id ? 'mesmo id' : 'outro id') : 'não reabriu';
+  r.pedido = await js('window.carasETelas.retomarTela()');
+  r.retomada = await js("navigator.mediaDevices.getDisplayMedia({ video: true, audio: false }).then((s) => { const x = s.getVideoTracks()[0]?.readyState; s.getTracks().forEach((t) => t.stop()); return x; }, (e) => 'erro: ' + e.name)", true);
+  r.como = ultimaRetomada;
+  matar();
+  await espera(1500);
+  await js('window.carasETelas.retomarTela()');
+  r.semJanela = await js("navigator.mediaDevices.getDisplayMedia({ video: true, audio: false }).then((s) => { s.getTracks().forEach((t) => t.stop()); return 'pegou outra coisa'; }, (e) => 'recusou: ' + e.name)", true);
+  r.comoSemJanela = ultimaRetomada;
+  await js('window.__teste && window.__teste.getTracks().forEach((t) => t.stop()); 1');
+  return r;
+}
+
 async function testeRapido() {
   const r = { versao: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome, site: SITE };
   const gravar = (codigo) => {
@@ -757,6 +888,13 @@ async function testeRapido() {
       .catch((e) => 'erro: ' + e.name + ': ' + e.message)`, true);
     r.capturaComSom = await capturar('{ restrictOwnAudio: true, echoCancellation: false }');
     r.capturaSemSom = await capturar('false');
+    // a captura caiu: a página pede a mesma fonte e o programa entrega sem abrir o seletor
+    r.retomarTela = await js('window.carasETelas.retomarTela()');
+    r.retomadaTela = await capturar('false').then((x) => (x && typeof x === 'object' && x.video === 1 ? ultimaRetomada : `erro: ${JSON.stringify(x)}`));
+    r.retomadaJanela = await testarRetomadaDeJanela(js).catch((e) => ({ erro: String(e?.message || e) }));
+    await capturar('false'); // volta a escolher a tela inteira (a caneta, abaixo, usa a última escolha)
+    r.falhas = await js('window.carasETelas.falhas()');
+    r.placa = await js('window.carasETelas.placa()');
     // microfone liberado e câmera sempre bloqueada (com aparelhos de mentira)
     const midia = (c) => js(`navigator.mediaDevices.getUserMedia(${c}).then((s) => { const n = s.getTracks().map((t) => t.kind).join(','); s.getTracks().forEach((t) => t.stop()); return 'ok: ' + n; }, (e) => e.name)`, true);
     r.microfone = await midia('{ audio: true }');
@@ -822,7 +960,16 @@ async function testeRapido() {
       r.ajudanteCaptura = c.ok ? 'ok' : c.erro;
       ajudante.parar();
     }
-    const ok = r.api === true && r.semNode === true && r.bloqueioExterno === 'bloqueado' && r.listaDeEnderecos === 'bloqueado'
+    // a página pede confirmação antes de recarregar no meio da transmissão: o programa recebe o pedido
+    await js("window.addEventListener('beforeunload', (e) => { e.preventDefault(); e.returnValue = ''; }); 'ok'", true);
+    const perguntasAntes = perguntasAoSair;
+    janela.webContents.reload();
+    await espera(5000);
+    r.perguntaAoSair = perguntasAoSair > perguntasAntes ? 'perguntou' : 'não perguntou';
+    const ok = r.api === true && r.semNode === true
+      && r.retomarTela?.ok === true && r.retomadaTela === 'mesma fonte'
+      && (!r.retomadaJanela?.disponivel || String(r.retomadaJanela.semJanela).startsWith('recusou'))
+      && Array.isArray(r.falhas) && r.perguntaAoSair === 'perguntou' && r.bloqueioExterno === 'bloqueado' && r.listaDeEnderecos === 'bloqueado'
       && r.janelaNova === 'bloqueada' && r.navegacaoExterna === 'bloqueada'
       && Array.isArray(r.atalhos?.ok) && !r.atalhos.ok.includes('ruim')
       && r.microfone === 'ok: audio' && r.camera === 'NotAllowedError' && r.pttRuim?.ok === false
@@ -865,4 +1012,5 @@ if (!app.requestSingleInstanceLock()) {
     fecharTinta();
   });
   app.on('window-all-closed', () => app.quit());
+  app.on('before-quit', () => { saindoDeVez = true; });
 }

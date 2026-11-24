@@ -390,6 +390,7 @@
           return reentrar();
         }
         salvar({ password: '' });
+        S.saindoDeVez = true;
         location.reload();
         return;
       }
@@ -446,7 +447,7 @@
     S.messages = m.messages || {};
     S.iceServers = m.iceServers || [];
     S.users = m.users;
-    if (S.sala && !chan(S.sala)) sairDaSalaLocal();
+    if (S.sala && !chan(S.sala)) sairDaSalaLocal('sala-apagada');
     patchMe();
     if (!chan(S.view)) S.view = (textChannels()[0] || S.channels[0]).id;
 
@@ -461,17 +462,50 @@
     renderTudo();
     renderMensagens();
 
+    if (!S.voltaConferida) {
+      S.voltaConferida = true;
+      voltarParaASala();
+    }
+
     // Reconectou no meio de uma sala? Avisa o servidor de novo.
     if (S.sala) {
       try {
         await api('state', { sala: S.sala, live: S.live, ...estadoVoz() });
-      } catch {
-        sairDaSalaLocal();
+      } catch (e) {
+        anotarErro(`Não voltou para a sala depois de reconectar: ${e.message}`, 'reconexão');
+        sairDaSalaLocal('conexao');
       }
       sincronizarStreams();
       renderTudo();
     }
   }
+
+  async function voltarParaASala() {
+    let volta = null;
+    try {
+      volta = JSON.parse(sessionStorage.getItem('telinha-volta') || 'null');
+      sessionStorage.removeItem('telinha-volta');
+    } catch { volta = null; }
+    const falhas = await conferirFalhasDoPrograma();
+    if (!volta || Date.now() - volta.t > 3 * 60e3 || S.sala || chan(volta.sala)?.type !== 'sala') return;
+    await entrarNaSala(volta.sala);
+    if (!volta.transmitia) return;
+    const caiu = falhas.find((f) => f.onde === 'página' && Date.now() - f.quando < 5 * 60e3);
+    toast(caiu
+      ? `O programa teve uma falha e recarregou a página, então a sua transmissão parou. Você voltou para a sala: clique em Compartilhar para transmitir de novo.`
+      : 'A página recarregou, então a sua transmissão parou. Você voltou para a sala: clique em Compartilhar para transmitir de novo.', 12000);
+  }
+  // Falhas do programa (página ou placa de vídeo que caíram) vão para o registro de erros do admin
+  async function conferirFalhasDoPrograma() {
+    if (typeof PROGRAMA?.falhas !== 'function') return [];
+    let lista = [];
+    try { lista = (await PROGRAMA.falhas()) || []; } catch { return []; }
+    for (const f of lista) {
+      anotarErro(`O programa teve uma falha: ${f.onde}${f.nome ? ` (${f.nome})` : ''} caiu (${f.motivo || '?'}, código ${f.codigo}) às ${new Date(f.quando).toLocaleTimeString('pt-BR')}`, 'programa');
+    }
+    return lista;
+  }
+  setInterval(() => { if (S.started) conferirFalhasDoPrograma(); }, 60e3);
 
   function patchMe() {
     const me = userById(S.myId);
@@ -506,7 +540,7 @@
   function onChannels(channels) {
     S.channels = channels;
     if (S.sala && !chan(S.sala)) {
-      sairDaSalaLocal();
+      sairDaSalaLocal('sala-apagada');
       toast('A sala em que você estava foi apagada.');
     }
     let mudouView = false;
@@ -1137,7 +1171,7 @@
       const q = QUALIDADES[S.quality];
       const fatia = ORC.porPessoa || fatiaPorPessoa();
       const ql = QTX.sessao?.ultimo;
-      estado = n
+      estado = S.retomando ? 'A janela capturada sumiu: tentando pegar de novo…' : n
         ? `${plural(n, 'pessoa assistindo', 'pessoas assistindo')}, ${mbps(fatia)} Mbps para cada${fatia < q.br * 0.85 ? ' (qualidade ajustada ao seu upload)' : ''}`
           + (ql ? ` · saindo em ${ql.altura}p ${ql.fps} fps${ql.motivo === 'cpu' ? ' (computador pesado)' : ql.motivo === 'bandwidth' ? ' (internet apertada)' : ''}` : '')
         : 'Ninguém assistindo ainda';
@@ -1263,7 +1297,7 @@
   // ================= Entrar / sair de sala =================
   async function entrarNaSala(id) {
     if (S.sala === id) return;
-    if (S.live) pararTransmissao(true);
+    if (S.live) pararTransmissao(true, 'sala');
     for (const sid of [...S.inc.keys()]) fecharInc(sid);
     S.tries.clear();
     S.sala = id;
@@ -1287,8 +1321,8 @@
     }
   }
 
-  function sairDaSalaLocal() {
-    if (S.live) pararTransmissao(true);
+  function sairDaSalaLocal(motivo = 'sala') {
+    if (S.live) pararTransmissao(true, motivo);
     for (const sid of [...S.inc.keys()]) fecharInc(sid);
     S.tries.clear();
     S.sala = null;
@@ -1425,8 +1459,70 @@
     const vt = stream.getVideoTracks()[0];
     if (!vt) return;
     try { vt.contentHint = QUALIDADES[S.quality].hint; } catch { /* ok */ }
-    // Clicou em "Parar compartilhamento" na barra do navegador
-    vt.addEventListener('ended', () => { if (S.localStream === stream) pararTransmissao(); });
+    // A captura acabou: no navegador, quase sempre é "Parar compartilhamento" na barra dele;
+    // no programa, a janela ou tela capturada sumiu (o jogo fechou, trocou de modo de tela...)
+    vt.addEventListener('ended', () => { if (S.localStream?.getVideoTracks()[0] === vt) capturaAcabou(vt); });
+  }
+
+  const esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  async function capturaAcabou(vt) {
+    if (!S.live || S.retomando) return;
+    const podeRetomar = typeof PROGRAMA?.retomarTela === 'function';
+    if (PROGRAMA) anotarErro(`A captura da tela acabou sozinha (${podeRetomar ? 'tentando pegar de novo' : 'programa sem retomada'})`, 'transmissão');
+    if (podeRetomar) {
+      S.retomando = true;
+      renderTudo();
+      toast('A janela que você transmitia sumiu. Tentando pegar de novo…', 8000);
+      // o jogo pode levar uns segundos para recriar a janela (troca de modo de tela, por exemplo)
+      for (let i = 0; i < 8 && S.live && S.retomando; i++) {
+        await esperar(i === 0 ? 400 : 1500);
+        if (!S.live || !S.retomando) break;
+        try {
+          const r = await PROGRAMA.retomarTela();
+          if (!r?.ok) break;
+          const q = QUALIDADES[S.quality];
+          const novo = await navigator.mediaDevices.getDisplayMedia({
+            video: { width: { ideal: q.w }, height: { ideal: q.h }, frameRate: { ideal: q.fps, max: q.fps } }, audio: false,
+          });
+          const nv = novo.getVideoTracks()[0];
+          if (!nv || !S.live || !S.retomando) { novo.getTracks().forEach((t) => t.stop()); break; }
+          await trocarSoAImagem(nv);
+          S.retomando = false;
+          renderTudo();
+          toast('Pronto: a transmissão voltou.', 4000);
+          return;
+        } catch { /* a janela ainda não voltou: tenta de novo */ }
+      }
+      if (!S.retomando) return; // parou de transmitir enquanto tentava
+      S.retomando = false;
+    }
+    if (!S.live) return;
+    pararTransmissao(false, 'captura');
+    toast(PROGRAMA
+      ? 'A transmissão parou: a janela ou tela capturada deixou de existir. Isso acontece quando o jogo fecha, troca de modo de tela ou reinicia a imagem. Clique em Compartilhar para voltar.'
+      : 'A transmissão parou: a janela ou aba capturada foi fechada, ou você clicou em "Parar compartilhamento" do navegador.', 12000);
+  }
+
+  // Troca só a imagem (o som continua o mesmo), sem derrubar quem está assistindo
+  async function trocarSoAImagem(nv) {
+    const velho = S.localStream;
+    const audios = velho ? velho.getAudioTracks().filter((t) => t.readyState === 'live') : [];
+    const novo = new MediaStream([nv, ...audios]);
+    prepararVideo(novo);
+    S.sendStream = S.envio ? new MediaStream([nv, S.envio.dest.stream.getAudioTracks()[0]]) : novo;
+    for (const [vid, c] of S.out) {
+      try {
+        for (const tr of c.pc.getTransceivers()) {
+          if (tr.currentDirection !== 'stopped' && tr.receiver.track.kind === 'video') await tr.sender.replaceTrack(nv);
+        }
+      } catch {
+        fecharOut(vid);
+        sinal(vid, { k: 'restart' });
+      }
+    }
+    S.localStream = novo;
+    velho?.getVideoTracks().forEach((t) => t.stop());
+    aplicarOrcamento();
   }
 
   // Mandando o som do PC inteiro? Avisa sobre chamadas de voz e evita que as
@@ -1474,6 +1570,13 @@
         ? 'Este navegador não permite compartilhar a tela. Use Chrome, Edge ou Firefox no computador.'
         : 'Compartilhar a tela só funciona em endereços HTTPS (ou localhost). Veja o LEIA-ME.', 6000);
     }
+    // O teste da placa roda ao abrir a página; se ela ainda não estava pronta, o resultado
+    // vem "pelo processador". Antes da primeira transmissão, testa de novo uma vez.
+    if (!CODEC.refeito && CODEC.promessa) {
+      CODEC.refeito = true;
+      const antes = await CODEC.promessa;
+      if (!antes) { CODEC.promessa = null; CODEC.testes = {}; escolherCodec(); }
+    }
     let stream;
     try {
       stream = await capturarTela();
@@ -1507,7 +1610,7 @@
       await api('state', { sala: S.sala, live: true, ...estadoVoz() });
     } catch (e) {
       toast('Erro ao começar a transmissão: ' + e.message);
-      pararTransmissao();
+      pararTransmissao(false, 'erro');
     }
   }
 
@@ -1574,10 +1677,12 @@
     renderTudo();
   }
 
-  function pararTransmissao(silencioso) {
+  // motivo: voce (clicou em parar), captura (a janela/tela sumiu), sala, sala-apagada, conexao, admin, expulso, erro
+  function pararTransmissao(silencioso, motivo = 'voce') {
     if (!S.live && !S.localStream) return;
-    encerrarSessaoEnvio(false); // resumo da qualidade para o painel de admin
+    encerrarSessaoEnvio(false, motivo); // resumo da qualidade para o painel de admin
     S.live = false;
+    S.retomando = false;
     if (S.localStream) S.localStream.getTracks().forEach((t) => t.stop());
     pararTodos();
     S.localStream = null;
@@ -2155,6 +2260,19 @@
     }
     atualizarTile(S.myId);
   }
+  // O que o programa sabe da placa de vídeo (nome e se o Windows deixa ela codificar vídeo)
+  let PLACA = null;
+  function placaDeVideo() {
+    if (typeof PROGRAMA?.placa !== 'function') return Promise.resolve(null);
+    PLACA ||= PROGRAMA.placa().catch(() => null);
+    return PLACA;
+  }
+  function textoDaPlaca(p) {
+    if (!p) return '';
+    const cod = { enabled: 'liberada', enabled_on: 'liberada', disabled_software: 'desligada', disabled_off: 'desligada', unavailable_software: 'indisponível' }[p.codificacao] || p.codificacao || '?';
+    return `${p.nome || 'placa sem nome'}${p.outras > 1 ? ` (${p.outras} placas no PC)` : ''} · codificação de vídeo ${cod}${p.codecs?.length ? `: ${p.codecs.join(', ')}` : ', sem formatos'}`;
+  }
+  placaDeVideo().then((p) => { QTX.gpu = textoDaPlaca(p); });
   function resumoEnvio() {
     const s = QTX.sessao;
     if (!s || !s.n || Date.now() - s.inicio < 20000) return null;
@@ -2165,6 +2283,7 @@
       mbpsMedio: Math.round(media(s.somaBps, s.nBps) / 1e5) / 10, codec: s.codec, hardware: s.hardware, programa: !!PROGRAMA,
       fpsMeta: QUALIDADES[S.quality]?.fps || 0,
       placa: Object.entries(CODEC.testes).map(([k, v]) => `${k} ${v}`).join(', '),
+      gpu: QTX.gpu || '',
     };
   }
 
@@ -2221,8 +2340,10 @@
       api('qualidade', r).catch(() => {});
     }
   }
-  function encerrarSessaoEnvio(saindo) {
-    enviarResumo(resumoEnvio(), saindo);
+  function encerrarSessaoEnvio(saindo, motivo) {
+    const r = resumoEnvio();
+    if (r && motivo) r.fim = motivo;
+    enviarResumo(r, saindo);
     QTX.sessao = null;
     QTX.avisou = false;
     QTX.seguidos = 0;
@@ -2232,12 +2353,17 @@
     medirRecebimento().catch(() => {});
   }, 3000);
   window.addEventListener('pagehide', () => {
-    if (S.live) encerrarSessaoEnvio(true);
+    if (S.live) encerrarSessaoEnvio(true, 'pagina');
     for (const c of S.inc.values()) enviarResumo(resumoRecebimento(c), true);
   });
 
   // ----- painel de admin: resumo de cada transmissão (aba Problemas) -----
-  function linhaDeQualidade(x) {
+  const FIM_DA_TRANSMISSAO = {
+    voce: 'clicou em Parar', captura: 'a janela ou tela capturada sumiu', pagina: 'a página recarregou ou o programa fechou',
+    sala: 'saiu da sala', 'sala-apagada': 'a sala foi apagada', conexao: 'não voltou depois de uma queda de conexão',
+    admin: 'um admin encerrou', expulso: 'foi expulso', erro: 'erro ao começar',
+  };
+  function linhaDeQualidade(x, _i, lista) {
     const min = Math.max(1, Math.round(x.duracao / 60));
     if (x.papel === 'envio') {
       const causas = [];
@@ -2247,25 +2373,33 @@
       const poucosQuadros = x.fpsMeta && x.fpsMedio < x.fpsMeta * 0.6;
       return `<div class="ap-qual${causas.length || ruim ? ' ruim' : ''}">
         <div><b>${esc(x.nome)}</b> transmitiu ${min} min para ${esc((x.pessoas || []).join(', ') || '?')}
-          <span class="muted small">· ${esc(quandoCurto(x.t))}</span></div>
+          <span class="muted small">· ${esc(quandoCurto(x.t))}${FIM_DA_TRANSMISSAO[x.fim] ? ` · terminou: ${x.fim === 'captura' && !x.programa ? 'a captura acabou (janela fechada ou "Parar compartilhamento" do navegador)' : FIM_DA_TRANSMISSAO[x.fim]}` : ''}</span></div>
         <div class="muted small">Enviou em média ${x.alturaMedia}p a ${x.fpsMedio} fps (menor: ${x.alturaMin}p${x.alturaFonte ? `; a tela capturada tem ${x.alturaFonte}p` : ''}), ${String(x.mbpsMedio).replace('.', ',')} Mbps por pessoa
           · ${esc(x.codec || '?')} ${x.hardware === true ? 'pela placa de vídeo' : x.hardware === false ? 'pelo processador' : ''}
           · qualidade escolhida ${esc(x.qualidade || '?')}, upload ${esc(x.upload === 'auto' ? 'automático' : `${x.upload} Mbps`)}${x.programa ? ' · programa' : ' · navegador'}</div>
         ${x.placa ? `<div class="muted small">Formatos que este computador codifica: ${esc(x.placa)}</div>` : ''}
+        ${x.gpu ? `<div class="muted small">Placa de vídeo: ${esc(x.gpu)}</div>` : ''}
         <div class="ap-qual-causa">${causas.length ? `O que limitou: ${esc(causas.join('; '))}.`
           : ruim ? 'Imagem abaixo da tela capturada, sem limitação registrada (talvez a qualidade escolhida).'
-            : poucosQuadros ? `Sem limitação de internet ou computador. Os ${x.fpsMedio} fps (de ${x.fpsMeta} pedidos) quase sempre são tela que muda pouco: imagem parada manda menos quadros, e isso é normal.`
-              : 'Sem limitação registrada.'}</div>
+            : poucosQuadros ? `Sem limitação de internet ou computador. A captura entregou ${x.fpsMedio} fps (de ${x.fpsMeta} pedidos): isso acontece quando a imagem muda pouco ou quando o próprio jogo roda a menos quadros (muitos jogos antigos ficam presos em 25 a 30 fps). A transmissão não tem como ter mais quadros que o jogo.`
+              : 'Sem limitação registrada.'}${x.fim === 'captura' && x.programa ? ' A transmissão parou sozinha porque a janela ou tela capturada sumiu (o jogo fechou, trocou de modo de tela ou reiniciou a imagem).'
+              : x.fim === 'pagina' ? ' A transmissão parou porque a página recarregou ou o programa fechou (F5, falha ou atualização).'
+                : x.fim === 'conexao' ? ' A transmissão parou porque a conexão com o servidor caiu e não deu para voltar para a sala.' : ''}</div>
       </div>`;
     }
     const travou = x.travadas >= Math.max(3, x.duracao / 30); // mais de uma travada a cada 30 s, com imagem se mexendo
     const baixa = x.alturaMedia && x.alturaMax && x.alturaMedia < x.alturaMax * 0.8;
     const ruim = x.perdaPct >= 2 || travou || baixa;
+    // o resumo de quem transmitiu, no mesmo horário
+    const env = (lista || []).find((y) => y.papel === 'envio' && y.nome === x.de && Math.abs(y.t - x.t) < 15 * 60e3);
+    const envLimitado = env && (env.cpuPct >= 25 || env.bandaPct >= 25);
+    const cada = x.travadas ? Math.round(x.duracao / x.travadas) : 0;
     return `<div class="ap-qual${ruim ? ' ruim' : ''}">
       <div><b>${esc(x.nome)}</b> assistiu ${esc(x.de)} por ${min} min <span class="muted small">· ${esc(quandoCurto(x.t))}</span></div>
       <div class="muted small">Recebeu em média ${x.alturaMedia}p a ${x.fpsMedio} fps (menor: ${x.alturaMin}p) · ${esc(x.codec || '?')} · ${String(x.perdaPct).replace('.', ',')}% de perda · ${x.travadas} ${x.travadas === 1 ? 'travada' : 'travadas'}${x.programa ? ' · programa' : ' · navegador'}</div>
       <div class="ap-qual-causa">${x.perdaPct >= 2 ? 'A internet de quem assiste (ou o caminho até ela) perdeu pacotes: a imagem pixela e trava.'
-        : travou ? 'A imagem travou várias vezes com a tela em movimento: veja o resumo de quem transmitiu (computador ou internet apertados).'
+        : travou && envLimitado ? `A imagem travou ${x.travadas} vezes (uma a cada ${cada} s): o computador ou a internet de quem transmitiu ficou no limite (veja o resumo dele).`
+        : travou ? `A imagem travou ${x.travadas} vezes (uma a cada ${cada} s), sem perder pacotes${env ? ' e sem o computador ou a internet de quem transmitiu no limite' : ''}. O mais provável é o próprio jogo dar umas engasgadas (a captura só manda imagem nova quando a tela muda) ou o computador de quem assiste estar ocupado na hora.`
           : baixa ? 'Imagem abaixo do normal em parte do tempo: veja o resumo de quem transmitiu no mesmo horário.' : 'Recebeu bem.'}</div>
     </div>`;
   }
@@ -3416,6 +3550,7 @@
     };
     if (PROGRAMA) {
       try { d.Programa = (await PROGRAMA.info())?.versao || '?'; } catch { d.Programa = '?'; }
+      if (PROGRAMA.placa) d['Placa de vídeo'] = textoDaPlaca(await placaDeVideo()) || 'sem resposta';
       if (PROGRAMA.tintaEstado) {
         try {
           const c = await PROGRAMA.tintaEstado();
@@ -4322,6 +4457,7 @@
           const l = lembreteAdmin();
           if (l) await api('esquecer-lembrete', { token: l.token }).catch(() => {});
           salvar({ name: '', password: '', adminPassword: '', lembreteAdmin: null });
+          S.saindoDeVez = true;
           sairDaPagina();
           location.reload();
         },
@@ -4379,7 +4515,8 @@
   function foiExpulso(info) {
     if (S.kicked) return;
     S.kicked = info || {};
-    try { pararTransmissao(true); } catch { /* ok */ }
+    S.saindoDeVez = true;
+    try { pararTransmissao(true, 'expulso'); } catch { /* ok */ }
     for (const id of [...S.inc.keys()]) fecharInc(id);
     if (S.es) { S.es.close(); S.es = null; }
     clearTimeout(S.sseWatch);
@@ -4418,10 +4555,10 @@
 
   function onForce(m) {
     if (m.what === 'stop') {
-      pararTransmissao(true);
+      pararTransmissao(true, 'admin');
       toast(`${m.by} encerrou a sua transmissão.`);
     } else {
-      sairDaSalaLocal();
+      sairDaSalaLocal('admin');
       toast(`${m.by} tirou você da sala.`);
     }
     renderTudo();
@@ -5504,6 +5641,19 @@
     S.token = null;
   }
   window.addEventListener('pagehide', sairDaPagina);
+  // Recarregar ou fechar no meio da transmissão para tudo: pergunta antes. O programa só sabe
+  // perguntar a partir da 1.4.3 (nas versões antigas isso travaria o botão de fechar).
+  window.addEventListener('beforeunload', (e) => {
+    if (!S.live || S.saindoDeVez) return;
+    if (PROGRAMA && PROGRAMA.confirmaSaida !== true) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+  // Recarregou (F5, falha do programa...) estando numa sala: volta para ela sozinho
+  window.addEventListener('pagehide', () => {
+    if (S.saindoDeVez || S.kicked || !S.sala) return;
+    try { sessionStorage.setItem('telinha-volta', JSON.stringify({ sala: S.sala, transmitia: !!S.live, t: Date.now() })); } catch { /* ok */ }
+  });
   window.addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
