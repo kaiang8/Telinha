@@ -982,3 +982,14 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
 .ap-aparelhos { display: grid; gap: 6px; margin-bottom: 10px; }
 .ap-aparelho { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--hover); border: 1px solid var(--linha); }
 .ap-aparelho b { color: var(--texto-forte); }
+/* ---------- Qualidade da transmissão ---------- */
+.tile .t-qual {
+  background: rgba(6, 24, 39, .72); color: #fff; font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .25); font-variant-numeric: tabular-nums; opacity: 0; transition: opacity .2s; margin-left: auto;
+}
+.tile:hover .t-qual, .tile.show-ctrl .t-qual { opacity: 1; }
+.ap-qual { padding: 10px 0; border-top: 1px solid var(--linha); display: grid; gap: 3px; font-size: 13.5px; color: var(--texto); }
+.ap-section > .ap-qual:first-of-type { border-top: 0; }
+.ap-qual b { color: var(--texto-forte); }
+.ap-qual-causa { font-size: 13px; font-weight: 600; color: var(--verde-texto); }
+.ap-qual.ruim .ap-qual-causa { color: var(--alerta); }

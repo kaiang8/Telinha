@@ -259,13 +259,14 @@ function trafegoParaAdmin() {
 }
 
 // ---------- Problemas relatados e erros da página (só admins veem) ----------
-const PROBLEMAS = guardadoSeparado('problemas', () => ({ relatos: [], erros: [] }));
+const PROBLEMAS = guardadoSeparado('problemas', () => ({ relatos: [], erros: [], qualidade: [] }));
 const DIAS_PROBLEMAS = 30;
 function limparProblemasVelhos() {
   const limite = Date.now() - DIAS_PROBLEMAS * 864e5;
   const d = PROBLEMAS.dados;
   d.relatos = (Array.isArray(d.relatos) ? d.relatos : []).filter((x) => x.t >= limite).slice(-100);
   d.erros = (Array.isArray(d.erros) ? d.erros : []).filter((x) => x.ultima >= limite).slice(-150);
+  d.qualidade = (Array.isArray(d.qualidade) ? d.qualidade : []).filter((x) => x.t >= limite).slice(-80);
 }
 function avisarAdmins(texto) {
   for (const x of users.values()) if (x.admin && x.joined && !x.kicked) enviar(x, { type: 'avisoAdmin', texto });
@@ -939,6 +940,7 @@ async function acaoAdmin(u, body, res, req) {
         dias: DIAS_PROBLEMAS,
         relatos: PROBLEMAS.dados.relatos.slice().reverse(),
         erros: PROBLEMAS.dados.erros.slice().sort((a, b) => b.ultima - a.ultima),
+        qualidade: PROBLEMAS.dados.qualidade.slice().reverse(),
       });
 
     case 'ler-problemas':
@@ -1383,6 +1385,33 @@ async function api(req, res, url) {
       juntar(e.quem, u.name);
       juntar(e.aparelhos, aparelhoDe(req));
       juntar(e.versoes, versao);
+      PROBLEMAS.salvar(10000);
+      return json(res, 200, { ok: true });
+    }
+
+    case 'qualidade': {
+      // resumo da qualidade de uma transmissão (de quem mandou ou de quem assistiu)
+      if (limiteDe(u, 'limQualidade', 15, 10 * 60e3)) return json(res, 200, { ok: true });
+      const num = (v, max) => (Number.isFinite(Number(v)) ? Math.min(max, Math.max(0, Math.round(Number(v) * 10) / 10)) : 0);
+      const papel = body.papel === 'envio' ? 'envio' : 'recebe';
+      const r = {
+        t: Date.now(), nome: u.name, papel, aparelho: aparelhoDe(req),
+        duracao: num(body.duracao, 86400), alturaMedia: num(body.alturaMedia, 4320), alturaMin: num(body.alturaMin, 4320),
+        fpsMedio: num(body.fpsMedio, 240), codec: textoLimpo(body.codec, 12), programa: body.programa === true,
+        alturaFonte: num(body.alturaFonte, 4320), alturaMax: num(body.alturaMax, 4320),
+      };
+      if (papel === 'envio') {
+        Object.assign(r, {
+          pessoas: Array.isArray(body.pessoas) ? body.pessoas.slice(0, 12).map((x) => textoLimpo(x, 32)) : [],
+          maxPessoas: num(body.maxPessoas, 50), qualidade: textoLimpo(body.qualidade, 12), upload: textoLimpo(body.upload, 6),
+          cpuPct: num(body.cpuPct, 100), bandaPct: num(body.bandaPct, 100), mbpsMedio: num(body.mbpsMedio, 1000),
+          hardware: typeof body.hardware === 'boolean' ? body.hardware : null,
+        });
+      } else {
+        Object.assign(r, { de: textoLimpo(body.de, 32), perdaPct: num(body.perdaPct, 100), travadas: num(body.travadas, 100000) });
+      }
+      limparProblemasVelhos();
+      PROBLEMAS.dados.qualidade.push(r);
       PROBLEMAS.salvar(10000);
       return json(res, 200, { ok: true });
     }

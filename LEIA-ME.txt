@@ -506,6 +506,16 @@ DICAS
     No celular dá para assistir e conversar.
   - Ajustes da transmissão: o botão "Ajustes", embaixo da sala, guarda
     o Som, a Qualidade e o "Seu upload".
+  - Qualidade da imagem: se o computador de quem transmite codifica
+    vídeo na placa (AV1, VP9 ou H.264), a transmissão usa esse formato:
+    imagem melhor com a mesma internet e sem pesar no jogo. Cada pessoa
+    que entra já começa recebendo numa velocidade boa (antes começava
+    quase em zero e ficava pixelada no começo). Passe o mouse na
+    transmissão para ver a resolução que está chegando. Quem transmite
+    vê embaixo do próprio vídeo a resolução que está saindo e, se cair,
+    o motivo: "internet apertada" ou "computador pesado". No painel de
+    admin (aba Problemas) fica um resumo de cada transmissão, de quem
+    mandou e de quem assistiu, dizendo o que limitou a imagem.
   - Seu upload: cada pessoa assistindo recebe uma cópia do vídeo, então
     a internet de quem transmite é dividida entre todo mundo. O site
     faz essa divisão sozinho e baixa a resolução quando a sala enche
