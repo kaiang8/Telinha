@@ -24,6 +24,7 @@
     send: '<path d="M4 12 20 4l-4 16-4-7z"/><path d="m12 13 8-9"/>',
     link: '<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/>',
     logout: '<path d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3M16 17l5-5-5-5M21 12H9"/>',
+    paleta: '<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.4-.5-.8-.5-1.3 0-1 .8-1.8 1.8-1.8h2.1A5.3 5.3 0 0 0 22 9.7C21.6 5.9 17.4 3 12 3z"/><circle cx="7.5" cy="11.5" r="1.2"/><circle cx="10.5" cy="7.5" r="1.2"/><circle cx="15.5" cy="7.5" r="1.2"/>',
     retry: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
     shield: '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>',
     crown: '<path d="M3.5 8.5 8 12l4-6.5 4 6.5 4.5-3.5-1.8 10H5.3z" fill="currentColor" stroke-width="1.5"/>',
@@ -1785,8 +1786,96 @@
     }
   }
 
+  // ================= Aparência: tema claro/escuro e paleta de cores =================
+  // As cores são calculadas pelo tema.js (carregado antes da página). A escolha fica
+  // guardada neste navegador (ou neste programa) e vale na hora, sem recarregar.
+  const TEMA = window.CarasTema || null;
+  // cores que o programa para Windows usa nas telas dele (carregando, seletor de tela)
+  const VARS_DO_PROGRAMA = ['--ceu-alto', '--ceu', '--ceu-fundo', '--ceu-luz', '--onda', '--texto-forte', '--texto', '--suave', '--linha', '--linha-forte',
+    '--p1', '--p2', '--p3', '--p-borda', '--p-sobre', '--p-sobre-sombra', '--p-texto', '--p-anel', '--foco', '--sup-1', '--sup-2', '--pop-1', '--pop-2',
+    '--campo-1', '--campo-2', '--borda-vidro', '--realce', '--sombra-cor', '--gel-topo', '--gel-meio', '--alerta', '--cabeca-1', '--cabeca-2', '--rodape-1', '--rodape-2'];
+  function temaParaOPrograma(g) {
+    if (!PROGRAMA?.aparencia || !g) return;
+    const vars = {};
+    for (const n of VARS_DO_PROGRAMA) if (g.vars[n]) vars[n] = g.vars[n];
+    PROGRAMA.aparencia({ escuro: g.escuro, vars }).catch(() => {});
+  }
+  if (TEMA) {
+    TEMA.aoMudar(temaParaOPrograma);
+    temaParaOPrograma(TEMA.gerar(TEMA.atual()));
+  }
+
+  function abrirAparencia() {
+    if (!TEMA) return toast('Não consegui carregar os temas. Recarregue a página.');
+    let cfg = TEMA.atual();
+    const orbe = (a, b, id = '') => `<span class="orbe"${id ? ` id="${id}"` : ''} style="--a:${esc(a)};--b:${esc(b)}"></span>`;
+    const modos = [['claro', 'Claro'], ['escuro', 'Escuro'], ['auto', 'Igual ao sistema']];
+    abrirModal({
+      titulo: 'Aparência',
+      ok: 'Pronto',
+      corpo: `<div class="aparencia" id="aparencia">
+        <div><span class="ap-rotulo">Tema</span>
+          <div class="segmento" role="radiogroup" aria-label="Tema">
+            ${modos.map(([v, n]) => `<label><input type="radio" name="modo" value="${v}"${cfg.modo === v ? ' checked' : ''}><span>${n}</span></label>`).join('')}
+          </div></div>
+        <div><span class="ap-rotulo">Paleta</span>
+          <div class="paletas" role="radiogroup" aria-label="Paleta">
+            ${TEMA.PALETAS.map((p) => `<label class="paleta"><input type="radio" name="paleta" value="${esc(p.id)}"${cfg.paleta === p.id ? ' checked' : ''}>${orbe(p.principal, p.destaque)}<span class="nome">${esc(p.nome)}</span></label>`).join('')}
+            <label class="paleta"><input type="radio" name="paleta" value="propria"${cfg.paleta === 'propria' ? ' checked' : ''}>${orbe(cfg.principal, cfg.destaque, 'orbePropria')}<span class="nome">Sua paleta</span></label>
+          </div></div>
+        <div class="ap-propria" id="apPropria"${cfg.paleta === 'propria' ? '' : ' hidden'}>
+          <label><input type="color" name="principal" value="${esc(cfg.principal)}"> Cor principal</label>
+          <label><input type="color" name="destaque" value="${esc(cfg.destaque)}"> Cor do fundo</label>
+          <p>A cor principal vai nos botões, na seleção e nos links. A cor do fundo aparece nas ondas atrás dos painéis. O resto (céu, vidro e textos) se ajusta sozinho.</p>
+        </div>
+        <button type="button" class="btn sm ghost ap-restaurar" id="apRestaurar">Voltar ao padrão</button>
+      </div>`,
+      aoConfirmar: () => {},
+    });
+    $('#modalCancel').hidden = true; // as mudanças já valem na hora; é só fechar
+    const caixa = $('#aparencia');
+    const aplicar = () => {
+      cfg = TEMA.validar(cfg);
+      TEMA.aplicar(cfg);
+      salvar({ aparencia: cfg });
+    };
+    const mostrarPropria = () => {
+      $('#apPropria').hidden = cfg.paleta !== 'propria';
+      const o = $('#orbePropria');
+      o.style.setProperty('--a', cfg.principal);
+      o.style.setProperty('--b', cfg.destaque);
+    };
+    caixa.addEventListener('change', (e) => {
+      const { name, value } = e.target;
+      if (name === 'modo') cfg.modo = value;
+      else if (name === 'paleta') cfg.paleta = value;
+      else return;
+      mostrarPropria();
+      aplicar();
+    });
+    caixa.addEventListener('input', (e) => {
+      const { name, value } = e.target;
+      if (name !== 'principal' && name !== 'destaque') return;
+      cfg[name] = value;
+      cfg.paleta = 'propria';
+      const r = caixa.querySelector('input[name=paleta][value=propria]');
+      if (r) r.checked = true;
+      mostrarPropria();
+      aplicar();
+    });
+    $('#apRestaurar').addEventListener('click', () => {
+      cfg = { ...TEMA.PADRAO };
+      for (const r of caixa.querySelectorAll('input[type=radio]')) r.checked = r.value === (r.name === 'modo' ? cfg.modo : cfg.paleta);
+      caixa.querySelector('input[name=principal]').value = cfg.principal;
+      caixa.querySelector('input[name=destaque]').value = cfg.destaque;
+      mostrarPropria();
+      aplicar();
+    });
+  }
+
   // ================= Canais (criar / apagar) =================
   function abrirModal({ titulo, corpo, ok = 'OK', perigo = false, aoConfirmar }) {
+    $('#modalCancel').hidden = false;
     $('#modalTitle').textContent = titulo;
     $('#modalBody').innerHTML = corpo;
     const okBtn = $('#modalOk');
@@ -1874,6 +1963,8 @@
     $('#toggleChatBtn').innerHTML = icon('chat');
     $('#toggleMembersBtn').innerHTML = icon('people');
     $('#logoutBtn').innerHTML = icon('logout');
+    $('#aparenciaBtn').innerHTML = icon('paleta');
+    $('#aparenciaBtn').addEventListener('click', abrirAparencia);
     $('#vpLeave').innerHTML = icon('logout');
     $('#sendBtn').innerHTML = icon('send');
 

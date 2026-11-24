@@ -378,6 +378,13 @@ gasta uns 2 GB.
 DICAS
 =====================================================================
 
+  - Aparência: o botão de paleta, embaixo à esquerda (ao lado do seu
+    nome), escolhe o tema (Claro, Escuro ou Igual ao sistema) e as
+    cores. Tem 7 paletas prontas (Céu, Oceano, Aurora, Floresta, Pôr
+    do sol, Sakura e Rubi) e a "Sua paleta", em que você escolhe a cor
+    principal (botões e seleção) e a do fundo (as ondas atrás dos
+    painéis). A escolha fica guardada só no seu navegador ou programa:
+    cada amigo usa a que quiser.
   - Para transmitir, use Chrome, Edge, Firefox ou Opera no computador,
     ou o programa para Windows (parte 5).
     No celular dá para assistir e conversar.
@@ -460,6 +467,7 @@ ARQUIVOS
   public/index.html   página
   public/style.css    visual
   public/app.js       lógica do site
+  public/tema.js      tema claro/escuro e paletas de cores
   desktop/            o programa para Windows (Electron)
   desktop/nativo/     ajudante que pega o som de um programa só
                       (C++; o GitHub compila)

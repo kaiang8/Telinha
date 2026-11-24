@@ -30,6 +30,11 @@ contextBridge.exposeInMainWorld('carasETelas', {
   // Som de um programa só: a página pede depois de escolher a tela
   somDoPrograma: (taxa) => ipcRenderer.invoke('som-do-programa', Number(taxa)),
   pararSomDoPrograma: (id) => ipcRenderer.invoke('parar-som-do-programa', Number(id)),
+  // Tema escolhido no site: o programa usa nas telas dele (carregando, seletor de tela)
+  aparencia: (dados) => ipcRenderer.invoke('aparencia', {
+    escuro: dados?.escuro === true,
+    vars: dados?.vars && typeof dados.vars === 'object' ? Object.fromEntries(Object.entries(dados.vars).slice(0, 60).map(([k, v]) => [String(k), String(v)])) : {},
+  }),
 });
 
 // O som chega à página por um MessagePort. A página cria o canal e entrega uma ponta

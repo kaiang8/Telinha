@@ -108,4 +108,27 @@ t('atalhos globais: lista vinda da página', () => {
   assert.equal(R.validarAtalhos(Array.from({ length: 500 }, (_, i) => ({ id: `c-${i}`, code: `F${(i % 24) + 1}` }))).length, 24);
 });
 
+t('tema das telas do programa: só cores puras', () => {
+  const v = R.validarTema({
+    escuro: true,
+    vars: {
+      '--p2': 'hsl(205.1, 77%, 49.4%)',
+      '--ceu': '#0b1626',
+      '--realce': 'rgba(255, 255, 255, .14)',
+      '--pop-1': 'hsla(205, 40%, 16%, 0.97)',
+      '--p1': 'red; } body { background: url(https://evil.com/x) } :root {',
+      '--p3': 'url(https://evil.com)',
+      '--texto': 'expression(alert(1))',
+      '--nao-existe': '#fff',
+      'color': '#000',
+      '--suave': 'hsl(1, 2%, 3%) !important',
+    },
+  });
+  assert.deepEqual(v, { escuro: true, vars: { '--p2': 'hsl(205.1, 77%, 49.4%)', '--ceu': '#0b1626', '--realce': 'rgba(255, 255, 255, .14)', '--pop-1': 'hsla(205, 40%, 16%, 0.97)' } });
+  const css = R.cssDoTema({ escuro: false, vars: { '--p2': '#1d93df', '--p1': '#fff;}*{display:none' } });
+  assert.equal(css, ':root { --p2: #1d93df; color-scheme: light; }');
+  assert.equal(R.cssDoTema(null), '');
+  assert.equal(R.validarTema('x'), null);
+});
+
 console.log(`\n${n} grupos de testes passaram.`);

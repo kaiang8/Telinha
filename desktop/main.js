@@ -35,6 +35,19 @@ function lerPrefs() {
 function guardarPrefs(p) {
   try { fs.writeFileSync(ARQ_PREFS(), JSON.stringify(p)); } catch { /* ok */ }
 }
+
+const corDeFundo = () => (lerPrefs().aparencia?.escuro ? '#0b1626' : '#cfeafb');
+
+// Cores do tema escolhido no site (claro/escuro e paleta), aplicadas nas telas do programa
+function aplicarTemaLocal(wc) {
+  const css = R.cssDoTema(lerPrefs().aparencia);
+  if (css && wc && !wc.isDestroyed()) wc.insertCSS(css).catch(() => {});
+}
+async function abrirTelaLocal(nome) {
+  if (!janela || janela.isDestroyed()) return;
+  await janela.loadFile(tela(nome)).catch(() => {});
+  aplicarTemaLocal(janela.webContents);
+}
 const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
 const tela = (nome) => path.join(PASTA_TELAS, nome);
 
@@ -186,7 +199,7 @@ function abrirSeletor(lista, { comSom, programas, janelas }) {
   return new Promise((resolver) => {
     const seletor = new BrowserWindow({
       parent: janela, modal: true, width: 960, height: 720, minWidth: 600, minHeight: 480,
-      show: false, backgroundColor: '#cfeafb', title: 'Escolha o que compartilhar',
+      show: false, backgroundColor: corDeFundo(), title: 'Escolha o que compartilhar',
       autoHideMenuBar: true, minimizable: false, maximizable: false,
       webPreferences: {
         partition: 'caras-seletor', preload: path.join(__dirname, 'preload-seletor.js'),
@@ -217,6 +230,7 @@ function abrirSeletor(lista, { comSom, programas, janelas }) {
     ipcMain.on('seletor-escolha', aoEscolher);
     seletor.on('closed', () => terminar(null));
     seletor.webContents.once('did-finish-load', () => {
+      aplicarTemaLocal(seletor.webContents);
       seletor.webContents.send('fontes', {
         comSom,
         programas,
@@ -260,6 +274,15 @@ function pedidoConfiavel(e) {
 }
 ipcMain.handle('info', (e) => (pedidoConfiavel(e) ? { versao: app.getVersion(), atalhosGlobais: true } : null));
 ipcMain.handle('atalhos', (e, lista) => (pedidoConfiavel(e) ? registrarAtalhos(lista) : { ok: [], falhou: [] }));
+
+ipcMain.handle('aparencia', (e, dados) => {
+  if (!pedidoConfiavel(e)) return false;
+  const tema = R.validarTema(dados);
+  if (!tema) return false;
+  const prefs = lerPrefs();
+  if (JSON.stringify(prefs.aparencia) !== JSON.stringify(tema)) guardarPrefs({ ...prefs, aparencia: tema });
+  return true;
+});
 
 // ---------- Som de um programa só (pelo ajudante som-programa.exe) ----------
 // A página chama logo depois do seletor. O som chega por um canal (MessagePort) direto na página.
@@ -311,7 +334,7 @@ async function acordarEAbrir() {
     const inicio = Date.now();
     let mostrouErro = false;
     const atual = janela.webContents.getURL();
-    if (!atual.startsWith('file:')) await janela.loadFile(tela('carregando.html')).catch(() => {});
+    if (!atual.startsWith('file:')) await abrirTelaLocal('carregando.html');
     for (;;) {
       if (!janela || janela.isDestroyed()) return;
       if (await siteRespondendo(janela.webContents.session)) {
@@ -321,12 +344,12 @@ async function acordarEAbrir() {
         } catch (e) {
           if (e?.code === 'ERR_ABORTED' && R.origemDe(janela.webContents.getURL()) === SITE_ORIGEM) return;
           if (!janela || janela.isDestroyed()) return;
-          await janela.loadFile(tela(mostrouErro ? 'erro.html' : 'carregando.html')).catch(() => {});
+          await abrirTelaLocal(mostrouErro ? 'erro.html' : 'carregando.html');
         }
       }
       if (!mostrouErro && Date.now() - inicio > 90000) {
         mostrouErro = true;
-        await janela.loadFile(tela('erro.html')).catch(() => {});
+        await abrirTelaLocal('erro.html');
       }
       await espera(mostrouErro ? 10000 : 2500);
     }
@@ -340,7 +363,7 @@ function criarJanela() {
   configurarSessaoDoSite(ses);
   janela = new BrowserWindow({
     width: 1280, height: 820, minWidth: 880, minHeight: 560,
-    backgroundColor: '#cfeafb', title: 'Caras E Telas', show: false, autoHideMenuBar: true,
+    backgroundColor: corDeFundo(), title: 'Caras E Telas', show: false, autoHideMenuBar: true,
     icon: tela('icone.png'),
     webPreferences: {
       session: ses,
@@ -476,6 +499,12 @@ async function testeRapido() {
       .catch((e) => 'erro: ' + e.name + ': ' + e.message)`, true);
     r.capturaComSom = await capturar('{ restrictOwnAudio: true, echoCancellation: false }');
     r.capturaSemSom = await capturar('false');
+    // tema nas telas do programa (o CSS entra mesmo com a proteção da página)
+    const telaTeste = new BrowserWindow({ show: false, webPreferences: { partition: 'caras-seletor', sandbox: true, contextIsolation: true } });
+    await telaTeste.loadFile(tela('carregando.html'));
+    await telaTeste.webContents.insertCSS(R.cssDoTema({ escuro: true, vars: { '--p2': '#123456' } }));
+    r.temaLocal = (await telaTeste.webContents.executeJavaScript("getComputedStyle(document.documentElement).getPropertyValue('--p2').trim()")) === '#123456' ? 'aplicado' : 'não aplicou';
+    telaTeste.destroy();
     // ajudante de som de um programa só (informativo: a máquina do GitHub não tem placa de som)
     const lista = await ajudante.listar();
     r.ajudante = lista ? { programas: lista.programas.length, janelas: Object.keys(lista.janelas).length, exemplos: lista.programas.slice(0, 5).map((p) => p.nome) } : 'indisponível';

@@ -123,7 +123,34 @@ function validarAtalhos(lista) {
   return saida;
 }
 
+// ---------- Tema das telas do programa ----------
+// O site manda as cores do tema; só passam nomes conhecidos e valores que são cor pura
+// (nada de url(), expressões ou texto solto), e o programa monta o CSS.
+const VARS_DO_TEMA = new Set(['--ceu-alto', '--ceu', '--ceu-fundo', '--ceu-luz', '--onda', '--texto-forte', '--texto', '--suave', '--linha', '--linha-forte',
+  '--p1', '--p2', '--p3', '--p-borda', '--p-sobre', '--p-sobre-sombra', '--p-texto', '--p-anel', '--foco', '--sup-1', '--sup-2', '--pop-1', '--pop-2',
+  '--campo-1', '--campo-2', '--borda-vidro', '--realce', '--sombra-cor', '--gel-topo', '--gel-meio', '--alerta', '--cabeca-1', '--cabeca-2', '--rodape-1', '--rodape-2']);
+const COR = /^(#[0-9a-f]{3,8}|(?:rgba?|hsla?)\(\s*-?[\d.]+(?:deg)?\s*(?:,\s*[\d.]+%?\s*){2,3}\))$/i;
+
+function validarTema(dados) {
+  if (!dados || typeof dados !== 'object') return null;
+  const vars = {};
+  const entrada = dados.vars && typeof dados.vars === 'object' ? dados.vars : {};
+  for (const [nome, valor] of Object.entries(entrada)) {
+    if (VARS_DO_TEMA.has(nome) && typeof valor === 'string' && valor.length <= 60 && COR.test(valor.trim())) vars[nome] = valor.trim();
+  }
+  return { escuro: dados.escuro === true, vars };
+}
+
+function cssDoTema(tema) {
+  const t = validarTema(tema);
+  if (!t) return '';
+  const linhas = Object.entries(t.vars).map(([k, v]) => `${k}: ${v};`);
+  linhas.push(`color-scheme: ${t.escuro ? 'dark' : 'light'};`);
+  return `:root { ${linhas.join(' ')} }`;
+}
+
 module.exports = {
+  validarTema, cssDoTema,
   SITE_PADRAO, origemDe, siteValido, podeNavegar, podeAbrirFora, requisicaoPermitida,
   teclaDoCodigo, aceleradorDe, validarAtalhos,
 };
