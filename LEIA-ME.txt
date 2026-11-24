@@ -1,5 +1,5 @@
 ﻿﻿=====================================================================
-  TELINHA - seu "Discord" particular para compartilhar a tela
+  CARAS E TELAS - seu "Discord" particular para compartilhar a tela
 =====================================================================
 
 O que tem:
@@ -164,6 +164,19 @@ QUAL É A SENHA DE ADMIN
   - No seu PC: a que aparece na janela preta. Dá para trocar no painel
     (aba Servidor).
 
+ESQUECI A SENHA DE ADMIN
+  - Na nuvem (Render): abra o serviço no Render -> Environment ->
+    edite ADMIN_SENHA (ou crie, se não existir) com uma senha nova,
+    SEM aspas. Salve escolhendo a opção que faz o deploy ("Save,
+    rebuild, and deploy" ou "Save and deploy"). Espere o deploy
+    terminar e entre com "Sou admin". A ADMIN_SENHA sempre vale mais
+    que qualquer senha de admin trocada no painel do site.
+  - No seu PC: edite o iniciar.bat e acrescente, embaixo da linha
+    set "ABRIR_NAVEGADOR=1", a linha:
+        set "ADMIN_SENHA=sua-senha-nova"
+  - Errou a senha 8 vezes? Aquele IP fica bloqueado por 10 minutos,
+    mesmo com a senha certa. Espere, ou reinicie o serviço.
+
 O PAINEL (escudo dourado ao lado do nome do servidor)
   - Pessoas: silenciar, parar transmissão, tirar da sala, renomear,
     dar ou tirar admin, expulsar e banir. Também mostra o IP de cada
@@ -276,10 +289,44 @@ DICAS
 
   - Para transmitir, use Chrome, Edge, Firefox ou Opera no computador.
     No celular dá para assistir e conversar.
-  - Som: na janela em que você escolhe o que compartilhar, marque
-    "Compartilhar áudio da guia" ou "Compartilhar áudio do sistema".
-  - Upload: quem transmite manda uma cópia para cada pessoa assistindo
-    (uns 4,5 Mbps por pessoa em 1080p). Com pouco upload, use 720p.
+  - Ajustes da transmissão: o botão "Ajustes", embaixo da sala, guarda
+    o Som, a Qualidade e o "Seu upload".
+  - Seu upload: cada pessoa assistindo recebe uma cópia do vídeo, então
+    a internet de quem transmite é dividida entre todo mundo. O site
+    faz essa divisão sozinho e baixa a resolução quando a sala enche
+    (por exemplo: 1080p para 1 ou 2 pessoas, 720p para mais gente).
+    No "Automático", ele percebe quando a sua internet está apertada e
+    se ajusta. Se você sabe o upload do seu plano (é a velocidade de
+    envio que aparece num teste de velocidade), escolha o valor mais
+    próximo: fica ainda mais estável. Quem transmite vê, em cima da
+    própria tela, quantas pessoas estão assistindo e quanto vai para
+    cada uma.
+  - Som: escolha em "Ajustes" -> "Som", ANTES de compartilhar:
+      Só da aba ou janela (padrão) .. vai só o som do que você está
+                                      mostrando. Use este se vocês
+                                      conversam por chamada (Discord,
+                                      WhatsApp...): não dá eco.
+                                      Para uma aba, marque "Compartilhar
+                                      áudio da guia". Para uma janela
+                                      (jogo, player de vídeo), marque a
+                                      opção de áudio, se aparecer.
+      PC inteiro .................... vai todo o som do computador,
+                                      INCLUSIVE a voz dos amigos na
+                                      chamada. Eles vão se ouvir.
+      Sem som ....................... só a imagem.
+    Enquanto você manda o "PC inteiro", o som das outras transmissões
+    fica pausado no seu computador (se o navegador não conseguir
+    separar), para não voltar para elas.
+  - Trocar de tela: durante a transmissão, clique em "Trocar tela"
+    (embaixo da sala, ou nas setinhas ao lado de "Ao vivo"). Escolha
+    outra janela, aba ou tela: quem está assistindo passa a ver a nova
+    na hora, sem cair. Se cancelar, continua a tela de antes.
+  - Volume de cada transmissão: passe o mouse em cima dela e use a
+    barrinha ao lado do alto-falante (de 0% a 200%). Cada pessoa
+    ajusta só para si, e o site lembra o volume de cada amigo.
+  - Volume enviado: quem está transmitindo com som vê a barrinha
+    "Volume enviado", embaixo da sala. Ela muda o volume para TODO
+    MUNDO que está assistindo.
   - Alguém não ouve? Aparece um botão "Clique para ouvir" em cima da
     transmissão.
   - Atalhos: Enter envia, Shift+Enter pula linha, duplo clique deixa a

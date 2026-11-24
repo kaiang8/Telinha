@@ -99,23 +99,31 @@
           <div class="stage-grid" id="stageGrid"></div>
           <div class="stage-empty" id="stageEmpty"></div>
           <div class="stage-controls" id="stageControls">
-            <label class="quality" title="De onde vem o som da sua transmissão">
-              <span class="muted small">Som</span>
-              <select id="somSelect">
-                <option value="janela">Só da aba ou janela (sem eco)</option>
-                <option value="pc">PC inteiro</option>
-                <option value="nenhum">Sem som</option>
-              </select>
-            </label>
+            <div class="ajustes" id="ajustesPanel" hidden>
+              <label class="quality" title="De onde vem o som da sua transmissão">
+                <span>Som</span>
+                <select id="somSelect">
+                  <option value="janela">Só da aba ou janela (sem eco)</option>
+                  <option value="pc">PC inteiro</option>
+                  <option value="nenhum">Sem som</option>
+                </select>
+              </label>
+              <label class="quality" title="Qualidade máxima da sua transmissão">
+                <span>Qualidade</span>
+                <select id="qualitySelect"></select>
+              </label>
+              <label class="quality" title="Quanto a sua internet consegue enviar">
+                <span>Seu upload</span>
+                <select id="uploadSelect"></select>
+              </label>
+              <p class="ajustes-dica">Cada pessoa assistindo recebe uma cópia do vídeo. O site divide o seu upload entre elas e baixa a resolução quando a sala enche. No automático, ele mede a sua internet sozinho.</p>
+            </div>
             <label class="quality send-vol" id="sendVolWrap" title="Volume do som que você está mandando, para todo mundo" hidden>
               <span class="muted small">Volume enviado</span>
               <input type="range" id="sendVol" min="0" max="2" step="0.05" value="1">
               <span class="vol-pct" id="sendVolPct">100%</span>
             </label>
-            <label class="quality" title="Qualidade da sua transmissão">
-              <span class="muted small">Qualidade</span>
-              <select id="qualitySelect"></select>
-            </label>
+            <button class="btn" id="ajustesBtn" title="Som, qualidade e upload da sua transmissão" hidden></button>
             <button class="btn" id="swapBtn" title="Mostrar outra janela, aba ou tela sem parar a transmissão" hidden></button>
             <button class="btn primary" id="shareBtn"></button>
             <button class="btn green" id="joinBtn"></button>

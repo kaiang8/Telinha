@@ -10,7 +10,7 @@ services:
     healthCheckPath: /api/config
     envVars:
       - key: NOME_SERVIDOR
-        value: Nosso Servidor
+        value: Caras E Telas
       - key: ADMIN_SENHA
         sync: false
       - key: UPSTASH_REDIS_REST_URL

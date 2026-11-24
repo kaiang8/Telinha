@@ -1,5 +1,5 @@
 @echo off
-title Telinha
+title Caras E Telas
 cd /d "%~dp0"
 
 where node >nul 2>nul
@@ -15,7 +15,7 @@ if errorlevel 1 (
 
 echo.
 echo  ============================================
-echo                    TELINHA
+echo                 CARAS E TELAS
 echo  ============================================
 echo.
 echo  Se for so testar sozinho, aperte Enter.

@@ -336,6 +336,16 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 .stage-controls { display: flex; justify-content: center; align-items: center; gap: 10px; padding: 12px 18px 18px; flex-wrap: wrap; }
 .quality { display: flex; align-items: center; gap: 8px; }
 .quality select { background: var(--campo); border: 0; border-radius: var(--raio); height: 40px; padding: 0 10px; outline: none; }
+.stage-controls { position: relative; }
+.ajustes {
+  position: absolute; bottom: calc(100% - 6px); left: 50%; transform: translateX(-50%); z-index: 6;
+  width: min(420px, calc(100% - 24px)); background: var(--painel); border: 1px solid var(--linha); border-radius: 16px;
+  padding: 16px; display: grid; gap: 12px; box-shadow: 0 20px 50px rgba(0, 0, 0, .5);
+}
+.ajustes .quality { display: grid; grid-template-columns: 96px 1fr; gap: 12px; }
+.ajustes .quality > span { font-size: 13px; font-weight: 600; color: var(--suave); }
+.ajustes .quality select { width: 100%; min-width: 0; }
+.ajustes-dica { margin: 2px 0 0; font-size: 12px; line-height: 1.45; color: var(--fraco); }
 .send-vol input[type=range] { width: 120px; accent-color: var(--brilho); }
 .send-vol .vol-pct { font-size: 12px; color: var(--suave); min-width: 38px; font-variant-numeric: tabular-nums; }
 
@@ -466,7 +476,7 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
   .msg { padding-left: 66px; padding-right: 12px; }
   .msg .avatar { left: 14px; }
   .stage-grid.n2, .stage-grid.n3, .stage-grid.n4, .stage-grid.nmany { grid-template-columns: minmax(0, 1fr); }
-  .quality { display: none; }
+  .quality, #ajustesBtn, .ajustes { display: none !important; }
   .login-card { padding: 28px 20px 22px; }
   .login-card h1 { font-size: 34px; }
   .admin-body { padding: 12px; }

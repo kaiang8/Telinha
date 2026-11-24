@@ -31,6 +31,7 @@
     megaphone: '<path d="M3 10v4h3l8 4.5v-13L6 10H3z"/><path d="M17.5 9a3.5 3.5 0 0 1 0 6"/>',
     close: '<path d="M6 6l12 12M18 6 6 18"/>',
     swap: '<path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/>',
+    sliders: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
   };
   const MARCA = 'Caras E Telas';
   const LOGO = '<svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><g transform="rotate(-9 23 24)"><rect x="5" y="10" width="36" height="27" rx="8" fill="#a9b0ff"/><g class="pisca"><circle cx="16.5" cy="21.5" r="2.7" fill="#1b1440"/><circle cx="29.5" cy="21.5" r="2.7" fill="#1b1440"/></g><path d="M16 28q7 5 14 0" fill="none" stroke="#1b1440" stroke-width="2.7" stroke-linecap="round"/></g><g transform="rotate(7 41 38)"><rect x="22.5" y="24.5" width="37" height="28" rx="8.5" fill="#ffb23f" style="stroke: var(--recorte, #101233)" stroke-width="3.5"/><path d="M32.5 36.5q3.2-3 6.4 0" fill="none" stroke="#1b1440" stroke-width="2.7" stroke-linecap="round"/><circle cx="48" cy="35.5" r="2.7" fill="#1b1440"/><path d="M34.5 42.5q7.5 6 15 0" fill="none" stroke="#1b1440" stroke-width="2.7" stroke-linecap="round"/></g></svg>';
@@ -65,6 +66,7 @@
     view: salvo.view || null, sala: null, live: false, localStream: null,
     quality: QUALIDADES[salvo.quality] ? salvo.quality : '1080p30',
     som: ['janela', 'pc', 'nenhum'].includes(salvo.som) ? salvo.som : 'janela',
+    upload: ['auto', '5', '10', '20', '50', '100'].includes(String(salvo.upload)) ? String(salvo.upload) : 'auto',
     evitarEco: false, // pausa o som das outras transmissões enquanto mando o som do PC inteiro
     out: new Map(), // quem está me assistindo: viewerId -> conexão
     inc: new Map(), // quem eu estou assistindo: sharerId -> conexão
@@ -800,7 +802,8 @@
     $('#shareBtn').hidden = !naSala;
     $('#leaveBtn').hidden = !naSala;
     $('#leaveBtn').innerHTML = `${icon('logout')} Sair da sala`;
-    document.querySelectorAll('.quality:not(.send-vol)').forEach((el) => { el.hidden = !naSala; });
+    $('#ajustesBtn').hidden = !naSala;
+    if (!naSala) $('#ajustesPanel').hidden = true;
     $('#sendVolWrap').hidden = !(naSala && S.live && S.envio && S.audioCaptado);
     const sw = $('#swapBtn');
     sw.hidden = !(naSala && S.live);
@@ -1024,7 +1027,11 @@
     let falhou = false;
     if (self) {
       const n = [...S.out.values()].filter((x) => x.pc.connectionState === 'connected').length;
-      estado = n ? `${plural(n, 'pessoa assistindo', 'pessoas assistindo')}` : 'Ninguém assistindo ainda';
+      const q = QUALIDADES[S.quality];
+      const fatia = ORC.porPessoa || fatiaPorPessoa();
+      estado = n
+        ? `${plural(n, 'pessoa assistindo', 'pessoas assistindo')}, ${mbps(fatia)} Mbps para cada${fatia < q.br * 0.85 ? ' (qualidade ajustada ao seu upload)' : ''}`
+        : 'Ninguém assistindo ainda';
     } else if (!c || c.state === 'new' || c.state === 'connecting') {
       estado = 'Conectando…';
     } else if (c.state === 'failed') {
@@ -1273,6 +1280,8 @@
       return;
     }
     S.live = true;
+    ORC.total = 8e6;
+    ORC.congest = ORC.folga = ORC.espera = 0;
     avaliarSom(stream, false);
     patchMe();
     blip('live');
@@ -1344,6 +1353,7 @@
       sinal(vid, { k: 'restart' });
     }
     avaliarSom(novo, true);
+    aplicarOrcamento();
     renderTudo();
   }
 
@@ -1374,24 +1384,107 @@
         await vt.applyConstraints({ width: { ideal: q.w }, height: { ideal: q.h }, frameRate: { ideal: q.fps, max: q.fps } });
       } catch { /* nem todo navegador deixa mudar no meio */ }
     }
-    for (const c of S.out.values()) ajustarEnvio(c.pc);
+    aplicarOrcamento();
   }
 
-  async function ajustarEnvio(pc) {
+  // ================= Upload: divide a internet de quem transmite =================
+  // Cada pessoa assistindo recebe uma cópia do vídeo. Aqui o site reparte o upload
+  // entre elas e baixa a resolução quando a fatia de cada um fica pequena.
+  const UPLOADS = [['auto', 'Automático'], ['5', 'Até 5 Mbps'], ['10', 'Até 10 Mbps'], ['20', 'Até 20 Mbps'], ['50', 'Até 50 Mbps'], ['100', '100 Mbps ou mais']];
+  const POR_MIN = 300e3; // nunca abaixo disso por pessoa
+  const AUDIO_BPS = 100e3; // o som também ocupa um pouco
+  const ORC = { total: 8e6, congest: 0, folga: 0, espera: 0, porPessoa: 0, fila: Promise.resolve() };
+
+  function orcamentoTotal() {
+    return S.upload === 'auto' ? ORC.total : Number(S.upload) * 1e6 * 0.85; // deixa uma folga na internet
+  }
+  function fatiaPorPessoa() {
     const q = QUALIDADES[S.quality];
-    for (const s of pc.getSenders()) {
-      if (!s.track || s.track.kind !== 'video') continue;
-      try {
-        const p = s.getParameters();
-        if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-        p.encodings[0].maxBitrate = q.br;
-        p.encodings[0].maxFramerate = q.fps;
-        await s.setParameters(p);
-      } catch (e) {
-        console.warn('Não consegui ajustar a qualidade de envio', e);
+    const n = Math.max(1, S.out.size);
+    return Math.max(POR_MIN, Math.min(q.br, orcamentoTotal() / n - AUDIO_BPS));
+  }
+  const alturaPara = (bps) => (bps >= 2.5e6 ? 1080 : bps >= 1.2e6 ? 720 : bps >= 0.6e6 ? 540 : 360);
+  const mbps = (bps) => (bps / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: bps < 1e6 ? 2 : 1 });
+
+  async function aplicarOrcamentoAgora() {
+    if (!S.live || !S.localStream) return;
+    const q = QUALIDADES[S.quality];
+    const fatia = fatiaPorPessoa();
+    ORC.porPessoa = fatia;
+    const vt = S.localStream.getVideoTracks()[0];
+    const altura = vt?.getSettings?.().height || q.h;
+    let escala = 1;
+    let fps = q.fps;
+    if (q.hint === 'detail') fps = fatia < 0.8e6 ? 5 : fatia < 1.5e6 ? 10 : q.fps; // texto: mantém a nitidez, baixa os quadros
+    else escala = Math.max(1, altura / alturaPara(fatia)); // movimento: baixa a resolução
+    escala = Math.round(escala * 100) / 100;
+    for (const c of S.out.values()) {
+      for (const s of c.pc.getSenders()) {
+        if (!s.track || s.track.kind !== 'video') continue;
+        try {
+          const p = s.getParameters();
+          if (!p.encodings || !p.encodings.length) continue; // ainda conectando: aplica depois
+          const e = p.encodings[0];
+          if (e.maxBitrate === Math.round(fatia) && e.maxFramerate === fps && (e.scaleResolutionDownBy || 1) === escala) continue;
+          e.maxBitrate = Math.round(fatia);
+          e.maxFramerate = fps;
+          e.scaleResolutionDownBy = escala;
+          await s.setParameters(p);
+        } catch (err) {
+          console.warn('Não consegui ajustar o envio', err);
+        }
       }
     }
+    atualizarTile(S.myId);
   }
+  // Uma alteração por vez (o navegador não gosta de ajustes simultâneos)
+  function aplicarOrcamento() {
+    ORC.fila = ORC.fila.then(aplicarOrcamentoAgora).catch(() => {});
+    return ORC.fila;
+  }
+
+  // Modo automático: olha a cada 2 s se a internet está apertada (estimativa de banda
+  // menor que a fatia, ou pacotes se perdendo) e ajusta o total para baixo ou para cima.
+  function avaliarRede(sinais, n) {
+    const q = QUALIDADES[S.quality];
+    if (!sinais.length) return false;
+    const fatia = ORC.porPessoa || fatiaPorPessoa();
+    const apertado = sinais.some((x) => (x.bwe && x.bwe < fatia * 0.8) || x.perda > 0.08);
+    const sobra = sinais.every((x) => (!x.bwe || x.bwe >= fatia * 1.1) && x.perda < 0.02);
+    if (apertado) { ORC.congest++; ORC.folga = 0; } else if (sobra) { ORC.folga++; ORC.congest = 0; } else { ORC.congest = 0; ORC.folga = 0; }
+    if (ORC.espera > 0) ORC.espera--;
+    if (ORC.congest >= 2) {
+      ORC.total = Math.max(n * (POR_MIN + AUDIO_BPS), ORC.total * 0.75);
+      ORC.congest = 0;
+      ORC.espera = 5; // espera ~10 s antes de tentar subir de novo
+      return true;
+    }
+    const teto = n * (q.br + AUDIO_BPS);
+    if (ORC.folga >= 5 && ORC.espera === 0 && ORC.total < teto) {
+      ORC.total = Math.min(teto, ORC.total * 1.15);
+      ORC.folga = 0;
+      return true;
+    }
+    return false;
+  }
+  async function medirRede() {
+    if (!S.live || S.upload !== 'auto' || !S.out.size) return;
+    const sinais = [];
+    for (const c of S.out.values()) {
+      if (c.pc.connectionState !== 'connected') continue;
+      let rel;
+      try { rel = await c.pc.getStats(); } catch { continue; }
+      let bwe = 0;
+      let perda = 0;
+      rel.forEach((r) => {
+        if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded' && r.availableOutgoingBitrate) bwe = r.availableOutgoingBitrate;
+        if (r.type === 'remote-inbound-rtp' && r.kind === 'video' && typeof r.fractionLost === 'number') perda = r.fractionLost;
+      });
+      sinais.push({ bwe, perda });
+    }
+    if (avaliarRede(sinais, S.out.size)) aplicarOrcamento();
+  }
+  setInterval(medirRede, 2000);
 
   // ================= WebRTC =================
   // Quem transmite sempre faz a "oferta"; quem assiste responde.
@@ -1496,6 +1589,7 @@
     c.pc.close();
     S.out.delete(vid);
     atualizarTile(S.myId);
+    aplicarOrcamento();
   }
 
   async function onSignal(from, d) {
@@ -1541,7 +1635,7 @@
     const pend = c.pending;
     c.pending = [];
     for (const p of pend) c.pc.addIceCandidate(p.c).catch(() => {});
-    ajustarEnvio(c.pc);
+    aplicarOrcamento(); // uma pessoa a mais: refaz as fatias
   }
 
   function iceComoTransmissor(vid, d) {
@@ -1674,6 +1768,27 @@
       salvar({ volEnvio: S.volEnvio });
       $('#sendVolPct').textContent = `${Math.round(S.volEnvio * 100)}%`;
       if (S.envio) S.envio.gain.gain.setTargetAtTime(S.volEnvio, S.envio.gain.context.currentTime, 0.02);
+    });
+
+    $('#ajustesBtn').innerHTML = `${icon('sliders')} Ajustes`;
+    $('#ajustesBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      $('#ajustesPanel').hidden = !$('#ajustesPanel').hidden;
+    });
+    document.addEventListener('click', (e) => {
+      if (!$('#ajustesPanel').hidden && !e.target.closest('#ajustesPanel, #ajustesBtn')) $('#ajustesPanel').hidden = true;
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !$('#ajustesPanel').hidden) { $('#ajustesPanel').hidden = true; e.preventDefault(); }
+    });
+    const up = $('#uploadSelect');
+    up.innerHTML = UPLOADS.map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+    up.value = S.upload;
+    up.addEventListener('change', () => {
+      S.upload = up.value;
+      salvar({ upload: S.upload });
+      if (S.upload === 'auto') ORC.total = 8e6;
+      aplicarOrcamento();
     });
 
     const som = $('#somSelect');
