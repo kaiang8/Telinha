@@ -1209,22 +1209,40 @@
       opcoes.systemAudio = 'include';
       opcoes.windowAudio = 'system';
     }
-    try {
-      return await navigator.mediaDevices.getDisplayMedia(opcoes);
-    } catch (e) {
-      if (e.name === 'NotAllowedError' || e.name === 'AbortError') return null; // cancelou
+    // Se o navegador recusar alguma opção, tenta pedidos mais simples, mas SEMPRE
+    // mantendo a regra do som escolhido (no modo sem eco, nunca oferecer o som do sistema).
+    const regraSom = S.som === 'janela' ? { systemAudio: 'exclude', windowAudio: 'window' }
+      : S.som === 'pc' ? { systemAudio: 'include', windowAudio: 'system' } : {};
+    const tentativas = [opcoes];
+    if (opcoes.audio) tentativas.push({ ...opcoes, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    tentativas.push({ video: true, audio: S.som !== 'nenhum', ...regraSom });
+    if (S.som === 'janela') {
+      tentativas.push({ video: true, audio: true, systemAudio: 'exclude', windowAudio: 'exclude' }); // som só de aba
+      tentativas.push({ video: true, audio: true, systemAudio: 'exclude' });
+    } else {
+      tentativas.push({ video: true, audio: S.som !== 'nenhum' });
+    }
+    S.diagCaptura = { tentativa: 0, erros: [] };
+    for (const [i, o] of tentativas.entries()) {
       try {
-        return await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: S.som !== 'nenhum',
-          ...(S.som === 'janela' ? { systemAudio: 'exclude' } : {}),
-        });
-      } catch (e2) {
-        if (e2.name === 'NotAllowedError' || e2.name === 'AbortError') return null;
-        throw e2;
+        const stream = await navigator.mediaDevices.getDisplayMedia(o);
+        S.diagCaptura.tentativa = i;
+        return stream;
+      } catch (e) {
+        if (e.name === 'NotAllowedError' || e.name === 'AbortError') return null; // cancelou
+        S.diagCaptura.erros.push(`${e.name}: ${e.message}`);
+        console.warn(`O navegador recusou o pedido de captura ${i + 1}:`, e);
       }
     }
+    throw new Error(S.diagCaptura.erros[S.diagCaptura.erros.length - 1] || 'o navegador recusou');
   }
+
+  // Versão do motor Chromium (Chrome, Edge, Opera...). Só manda o som de UMA janela a partir da 141.
+  function versaoChromium() {
+    const m = navigator.userAgent.match(/Chrom(?:e|ium)\/(\d+)/);
+    return m ? Number(m[1]) : 0;
+  }
+  const navegadorAntigo = () => { const v = versaoChromium(); return v > 0 && v < 141; };
 
   function prepararVideo(stream) {
     const vt = stream.getVideoTracks()[0];
@@ -1242,9 +1260,13 @@
     const superficie = vt?.getSettings?.().displaySurface;
     S.audioCaptado = !!at;
     S.evitarEco = false;
-    if (at && (superficie === 'monitor' || S.som === 'pc')) {
+    const somDoSistema = !!at && (superficie === 'monitor' || S.som === 'pc' || /system|sistema/i.test(at.label || ''));
+    if (somDoSistema) {
       if (at.getSettings?.().restrictOwnAudio !== true) S.evitarEco = true;
-      toast(`${trocou ? 'Tela trocada. ' : ''}Você está mandando o som do computador inteiro. Se vocês conversam por chamada (Discord, WhatsApp…), os amigos vão ouvir a própria voz. Para evitar, vá em Ajustes → Som → "Só o que estou mostrando".`, 10000);
+      let porque = 'Para evitar, vá em Ajustes → Som → "Só o que estou mostrando".';
+      if (S.som === 'janela' && navegadorAntigo()) porque = `Seu navegador (versão ${versaoChromium()}) é antigo e não consegue mandar só o som de uma janela. Atualize o Chrome (Menu → Ajuda → Sobre o Google Chrome) ou compartilhe uma aba.`;
+      else if (S.som === 'janela') porque = 'Na janela de escolha, desligue "Compartilhar com áudio do sistema" e ligue o áudio do aplicativo, se aparecer.';
+      toast(`${trocou ? 'Tela trocada. ' : ''}Você está mandando o som do computador inteiro: quem está na chamada de voz vai ouvir a própria voz. ${porque}`, 12000);
     } else if (!at && S.som !== 'nenhum') {
       toast(`${trocou ? 'Tela trocada, mas sem som. ' : 'Esta transmissão está sem som. '}Para mandar som, ligue a opção de áudio na janela de escolha: "áudio do aplicativo" para uma janela ou "áudio da guia" para uma aba.`, 8000);
     } else if (trocou) {
@@ -1282,6 +1304,7 @@
       return;
     }
     S.live = true;
+    if (S.diagCaptura?.tentativa > 0) console.warn('Captura em modo compatível:', S.diagCaptura);
     ORC.total = 8e6;
     ORC.congest = ORC.folga = ORC.espera = 0;
     avaliarSom(stream, false);
@@ -1800,9 +1823,13 @@
       const el = $('#somDica');
       el.classList.toggle('aviso', pc);
       el.hidden = S.som === 'nenhum';
+      const antigo = navegadorAntigo();
+      el.classList.toggle('aviso', pc || antigo);
       el.textContent = pc
         ? 'Atenção: entra todo o som do computador, inclusive a chamada de voz (Discord, WhatsApp…). Quem estiver na chamada vai ouvir a própria voz.'
-        : 'Na janela de escolha, ligue o áudio: "Compartilhar áudio do aplicativo" para uma janela, ou "Compartilhar áudio da guia" para uma aba. A chamada de voz não entra.';
+        : antigo
+          ? `Seu navegador (versão ${versaoChromium()}) é antigo: numa janela, ele só consegue mandar o som do sistema, e isso dá eco. Atualize o Chrome ou o Edge, ou compartilhe uma aba com "Compartilhar áudio da guia".`
+          : 'Na janela de escolha, ligue o áudio: "Compartilhar áudio do aplicativo" para uma janela, ou "Compartilhar áudio da guia" para uma aba. A chamada de voz não entra.';
     };
     dicaSom();
     som.addEventListener('change', () => {
