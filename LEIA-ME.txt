@@ -187,6 +187,13 @@ O PAINEL (escudo dourado ao lado do nome do servidor)
   - Pessoas: silenciar, parar transmissão, tirar da sala, renomear,
     dar ou tirar admin, expulsar e banir. Também mostra o IP de cada
     pessoa. Clicar em alguém na lista de membros abre direto aqui.
+  - Conexões: registro de quem entrou (quando, nome, IP, navegador
+    ou programa, quanto tempo ficou, se foi expulso) e das tentativas
+    recusadas (senha errada, senha de admin errada, banido tentando
+    voltar, servidor trancado). Clique num IP para ver tudo o que veio
+    dele. Recarregar a página ou cair e voltar logo em seguida conta
+    como a mesma visita. Fica guardado por 30 dias (no máximo 500
+    entradas) e dá para limpar.
   - Banidos: lista de banidos, com o botão para desbanir.
   - Servidor: nome, senha de entrada, trancar a entrada, aviso para
     todos, limpar canal e trocar a senha de admin.
@@ -308,8 +315,9 @@ O QUE O PROGRAMA FAZ PARA NÃO VIRAR PORTA DE ENTRADA
     saída, como um navegador.
   - Só libera o que precisa: capturar a tela (sempre por um
     seletor que você escolhe), o microfone (só o som, e só quando
-    você liga), copiar o link de convite e tela cheia. Câmera, USB e
-    localização ficam bloqueados.
+    você liga), escolher em qual alto-falante o som sai, copiar o
+    link de convite e tela cheia. Câmera, USB e localização ficam
+    bloqueados.
   - Os recursos de depuração do Electron vêm desligados.
   - O ajudante de som (som-programa.exe) só lê o som do programa que
     você escolheu: não usa a internet e não grava nada no disco.
@@ -322,7 +330,8 @@ O QUE O PROGRAMA FAZ PARA NÃO VIRAR PORTA DE ENTRADA
 
 SOBRE O SEU IP
   - Ninguém de fora do servidor consegue ver o seu IP pelo site ou
-    pelo programa.
+    pelo programa. Os admins veem o IP de quem está online e o
+    registro de conexões dos últimos 30 dias (veja "O PAINEL").
   - As imagens do chat passam pelo servidor. Assim, um link de
     "capturador de IP" postado no chat não pega o IP de ninguém.
   - O vídeo e a voz vão direto entre os computadores, criptografados.
@@ -403,7 +412,9 @@ DICAS
       Fone            muta a sala: você para de ouvir as vozes, as
                       transmissões e os sons, e o seu microfone desliga
                       junto. Ao desmutar, o microfone volta como estava.
-      Engrenagem      Opções de áudio: qual microfone, "Quando eu
+      Engrenagem      Opções de áudio: qual microfone, em qual
+                      alto-falante ou fone o som sai (com o botão
+                      "Testar som"), "Quando eu
                       falo" ou "Apertar para falar" (você grava a
                       tecla, uma combinação ou o botão do meio/lateral
                       do mouse), sensibilidade (no automático ela se
@@ -411,6 +422,11 @@ DICAS
                       ajustar na mão olhando a barra) e supressão de
                       ruído. A janela tem um teste com uma barra que
                       fica verde quando o microfone abre.
+    Ao lado de "Conectado à sala" ficam as barrinhas da rede: verde
+    (boa), amarela (instável) ou vermelha (ruim), com o ping. Passe o
+    mouse para ver o ping com cada pessoa e a perda de pacotes.
+    Sozinho na sala, ela mostra a resposta do servidor (que fica nos
+    EUA: 150 a 250 ms é normal).
     Quem está falando ganha um contorno verde na foto. Ao lado do nome
     aparece quem está mudo ou mutou a sala. Use fone de ouvido para o
     melhor som: sem fone, o cancelamento de eco segura a maior parte,

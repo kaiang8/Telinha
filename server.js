@@ -11,6 +11,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const zlib = require('zlib');
 const dns = require('dns').promises;
 const net = require('net');
 
@@ -156,6 +157,135 @@ async function gravar() {
   }
 }
 
+// ---------- Registro de conexões (só admins veem) ----------
+// Quem entrou, de qual IP e com qual navegador, e as tentativas recusadas. Fica separado dos
+// outros dados (não pesa a cada mensagem salva) e guarda só o necessário: no máximo 500
+// entradas, por até 30 dias.
+const REGISTRO_MAX = 500;
+const REGISTRO_DIAS = 30;
+const CHAVE_REGISTRO = `${CHAVE_UPSTASH}:conexoes`;
+const ARQUIVO_REGISTRO = DATA_FILE.replace(/\.json$/i, '') + '-conexoes.json';
+let registro = [];
+let registroOk = true; // se não deu para ler o registro guardado, não sobrescreve
+let registroTimer = null;
+let registroSujo = false;
+let gravandoRegistro = false;
+const sessoesAtivas = new Map(); // id da entrada -> quantas conexões abertas
+
+function aparelhoDe(req) {
+  const ua = String(req.headers['user-agent'] || '').slice(0, 500);
+  const sistema = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) ? 'iPhone/iPad'
+    : /Macintosh|Mac OS X/.test(ua) ? 'Mac' : /CrOS/.test(ua) ? 'Chromebook' : /Linux/.test(ua) ? 'Linux' : '';
+  let app;
+  if (/\bElectron\//.test(ua)) {
+    const v = ua.match(/\/(\d+\.\d+\.\d+)\s+Chrome\/[\d.]+\s+Electron\//);
+    app = `Programa${v ? ` ${v[1]}` : ''}`;
+  } else if (/\bEdg(A|iOS)?\//.test(ua)) app = 'Edge';
+  else if (/\bOPR\/|\bOpera\b/.test(ua)) app = 'Opera';
+  else if (/SamsungBrowser/.test(ua)) app = 'Samsung Internet';
+  else if (/Firefox\/|FxiOS/.test(ua)) app = 'Firefox';
+  else if (/Chrome\/|CriOS/.test(ua)) app = 'Chrome';
+  else if (/Safari\//.test(ua)) app = 'Safari';
+  else app = ua ? 'Outro navegador' : 'Desconhecido';
+  return sistema ? `${app} no ${sistema}` : app;
+}
+
+function limparRegistroVelho() {
+  const limite = Date.now() - REGISTRO_DIAS * 864e5;
+  if (registro.length && registro[0].t < limite) registro = registro.filter((x) => x.t >= limite);
+}
+function anotar(entrada) {
+  limparRegistroVelho();
+  const e = { id: crypto.randomBytes(5).toString('hex'), t: Date.now(), ...entrada };
+  registro.push(e);
+  if (registro.length > REGISTRO_MAX) registro.splice(0, registro.length - REGISTRO_MAX);
+  salvarRegistro();
+  return e;
+}
+// Entrou: recarregar a página ou cair e voltar em seguida conta como a mesma visita
+function registrarEntrada(u, req) {
+  const aparelho = aparelhoDe(req);
+  const agora = Date.now();
+  const e = registro.findLast((x) => x.tipo === 'entrou' && x.ip === u.ip && x.nome === u.name && x.aparelho === aparelho);
+  if (e && (sessoesAtivas.get(e.id) > 0 || agora - (e.fim || 0) < 3 * 60e3)) {
+    delete e.fim;
+    delete e.saida;
+    e.admin = e.admin || u.admin;
+    salvarRegistro();
+    u.registro = e;
+  } else {
+    u.registro = anotar({ tipo: 'entrou', nome: u.name, ip: u.ip, aparelho, admin: u.admin });
+  }
+  sessoesAtivas.set(u.registro.id, (sessoesAtivas.get(u.registro.id) || 0) + 1);
+}
+function registrarSaida(u) {
+  const e = u.registro;
+  if (!e) return;
+  u.registro = null;
+  const n = (sessoesAtivas.get(e.id) || 1) - 1;
+  if (n > 0) return sessoesAtivas.set(e.id, n);
+  sessoesAtivas.delete(e.id);
+  e.fim = Date.now();
+  if (u.kicked) e.saida = u.kicked.banned ? 'banido' : 'expulso';
+  salvarRegistro();
+}
+// Recusado (senha errada, banido...): a mesma tentativa repetida vira uma linha só
+function registrarRecusa(req, ip, nome, motivo) {
+  const agora = Date.now();
+  const e = registro.findLast((x) => x.tipo === 'recusado' && x.ip === ip && x.motivo === motivo);
+  if (e && agora - (e.ultima || e.t) < 10 * 60e3) {
+    e.vezes = (e.vezes || 1) + 1;
+    e.ultima = agora;
+    if (nome && nome !== e.nome && !e.nomes?.includes(nome) && (e.nomes || []).length < 5) e.nomes = [...(e.nomes || []), nome];
+    return salvarRegistro();
+  }
+  anotar({ tipo: 'recusado', motivo, nome: nome || '?', ip, aparelho: aparelhoDe(req) });
+}
+
+function salvarRegistro() {
+  registroSujo = true;
+  clearTimeout(registroTimer);
+  registroTimer = setTimeout(gravarRegistro, 5000);
+}
+async function gravarRegistro() {
+  if (!registroOk || !registroSujo) return;
+  if (gravandoRegistro) { registroTimer = setTimeout(gravarRegistro, 1000); return; }
+  gravandoRegistro = true;
+  registroSujo = false;
+  limparRegistroVelho();
+  const conteudo = JSON.stringify(registro);
+  try {
+    if (USA_UPSTASH) {
+      await upstash(['SET', CHAVE_REGISTRO, conteudo]);
+    } else {
+      const tmp = ARQUIVO_REGISTRO + '.tmp';
+      await fs.promises.writeFile(tmp, conteudo);
+      await fs.promises.rename(tmp, ARQUIVO_REGISTRO);
+    }
+  } catch (e) {
+    registroSujo = true;
+    console.warn('Não consegui salvar o registro de conexões:', e.message);
+    registroTimer = setTimeout(gravarRegistro, 15000);
+  } finally {
+    gravandoRegistro = false;
+  }
+}
+async function carregarRegistro() {
+  try {
+    const raw = USA_UPSTASH
+      ? await upstash(['GET', CHAVE_REGISTRO])
+      : await fs.promises.readFile(ARQUIVO_REGISTRO, 'utf8').catch((e) => (e.code === 'ENOENT' ? null : Promise.reject(e)));
+    const lista = raw ? JSON.parse(raw) : [];
+    registro = (Array.isArray(lista) ? lista : []).filter((x) => x && typeof x.t === 'number' && typeof x.ip === 'string').slice(-REGISTRO_MAX);
+    // quem estava conectado quando o servidor desligou
+    for (const x of registro) if (x.tipo === 'entrou' && !x.fim) { x.fim = x.ultimaVista || x.t; x.saida = 'reinicio'; }
+    limparRegistroVelho();
+  } catch (e) {
+    registroOk = false;
+    console.warn('  Não consegui ler o registro de conexões:', e.message);
+  }
+}
+
 // ---------- Configurações do servidor ----------
 const nomeServidor = () => data.settings.serverName || NOME_ENV;
 const hashSite = () => ('senhaHash' in data.settings ? data.settings.senhaHash : SENHA_ENV_HASH);
@@ -266,6 +396,7 @@ function removerUsuario(u) {
   clearTimeout(u.removeTimer);
   users.delete(u.id);
   tokens.delete(u.token);
+  registrarSaida(u);
   if (u.res) {
     try { u.res.end(); } catch { /* ignore */ }
   }
@@ -442,18 +573,45 @@ function servirEstatico(req, res) {
       return res.end('Não encontrado');
     }
   }
-  fs.readFile(arquivo, (err, buf) => {
-    if (err) {
-      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      return res.end('Não encontrado');
-    }
-    res.writeHead(200, {
+  lerParaServir(arquivo).then((f) => {
+    const base = {
       'Content-Type': TIPOS[path.extname(arquivo)] || 'application/octet-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-cache', // sempre confere se mudou (sem baixar de novo se não mudou)
+      ETag: f.etag,
+      Vary: 'Accept-Encoding',
       ...CABECALHOS_SEGURANCA,
-    });
-    res.end(buf);
+    };
+    if (req.headers['if-none-match'] === f.etag) {
+      res.writeHead(304, base);
+      return res.end();
+    }
+    const comprimir = f.gz && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''));
+    res.writeHead(200, comprimir ? { ...base, 'Content-Encoding': 'gzip' } : base);
+    res.end(req.method === 'HEAD' ? undefined : comprimir ? f.gz : f.buf);
+  }, () => {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Não encontrado');
   });
+}
+
+// Arquivos da página guardados na memória, já comprimidos, com uma "impressão digital" (ETag):
+// quem já tem a versão atual não baixa de novo. Economiza o tráfego do plano grátis.
+const ARQUIVOS_PRONTOS = new Map(); // caminho -> { mtime, etag, buf, gz }
+const COMPRIMIVEIS = new Set(['.html', '.js', '.css', '.svg', '.json', '.txt', '.webmanifest']);
+async function lerParaServir(arquivo) {
+  const st = await fs.promises.stat(arquivo);
+  const pronto = ARQUIVOS_PRONTOS.get(arquivo);
+  if (pronto && pronto.mtime === st.mtimeMs && pronto.tamanho === st.size) return pronto;
+  const buf = await fs.promises.readFile(arquivo);
+  const f = {
+    mtime: st.mtimeMs,
+    tamanho: st.size,
+    etag: `"${crypto.createHash('sha1').update(buf).digest('base64url').slice(0, 20)}"`,
+    buf,
+    gz: COMPRIMIVEIS.has(path.extname(arquivo)) && buf.length > 1024 ? zlib.gzipSync(buf, { level: 9 }) : null,
+  };
+  ARQUIVOS_PRONTOS.set(arquivo, f);
+  return f;
 }
 
 // ---------- Eventos em tempo real (Server-Sent Events) ----------
@@ -559,6 +717,19 @@ async function acaoAdmin(u, body, res) {
   switch (body.action) {
     case 'list':
       return json(res, 200, visaoAdmin());
+
+    case 'conexoes':
+      limparRegistroVelho();
+      return json(res, 200, {
+        dias: REGISTRO_DIAS,
+        max: REGISTRO_MAX,
+        registro: registro.slice().reverse().map((x) => ({ ...x, online: sessoesAtivas.get(x.id) > 0 })),
+      });
+
+    case 'limpar-conexoes':
+      registro = registro.filter((x) => sessoesAtivas.get(x.id) > 0); // quem está online continua
+      salvarRegistro();
+      return json(res, 200, { ok: true });
 
     case 'kick':
       if (!precisaAlvo()) return;
@@ -812,6 +983,7 @@ async function api(req, res, url) {
     if (body.adminPassword) {
       if (!confereSenha(body.adminPassword, hashAdmin())) {
         falhou(ip);
+        registrarRecusa(req, ip, limparNome(body.name, 32), 'senha de admin errada');
         return json(res, 403, { error: 'Senha de admin incorreta', campo: 'admin' });
       }
       admin = true;
@@ -819,11 +991,18 @@ async function api(req, res, url) {
     if (!admin) {
       if (!senhaSiteConfere(body.password)) {
         falhou(ip);
+        registrarRecusa(req, ip, limparNome(body.name, 32), 'senha errada');
         return json(res, 403, { error: 'Senha incorreta', campo: 'senha' });
       }
       const ban = banDe(ip, device);
-      if (ban) return json(res, 403, { error: `Você foi banido deste servidor.${ban.reason ? ` Motivo: ${ban.reason}` : ''}`, banned: true });
-      if (data.settings.locked) return json(res, 423, { error: 'O servidor está trancado agora. Peça para um admin destrancar.' });
+      if (ban) {
+        registrarRecusa(req, ip, limparNome(body.name, 32), 'banido');
+        return json(res, 403, { error: `Você foi banido deste servidor.${ban.reason ? ` Motivo: ${ban.reason}` : ''}`, banned: true });
+      }
+      if (data.settings.locked) {
+        registrarRecusa(req, ip, limparNome(body.name, 32), 'servidor trancado');
+        return json(res, 423, { error: 'O servidor está trancado agora. Peça para um admin destrancar.' });
+      }
     }
     const name = limparNome(body.name, 32);
     if (!name) return json(res, 400, { error: 'Escolha um apelido' });
@@ -850,6 +1029,7 @@ async function api(req, res, url) {
     };
     users.set(u.id, u);
     tokens.set(u.token, u.id);
+    registrarEntrada(u, req);
     // Se o navegador nunca abrir os eventos, some sozinho.
     armarRemocao(u, 30000);
     return json(res, 200, { id: u.id, token: u.token, admin });
@@ -1079,6 +1259,7 @@ async function iniciar() {
     console.warn('  Envie esses arquivos para o GitHub, senão o site não abre.\n');
   }
   await carregarDados();
+  await carregarRegistro();
   garantirSenhaAdmin();
   server.listen(PORT, () => {
     console.log(`\n  ${nomeServidor()} rodando em http://localhost:${PORT}`);
@@ -1100,7 +1281,13 @@ async function desligar() {
   clearTimeout(saveTimer);
   // Garante que a última alteração foi salva (no máximo 5 s)
   const espera = new Promise((ok) => setTimeout(ok, 5000));
-  await Promise.race([(async () => { while (salvando) await new Promise((ok) => setTimeout(ok, 50)); await gravar(); })(), espera]);
+  clearTimeout(registroTimer);
+  // quem está online sai do registro com a hora de agora
+  for (const u of users.values()) registrarSaida(u);
+  await Promise.race([Promise.all([
+    (async () => { while (salvando) await new Promise((ok) => setTimeout(ok, 50)); await gravar(); })(),
+    (async () => { while (gravandoRegistro) await new Promise((ok) => setTimeout(ok, 50)); clearTimeout(registroTimer); await gravarRegistro(); })(),
+  ]), espera]);
   process.exit(0);
 }
 process.on('SIGINT', desligar);

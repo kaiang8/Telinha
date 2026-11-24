@@ -84,7 +84,8 @@ app.on('web-contents-created', (_e, wc) => {
   wc.on('will-download', (ev) => ev.preventDefault());
 });
 
-const PERMISSOES = new Set(['display-capture', 'clipboard-sanitized-write', 'fullscreen']);
+// speaker-selection: escolher em qual alto-falante ou fone o som sai
+const PERMISSOES = new Set(['display-capture', 'clipboard-sanitized-write', 'fullscreen', 'speaker-selection']);
 
 function daJanelaPrincipal(wc, url) {
   return !!janela && !janela.isDestroyed() && wc === janela.webContents && R.origemDe(url) === SITE_ORIGEM;
@@ -524,6 +525,18 @@ async function testeRapido() {
     const midia = (c) => js(`navigator.mediaDevices.getUserMedia(${c}).then((s) => { const n = s.getTracks().map((t) => t.kind).join(','); s.getTracks().forEach((t) => t.stop()); return 'ok: ' + n; }, (e) => e.name)`, true);
     r.microfone = await midia('{ audio: true }');
     r.camera = await midia('{ video: true }');
+    // saídas de áudio: a lista aparece e dá para trocar
+    r.saidas = await js(`navigator.mediaDevices.enumerateDevices().then(async (ds) => {
+      const saidas = ds.filter((d) => d.kind === 'audiooutput');
+      const outra = saidas.find((d) => d.deviceId && d.deviceId !== 'default');
+      const trocar = (alvo, id) => alvo.setSinkId(id).then(() => 'ok', (e) => e.name);
+      return {
+        quantas: saidas.length,
+        comNome: saidas.filter((d) => d.label).length,
+        elemento: await trocar(new Audio(), outra ? outra.deviceId : ''),
+        contexto: typeof AudioContext.prototype.setSinkId === 'function' ? await trocar(new AudioContext(), outra ? outra.deviceId : '') : 'sem setSinkId',
+      };
+    })`, true);
     r.ptt = await js("window.carasETelas.ptt({ code: 'F13' })");
     r.pttRuim = await js("window.carasETelas.ptt({ code: 'Escape' })");
     await js('window.carasETelas.ptt(null)');

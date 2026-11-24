@@ -40,7 +40,7 @@
     sliders: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
   };
   const MARCA = 'Caras E Telas';
-  const LOGO = '<svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><g transform="rotate(-9 23 24)"><rect x="5" y="10" width="36" height="27" rx="8" fill="#3db3f0"/><path d="M5 18a8 8 0 0 1 8-8h20a8 8 0 0 1 8 8v2.5q-18 5-36 0z" fill="#fff" opacity=".55"/><g class="pisca"><circle cx="16.5" cy="21.5" r="2.7" fill="#0b2a43"/><circle cx="29.5" cy="21.5" r="2.7" fill="#0b2a43"/></g><path d="M16 28q7 5 14 0" fill="none" stroke="#0b2a43" stroke-width="2.7" stroke-linecap="round"/></g><g transform="rotate(7 41 38)"><rect x="22.5" y="24.5" width="37" height="28" rx="8.5" fill="#6fcd3e" style="stroke: var(--recorte, #fff)" stroke-width="3.5"/><path d="M22.5 33a8.5 8.5 0 0 1 8.5-8.5h20a8.5 8.5 0 0 1 8.5 8.5v2.5q-18.5 5-37 0z" fill="#fff" opacity=".55"/><path d="M32.5 36.5q3.2-3 6.4 0" fill="none" stroke="#0b2a43" stroke-width="2.7" stroke-linecap="round"/><circle cx="48" cy="35.5" r="2.7" fill="#0b2a43"/><path d="M34.5 42.5q7.5 6 15 0" fill="none" stroke="#0b2a43" stroke-width="2.7" stroke-linecap="round"/></g></svg>';
+  const LOGO = '<svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><g transform="rotate(-9 23 24)"><rect x="5" y="10" width="36" height="27" rx="8" fill="#3db3f0"/><path d="M5 18a8 8 0 0 1 8-8h20a8 8 0 0 1 8 8v2.5q-18 5-36 0z" fill="#fff" opacity=".55"/><g class="pisca"><circle cx="16.5" cy="21.5" r="2.7" fill="#0b2a43"/><circle cx="29.5" cy="21.5" r="2.7" fill="#0b2a43"/></g><path d="M16 28q7 5 14 0" fill="none" stroke="#0b2a43" stroke-width="2.7" stroke-linecap="round"/></g><g transform="rotate(7 41 38)"><rect x="22.5" y="24.5" width="37" height="28" rx="8.5" fill="#6fcd3e" style="stroke: var(--recorte, #fff)" stroke-width="3.5"/><path d="M22.5 33a8.5 8.5 0 0 1 8.5-8.5h20a8.5 8.5 0 0 1 8.5 8.5v2.5q-18.5 5-37 0z" fill="#fff" opacity=".55"/><circle class="olho-aberto" cx="35.7" cy="35.5" r="2.7" fill="#0b2a43"/><path class="olho-piscado" d="M32.5 36.5q3.2-3 6.4 0" fill="none" stroke="#0b2a43" stroke-width="2.7" stroke-linecap="round"/><circle cx="48" cy="35.5" r="2.7" fill="#0b2a43"/><path d="M34.5 42.5q7.5 6 15 0" fill="none" stroke="#0b2a43" stroke-width="2.7" stroke-linecap="round"/><g class="brilho"><path d="M29 24.2q.9 3.9 4.8 4.8q-3.9.9-4.8 4.8q-.9-3.9-4.8-4.8q3.9-.9 4.8-4.8z" fill="#fff3a6" stroke="#f2b705" stroke-width=".8" stroke-linejoin="round"/><circle cx="29" cy="29" r="1.1" fill="#fff"/></g><path class="brilho mini" d="M23.6 34.4q.45 1.75 2.2 2.2q-1.75.45-2.2 2.2q-.45-1.75-2.2-2.2q1.75-.45 2.2-2.2z" fill="#fff8cc" stroke="#f2b705" stroke-width=".6" stroke-linejoin="round"/></g></svg>';
   const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
 
   const CORES = ['#ffb23f', '#ff9a76', '#ff6b81', '#f78fd3', '#c39bff', '#9fa8ff', '#6cc6ff', '#4fe0d0', '#43d9a3', '#c3e86b'];
@@ -408,6 +408,7 @@
       $('#login').hidden = true;
       $('#app').hidden = false;
       montarBotoes();
+      aplicarSaida();
     }
     document.title = MARCA;
     renderTudo();
@@ -797,6 +798,12 @@
       sb.title = S.live ? 'Parar transmissão' : 'Compartilhar tela';
       sb.classList.toggle('active', S.live);
       $('#vpSwap').hidden = !S.live;
+      if ($('#vpRede').hidden) {
+        mostrarRede({ nivel: null, ms: null, linhas: ['Medindo…'] });
+        setTimeout(() => medirRede().catch(() => {}), 400);
+      }
+    } else {
+      $('#vpRede').hidden = true;
     }
     renderVoz();
   }
@@ -869,6 +876,7 @@
       </div>`;
     const t = { el, uid, video: el.querySelector('video'), userMuted: false, autoMuted: false, src: null, gain: null, audioId: null };
     S.tiles.set(uid, t);
+    definirSaida(t.video);
     return t;
   }
 
@@ -887,10 +895,13 @@
     salvar({ volumes });
   }
   function audioCtx() {
-    try {
-      actx ||= new (window.AudioContext || window.webkitAudioContext)();
-    } catch {
-      return null;
+    if (!actx) {
+      try {
+        actx = new (window.AudioContext || window.webkitAudioContext)();
+      } catch {
+        return null;
+      }
+      try { definirSaidaDoAudio(actx); } catch { /* ainda carregando */ }
     }
     return actx;
   }
@@ -1819,6 +1830,7 @@
       ? { code: x.atalho.code, ctrl: !!x.atalho.ctrl, alt: !!x.atalho.alt, shift: !!x.atalho.shift } : null;
     return {
       dispositivo: typeof x.dispositivo === 'string' ? x.dispositivo.slice(0, 300) : '',
+      saida: typeof x.saida === 'string' ? x.saida.slice(0, 300) : '',
       modo: x.modo === 'ptt' ? 'ptt' : 'voz',
       atalho: a,
       sensibilidade: sens,
@@ -2004,6 +2016,7 @@
     for (const v of VOZ.pcs.values()) trocarFaixaVoz(v, faixa);
     aplicarPortao();
     renderVoz();
+    aplicarSaida();
   }
 
   function medicaoVoz(d) {
@@ -2187,6 +2200,7 @@
     if (!v.audio) {
       v.audio = new Audio();
       v.audio.autoplay = true;
+      definirSaida(v.audio);
     }
     v.audio.srcObject = stream;
     aplicarSomDaVoz(id, v);
@@ -2302,6 +2316,10 @@
       corpo: `<div class="voz-opcoes" id="vozOpcoes">
         <label class="vo-campo"><span class="ap-rotulo">Microfone</span>
           <select id="voDispositivo"><option value="">Padrão do sistema</option></select></label>
+        <div class="vo-campo"><label class="ap-rotulo" for="voSaida">Saída de áudio (alto-falante ou fone)</label>
+          <div class="vo-linha"><select id="voSaida"${PODE_ESCOLHER_SAIDA ? '' : ' disabled'}><option value="">Padrão do sistema</option></select>
+            <button type="button" class="btn sm" id="voTestarSaida">Testar som</button></div>
+          ${PODE_ESCOLHER_SAIDA ? '' : '<p class="vo-dica">Este navegador não deixa escolher a saída: o som sai no padrão do sistema. No Chrome, no Edge e no programa para Windows dá para escolher.</p>'}</div>
         <div><span class="ap-rotulo">Quando o microfone abre</span>
           <div class="segmento" role="radiogroup" aria-label="Modo do microfone">
             <label><input type="radio" name="vmodo" value="voz"${cfg.modo === 'voz' ? ' checked' : ''}><span>Quando eu falo</span></label>
@@ -2368,20 +2386,30 @@
     };
 
     async function listarMics() {
-      let devs = [];
-      try {
-        devs = (await navigator.mediaDevices.enumerateDevices())
-          .filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications');
-      } catch { devs = []; }
+      let todos = [];
+      try { todos = await navigator.mediaDevices.enumerateDevices(); } catch { todos = []; }
       if (!document.body.contains(sel)) return;
-      sel.innerHTML = '<option value="">Padrão do sistema</option>'
-        + devs.map((d, i) => `<option value="${esc(d.deviceId)}">${esc(d.label || `Microfone ${i + 1}`)}</option>`).join('');
-      sel.value = devs.some((d) => d.deviceId === cfg.dispositivo) ? cfg.dispositivo : '';
+      const ok = (d) => d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications';
+      const preencher = (el, tipo, rotulo, atual) => {
+        const devs = todos.filter((d) => d.kind === tipo && ok(d));
+        el.innerHTML = '<option value="">Padrão do sistema</option>'
+          + devs.map((d, i) => `<option value="${esc(d.deviceId)}">${esc(d.label || `${rotulo} ${i + 1}`)}</option>`).join('');
+        el.value = devs.some((d) => d.deviceId === atual) ? atual : '';
+      };
+      preencher(sel, 'audioinput', 'Microfone', cfg.dispositivo);
+      if (PODE_ESCOLHER_SAIDA) preencher($('#voSaida'), 'audiooutput', 'Saída', cfg.saida);
     }
 
     caixa.addEventListener('change', (e) => {
       const t = e.target;
       if (t.id === 'voDispositivo') cfg.dispositivo = t.value;
+      else if (t.id === 'voSaida') {
+        cfg.saida = t.value;
+        VOZ.cfg = validarCfgVoz(cfg);
+        guardarVoz();
+        aplicarSaida().then(tocarTesteDeSaida);
+        return;
+      }
       else if (t.name === 'vmodo') {
         cfg.modo = t.value;
         if (cfg.modo === 'ptt' && !cfg.atalho) setTimeout(() => $('#voGravar')?.click(), 50);
@@ -2395,6 +2423,8 @@
       cfg.sensibilidade = Number(limiar.value);
       aplicar();
     });
+
+    $('#voTestarSaida').addEventListener('click', tocarTesteDeSaida);
 
     // gravar a tecla do apertar-para-falar
     $('#voGravar').addEventListener('click', () => {
@@ -2460,6 +2490,185 @@
     obs.observe($('#modal'), { attributes: true, attributeFilter: ['hidden'] });
     obs.observe($('#modalBody'), { childList: true });
   }
+
+  // ================= Saída de áudio (alto-falante ou fone) =================
+  // Vozes, transmissões e sons saem no aparelho escolhido. Se ele for desconectado, o som
+  // volta para o padrão do sistema sozinho, e volta para ele quando reconectar.
+  const PODE_ESCOLHER_SAIDA = typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype;
+  let saidaAtual = '';
+  async function saidasDisponiveis() {
+    try {
+      return (await navigator.mediaDevices.enumerateDevices())
+        .filter((d) => d.kind === 'audiooutput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications');
+    } catch {
+      return [];
+    }
+  }
+  function definirSaida(el) {
+    if (!PODE_ESCOLHER_SAIDA || !el || (el.sinkId || '') === saidaAtual) return;
+    el.setSinkId(saidaAtual).catch(() => {});
+  }
+  function definirSaidaDoAudio(c) {
+    if (!c?.setSinkId) return;
+    const atual = typeof c.sinkId === 'string' ? c.sinkId : '';
+    if (atual !== saidaAtual) c.setSinkId(saidaAtual).catch(() => {});
+  }
+  async function aplicarSaida() {
+    if (!PODE_ESCOLHER_SAIDA) return;
+    const quer = VOZ.cfg.saida;
+    saidaAtual = quer && (await saidasDisponiveis()).some((d) => d.deviceId === quer) ? quer : '';
+    definirSaidaDoAudio(actx);
+    for (const v of VOZ.pcs.values()) definirSaida(v.audio);
+    for (const t of S.tiles.values()) definirSaida(t.video);
+  }
+  navigator.mediaDevices?.addEventListener?.('devicechange', () => aplicarSaida());
+
+  // "Testar som": dois toquinhos curtos na saída escolhida
+  function tocarTesteDeSaida() {
+    const c = audioCtx();
+    if (!c) return;
+    if (c.state !== 'running') c.resume().catch(() => {});
+    const t0 = c.currentTime + 0.05;
+    for (const [i, freq] of [[0, 784], [1, 1046.5]]) {
+      const osc = c.createOscillator();
+      const g = c.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const t = t0 + i * 0.16;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.25, t + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      osc.connect(g).connect(c.destination);
+      osc.start(t);
+      osc.stop(t + 0.4);
+    }
+  }
+
+  // ================= Indicador de rede (ao lado de "Conectado à sala") =================
+  // Com mais gente na sala: ping e perda de pacotes das conexões diretas com cada pessoa.
+  // Sozinho: o tempo de resposta do servidor. Atualiza a cada 2 segundos.
+  const REDE = { anterior: new WeakMap(), servidor: null, falhasServidor: 0, contagem: 0, medindo: false };
+  async function estatisticasDe(pc) {
+    const st = await pc.getStats();
+    let par = null;
+    let recebidos = 0;
+    let perdidos = 0;
+    let perdaRemota = null;
+    st.forEach((r) => {
+      if (r.type === 'transport' && r.selectedCandidatePairId) par = st.get(r.selectedCandidatePairId) || par;
+      else if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded' && !par) par = r;
+      else if (r.type === 'inbound-rtp') {
+        recebidos += r.packetsReceived || 0;
+        perdidos += Math.max(0, r.packetsLost || 0);
+      } else if (r.type === 'remote-inbound-rtp' && typeof r.fractionLost === 'number') {
+        perdaRemota = Math.max(perdaRemota ?? 0, r.fractionLost);
+      }
+    });
+    const antes = REDE.anterior.get(pc);
+    REDE.anterior.set(pc, { recebidos, perdidos });
+    const dr = antes ? recebidos - antes.recebidos : 0;
+    const dp = antes ? perdidos - antes.perdidos : 0;
+    const perda = dr + dp > 20 ? dp / (dr + dp) : null; // só conta com pacotes suficientes
+    const rtt = typeof par?.currentRoundTripTime === 'number' ? par.currentRoundTripTime * 1000 : null;
+    return { rtt, perda: Math.max(perda ?? 0, perdaRemota ?? 0), temPerda: perda !== null || perdaRemota !== null };
+  }
+
+  async function medirRede() {
+    if (!S.sala || REDE.medindo) return;
+    REDE.medindo = true;
+    try {
+      if (!navigator.onLine || !$('#connBanner').hidden) {
+        return mostrarRede({ nivel: 0, ms: null, linhas: ['Sem conexão com o servidor. Tentando de novo…'] });
+      }
+      const vizinhos = vizinhosDeSala();
+      if (!vizinhos.size) return medirServidor();
+      // todas as conexões com cada pessoa (voz e transmissões)
+      const porPessoa = new Map();
+      const juntar = (id, pc) => { if (vizinhos.has(id) && pc) (porPessoa.get(id) || porPessoa.set(id, []).get(id)).push(pc); };
+      for (const [id, v] of VOZ.pcs) juntar(id, v.pc);
+      for (const [id, c] of S.inc) juntar(id, c.pc);
+      for (const [id, c] of S.out) juntar(id, c.pc);
+      const pessoas = [];
+      let perda = 0;
+      for (const id of vizinhos) {
+        const pcs = porPessoa.get(id) || [];
+        const nome = userById(id)?.name || 'alguém';
+        const ligados = pcs.filter((pc) => pc.connectionState === 'connected');
+        if (!ligados.length) {
+          const caiu = pcs.some((pc) => pc.connectionState === 'failed' || pc.connectionState === 'disconnected');
+          pessoas.push({ nome, rtt: null, caiu });
+          continue;
+        }
+        let rtt = null;
+        for (const pc of ligados) {
+          const e = await estatisticasDe(pc).catch(() => null);
+          if (!e) continue;
+          if (e.rtt !== null) rtt = rtt === null ? e.rtt : Math.min(rtt, e.rtt);
+          perda = Math.max(perda, e.perda);
+        }
+        pessoas.push({ nome, rtt, caiu: false });
+      }
+      const rtts = pessoas.map((p) => p.rtt).filter((x) => x !== null).sort((a, b) => a - b);
+      const caidos = pessoas.filter((p) => p.caiu);
+      if (!rtts.length && !caidos.length) return mostrarRede({ nivel: null, ms: null, linhas: ['Conectando com a sala…'] });
+      const ms = rtts.length ? Math.round(rtts[Math.floor((rtts.length - 1) / 2)]) : null;
+      let nivel = ms === null ? 1 : ms <= 150 && perda < 0.02 ? 3 : ms <= 300 && perda < 0.08 ? 2 : 1;
+      if (caidos.length) nivel = Math.min(nivel, 1);
+      const linhas = [
+        `Ping com a sala: ${ms === null ? '—' : `${ms} ms`}${perda >= 0.005 ? `, ${Math.round(perda * 100)}% de perda de pacotes` : ', sem perda de pacotes'}`,
+        ...pessoas.map((p) => `${p.nome}: ${p.caiu ? 'sem ligação (tentando de novo)' : p.rtt === null ? 'conectando…' : `${Math.round(p.rtt)} ms`}`),
+      ];
+      mostrarRede({ nivel, ms, linhas });
+    } finally {
+      REDE.medindo = false;
+    }
+  }
+
+  async function medirServidor() {
+    // sozinho na sala: mede o servidor a cada ~6 s (ele fica nos EUA, então o normal é 150 a 250 ms)
+    if (REDE.contagem++ % 3 === 0) {
+      const t0 = performance.now();
+      try {
+        await api('ping');
+        const ms = performance.now() - t0;
+        REDE.servidor = REDE.servidor === null ? ms : REDE.servidor * 0.6 + ms * 0.4;
+        REDE.falhasServidor = 0;
+      } catch {
+        REDE.falhasServidor++;
+      }
+    }
+    if (REDE.falhasServidor >= 2) return mostrarRede({ nivel: 0, ms: null, linhas: ['O servidor não está respondendo.'] });
+    if (REDE.servidor === null) return mostrarRede({ nivel: null, ms: null, linhas: ['Medindo…'] });
+    const ms = Math.round(REDE.servidor);
+    mostrarRede({
+      nivel: ms <= 350 ? 3 : ms <= 700 ? 2 : 1,
+      ms,
+      linhas: [`Resposta do servidor: ${ms} ms`, 'Quando mais alguém entrar, mostra o ping direto com cada pessoa.'],
+    });
+  }
+
+  const NOMES_NIVEL = { 0: 'Sem conexão', 1: 'Rede ruim', 2: 'Rede instável', 3: 'Rede boa' };
+  function mostrarRede({ nivel, ms, linhas }) {
+    const el = $('#vpRede');
+    if (!el) return;
+    el.hidden = false;
+    el.className = `vp-rede ${nivel === null ? 'medindo' : `nivel-${nivel}`}`;
+    const barras = [1, 2, 3].map((n) => `<rect x="${(n - 1) * 5}" y="${12 - n * 4}" width="3.4" height="${n * 4}" rx="1"${nivel !== null && n <= nivel ? ' class="on"' : ''}/>`).join('');
+    el.innerHTML = `<svg viewBox="0 0 14 12" aria-hidden="true">${barras}</svg>${ms !== null ? `<span>${ms} ms</span>` : nivel === 0 ? '<span>offline</span>' : ''}`;
+    const titulo = [nivel === null ? 'Rede: medindo' : NOMES_NIVEL[nivel], ...linhas].join('\n');
+    el.title = titulo;
+    el.setAttribute('aria-label', titulo.replace(/\n/g, '. '));
+  }
+  setInterval(() => {
+    if (!S.sala) {
+      REDE.servidor = null;
+      REDE.contagem = 0;
+      REDE.falhasServidor = 0;
+      return;
+    }
+    medirRede().catch(() => {});
+  }, 2000);
+  window.addEventListener('offline', () => { if (S.sala) medirRede(); });
 
   // ================= Aparência: tema claro/escuro e paleta de cores =================
   // As cores são calculadas pelo tema.js (carregado antes da página). A escolha fica
@@ -3110,7 +3319,7 @@
   });
 
   // ================= Painel de admin =================
-  const P = { aberto: false, aba: 'pessoas', dados: null, foco: null, form: null, timer: null };
+  const P = { aberto: false, aba: 'pessoas', dados: null, foco: null, form: null, timer: null, conexoes: null, filtroCon: '' };
 
   function abrirPainelAdmin(aba = 'pessoas', foco = null) {
     if (!S.isAdmin) return;
@@ -3128,7 +3337,9 @@
   }
   async function carregarPainel() {
     try {
-      P.dados = await adm('list');
+      const [dados, conexoes] = await Promise.all([adm('list'), P.aba === 'conexoes' ? adm('conexoes') : null]);
+      P.dados = dados;
+      if (conexoes) P.conexoes = conexoes;
       renderPainel();
     } catch (e) {
       toast(e.message);
@@ -3145,16 +3356,19 @@
     const d = P.dados;
     const abas = [
       ['pessoas', 'Pessoas', d ? d.users.length : ''],
+      ['conexoes', 'Conexões', ''],
       ['banidos', 'Banidos', d ? d.bans.length : ''],
       ['servidor', 'Servidor', ''],
       ['comandos', 'Comandos', ''],
     ];
     let corpo = '<div class="ap-empty">Carregando…</div>';
-    if (d) corpo = { pessoas: abaPessoas, banidos: abaBanidos, servidor: abaServidor, comandos: abaComandos }[P.aba](d);
+    if (d) corpo = { pessoas: abaPessoas, conexoes: abaConexoes, banidos: abaBanidos, servidor: abaServidor, comandos: abaComandos }[P.aba](d);
     // preserva o que estava sendo digitado
     const digitando = {};
     $('#adminPanel').querySelectorAll('input[id], select[id]').forEach((el) => { digitando[el.id] = el.value; });
     const foco = document.activeElement?.id;
+    const cursor = foco && typeof document.activeElement.selectionStart === 'number'
+      ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
     $('#adminPanel').innerHTML = `<div class="admin-card" role="dialog" aria-label="Painel de admin">
       <header class="admin-head"><div class="admin-title">${icon('shield')} Painel de admin</div>
         <button class="icon-btn" data-act="fechar" title="Fechar (Esc)">${icon('close')}</button></header>
@@ -3164,7 +3378,11 @@
       const el = document.getElementById(id);
       if (el && el.dataset.keep !== undefined) el.value = v;
     }
-    if (foco && document.getElementById(foco)) document.getElementById(foco).focus();
+    if (foco && document.getElementById(foco)) {
+      const el = document.getElementById(foco);
+      el.focus();
+      if (cursor) try { el.setSelectionRange(cursor[0], cursor[1]); } catch { /* campo sem cursor */ }
+    }
     if (P.foco) {
       const el = $(`#adminPanel .ap-user[data-uid="${CSS.escape(P.foco)}"]`);
       if (el) el.scrollIntoView({ block: 'nearest' });
@@ -3258,10 +3476,71 @@
         <button class="btn sm" data-act="sairadmin">Sair do modo admin</button></div>`;
   }
 
+  // Registro de conexões: quem entrou, de qual IP e aparelho, e as tentativas recusadas
+  function quandoCurto(t) {
+    const d = new Date(t);
+    const hoje = new Date();
+    const ontem = new Date(Date.now() - 864e5);
+    const dia = d.toDateString() === hoje.toDateString() ? 'hoje'
+      : d.toDateString() === ontem.toDateString() ? 'ontem'
+        : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return `${dia} ${hhmm(d)}`;
+  }
+  function duracao(ms) {
+    const min = Math.round(ms / 60e3);
+    if (min < 1) return 'menos de 1 min';
+    if (min < 60) return `${min} min`;
+    const h = Math.floor(min / 60);
+    if (h < 48) return `${h} h${min % 60 ? ` ${String(min % 60).padStart(2, '0')}` : ''}`;
+    return `${Math.round(h / 24)} dias`;
+  }
+  function abaConexoes() {
+    const r = P.conexoes;
+    if (!r) {
+      if (!P.carregandoCon) {
+        P.carregandoCon = true;
+        adm('conexoes').then((x) => { P.conexoes = x; }).catch((e) => toast(e.message)).finally(() => { P.carregandoCon = false; renderPainel(); });
+      }
+      return '<div class="ap-empty">Carregando…</div>';
+    }
+    const f = P.filtroCon.trim().toLowerCase();
+    const lista = r.registro.filter((x) => !f || x.ip.toLowerCase().includes(f) || x.nome.toLowerCase().includes(f)
+      || (x.nomes || []).some((n) => n.toLowerCase().includes(f)) || x.aparelho.toLowerCase().includes(f));
+    const SAIDA = { expulso: 'expulso', banido: 'banido', reinicio: 'o servidor reiniciou' };
+    const linhas = lista.map((x) => {
+      const recusa = x.tipo === 'recusado';
+      let estado;
+      if (recusa) estado = `<span class="ap-tag orange">recusado: ${esc(x.motivo)}${x.vezes > 1 ? ` (${x.vezes} vezes)` : ''}</span>`;
+      else if (x.online) estado = '<span class="ap-tag verde">online agora</span>';
+      else if (x.saida === 'reinicio') estado = `<span class="ap-con-dur">saiu quando ${SAIDA.reinicio}</span>`;
+      else estado = `<span class="ap-con-dur">ficou ${duracao((x.fim || x.t) - x.t)}${x.saida ? `, ${SAIDA[x.saida] || esc(x.saida)}` : ''}</span>`;
+      const nomes = recusa && x.nomes?.length ? `<span class="muted small">também como ${x.nomes.map(esc).join(', ')}</span>` : '';
+      return `<div class="ap-con${recusa ? ' recusa' : ''}">
+        <div class="ap-con-quando" title="${esc(new Date(x.t).toLocaleString('pt-BR'))}">${esc(quandoCurto(x.t))}</div>
+        <div class="ap-con-main">
+          <div class="ap-name">${esc(x.nome)}${x.admin ? '<span class="ap-tag gold">admin</span>' : ''}${nomes}</div>
+          <div class="ap-con-info"><button class="ap-ip" data-act="filtrar-ip" data-ip="${esc(x.ip)}" title="Ver tudo deste IP">${esc(x.ip || 'sem IP')}</button><span>${esc(x.aparelho)}</span></div>
+        </div>
+        <div class="ap-con-estado">${estado}</div>
+      </div>`;
+    }).join('');
+    return `<p class="ap-hint">Quem entrou no servidor, de qual IP e aparelho, e as tentativas recusadas. Só admins veem.
+        Fica guardado por ${r.dias} dias (no máximo ${r.max} entradas). Recarregar a página ou cair e voltar logo em seguida conta como a mesma visita.</p>
+      <div class="ap-row ap-con-barra"><input id="apFiltroCon" data-keep maxlength="60" placeholder="Procurar por nome, IP ou aparelho" value="${esc(P.filtroCon)}" autocomplete="off">
+        <button class="btn sm" data-act="limpar-conexoes"${r.registro.length ? '' : ' disabled'}>Limpar registro</button></div>
+      ${linhas || `<div class="ap-empty">${f ? 'Nada encontrado.' : 'Ninguém entrou ainda.'}</div>`}`;
+  }
+
   function abaComandos() {
     return `<p class="ap-hint">Digite no chat. Os nomes podem ter espaços e não precisam estar completos: <b>/kick jo</b> funciona se só houver um "Jo…" online.</p>
       <table class="ap-cmds">${COMANDOS.map((c) => `<tr><td>/${c.nome} <span class="args">${esc(c.args)}</span></td><td>${esc(c.desc)}</td></tr>`).join('')}</table>`;
   }
+
+  $('#adminPanel').addEventListener('input', (e) => {
+    if (e.target.id !== 'apFiltroCon') return;
+    P.filtroCon = e.target.value;
+    renderPainel();
+  });
 
   $('#adminPanel').addEventListener('click', async (e) => {
     if (e.target.id === 'adminPanel') return fecharPainelAdmin();
@@ -3269,6 +3548,7 @@
     if (tab) {
       P.aba = tab.dataset.tab;
       P.form = null;
+      if (P.aba === 'conexoes' && P.conexoes) carregarPainel(); // atualiza sem piscar a lista
       return renderPainel();
     }
     const b = e.target.closest('[data-act]');
@@ -3300,6 +3580,18 @@
           return feito(`${n} foi banido.${r.soAparelho ? ' (Só o navegador: o IP é o mesmo de outra pessoa online.)' : ''}`);
         }
         case 'unban': await adm('unban', { id: b.closest('[data-ban]').dataset.ban }); return feito('Banimento removido.');
+        case 'filtrar-ip': {
+          P.filtroCon = b.dataset.ip;
+          const campo = document.getElementById('apFiltroCon');
+          if (campo) campo.value = P.filtroCon;
+          return renderPainel();
+        }
+        case 'limpar-conexoes':
+          return abrirModal({
+            titulo: 'Limpar registro de conexões', ok: 'Limpar', perigo: true,
+            corpo: '<p>Apagar o registro de conexões? Quem está online agora continua na lista. Não dá para desfazer.</p>',
+            aoConfirmar: async () => { await adm('limpar-conexoes'); P.conexoes = null; renderPainel(); toast('Registro de conexões limpo.'); },
+          });
         case 'salvar-nome': await adm('settings', { serverName: val('apNome') }); return feito('Nome do servidor salvo.');
         case 'salvar-senha':
           if (!val('apSenha')) throw new Error('Digite a nova senha');
