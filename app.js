@@ -61,6 +61,8 @@
     serverName: 'Telinha', channels: [], messages: {}, users: [], iceServers: [],
     view: salvo.view || null, sala: null, live: false, localStream: null,
     quality: QUALIDADES[salvo.quality] ? salvo.quality : '1080p30',
+    som: ['janela', 'pc', 'nenhum'].includes(salvo.som) ? salvo.som : 'janela',
+    evitarEco: false, // pausa o som das outras transmissões enquanto mando o som do PC inteiro
     out: new Map(), // quem está me assistindo: viewerId -> conexão
     inc: new Map(), // quem eu estou assistindo: sharerId -> conexão
     tries: new Map(), tiles: new Map(), volumes: {},
@@ -784,7 +786,7 @@
         <p>${n ? `${plural(n, 'pessoa', 'pessoas')} aqui${transmitindo ? `, ${transmitindo} transmitindo` : ''}. ` : 'Ninguém aqui ainda. '}Entre na sala para assistir às transmissões ou mostrar a sua tela.</p></div>`;
     } else {
       vazio.innerHTML = `<div><div class="big">${icon('screen')}</div><h2>Ninguém está transmitindo</h2>
-        <p>Clique em <b>Compartilhar tela</b> para mostrar uma janela, uma aba ou a tela inteira para quem estiver na sala. Quer que ouçam o som? Marque a opção de compartilhar áudio na janela do navegador.</p></div>`;
+        <p>Clique em <b>Compartilhar tela</b> para mostrar uma janela, uma aba ou a tela inteira para quem estiver na sala. Quer que ouçam o som? Escolha em <b>Som</b> aqui embaixo e marque a opção de áudio na janela do navegador.</p></div>`;
     }
 
     $('#joinBtn').hidden = naSala;
@@ -792,7 +794,9 @@
     $('#shareBtn').hidden = !naSala;
     $('#leaveBtn').hidden = !naSala;
     $('#leaveBtn').innerHTML = `${icon('logout')} Sair da sala`;
-    $('.quality').hidden = !naSala;
+    document.querySelectorAll('.quality').forEach((el) => { el.hidden = !naSala; });
+    $('#somSelect').disabled = S.live;
+    $('#somSelect').title = S.live ? 'Para mudar o som, pare e comece a transmissão de novo' : '';
     const sb = $('#shareBtn');
     sb.innerHTML = S.live ? `${icon('screenOff')} Parar transmissão` : `${icon('screen')} Compartilhar tela`;
     sb.classList.toggle('primary', !S.live);
@@ -863,7 +867,7 @@
       v.play().catch(() => {});
       return;
     }
-    v.muted = t.userMuted;
+    v.muted = t.userMuted || S.evitarEco;
     v.play().catch(() => {
       // O navegador bloqueou o som automático: toca mudo e mostra o botão "clique para ouvir"
       v.muted = true;
@@ -871,6 +875,14 @@
       v.play().catch(() => {});
       atualizarTile(t.uid);
     });
+  }
+
+  function aplicarMudoEco() {
+    for (const t of S.tiles.values()) {
+      if (t.uid === S.myId) continue;
+      t.video.muted = S.evitarEco || t.userMuted || t.autoMuted;
+      atualizarTile(t.uid);
+    }
   }
 
   function atualizarTile(uid) {
@@ -900,6 +912,8 @@
       estado = 'Reconectando…';
     } else if (!stream) {
       estado = 'Carregando…';
+    } else if (S.evitarEco && stream.getAudioTracks().length) {
+      estado = 'Som pausado para não dar eco';
     }
     t.el.querySelector('.t-state').textContent = estado;
 
@@ -909,7 +923,7 @@
       centro.hidden = false;
       centro.dataset.mode = 'retry';
       centro.innerHTML = `${icon('retry')} Tentar de novo`;
-    } else if (temAudio && t.autoMuted) {
+    } else if (temAudio && t.autoMuted && !S.evitarEco) {
       centro.hidden = false;
       centro.dataset.mode = 'unmute';
       centro.innerHTML = `${icon('mute')} Clique para ouvir`;
@@ -941,9 +955,11 @@
       } else {
         t.autoMuted = false;
         t.userMuted = false;
-        v.muted = false;
+        v.muted = S.evitarEco;
         v.play().catch(() => {});
       }
+    } else if (act === 'mute' && S.evitarEco) {
+      toast('Enquanto você manda o som do PC inteiro, o som das outras transmissões fica pausado. Se não, ele volta para elas.', 6000);
     } else if (act === 'mute') {
       t.userMuted = !v.muted ? true : false;
       t.autoMuted = false;
@@ -971,7 +987,7 @@
     const t = S.tiles.get(uid);
     t.video.volume = Number(e.target.value);
     S.volumes[uid] = t.video.volume;
-    if (t.video.volume > 0 && t.video.muted) {
+    if (t.video.volume > 0 && t.video.muted && !S.evitarEco) {
       t.video.muted = false;
       t.userMuted = false;
       t.autoMuted = false;
@@ -1038,19 +1054,36 @@
         : 'Compartilhar a tela só funciona em endereços HTTPS (ou localhost). Veja o LEIA-ME.', 6000);
     }
     const q = QUALIDADES[S.quality];
+    // "janela": só o som da aba/janela escolhida (chamadas de voz e outras transmissões não entram)
+    // "pc": o som do computador inteiro (pode levar junto a voz de quem está numa chamada)
+    const opcoes = {
+      video: { width: { ideal: q.w }, height: { ideal: q.h }, frameRate: { ideal: q.fps, max: q.fps } },
+      audio: S.som === 'nenhum' ? false : {
+        echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+        suppressLocalAudioPlayback: false,
+        restrictOwnAudio: true, // tira do som do PC o que esta própria página toca (as outras transmissões)
+      },
+      surfaceSwitching: 'include',
+      selfBrowserSurface: 'exclude',
+    };
+    if (S.som === 'janela') {
+      opcoes.systemAudio = 'exclude';
+      opcoes.windowAudio = 'window';
+    } else if (S.som === 'pc') {
+      opcoes.systemAudio = 'include';
+      opcoes.windowAudio = 'system';
+    }
     let stream;
     try {
-      stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { width: { ideal: q.w }, height: { ideal: q.h }, frameRate: { ideal: q.fps, max: q.fps } },
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-        systemAudio: 'include',
-        surfaceSwitching: 'include',
-        selfBrowserSurface: 'exclude',
-      });
+      stream = await navigator.mediaDevices.getDisplayMedia(opcoes);
     } catch (e) {
       if (e.name === 'NotAllowedError' || e.name === 'AbortError') return; // cancelou
       try {
-        stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: S.som !== 'nenhum',
+          ...(S.som === 'janela' ? { systemAudio: 'exclude' } : {}),
+        });
       } catch (e2) {
         if (e2.name !== 'NotAllowedError') toast('Não foi possível compartilhar: ' + e2.message);
         return;
@@ -1067,6 +1100,18 @@
     }
     S.localStream = stream;
     S.live = true;
+    // Mandando o som do PC inteiro? Avisa sobre chamadas de voz e evita que as
+    // outras transmissões tocando aqui voltem para quem está transmitindo.
+    const at = stream.getAudioTracks()[0];
+    const superficie = vt?.getSettings?.().displaySurface;
+    S.evitarEco = false;
+    if (at && superficie === 'monitor') {
+      if (at.getSettings?.().restrictOwnAudio !== true) S.evitarEco = true;
+      toast('Você está mandando o som do PC inteiro. Se vocês conversam por chamada (Discord, WhatsApp…), os amigos vão ouvir a própria voz. Para evitar, escolha "Som: só da aba ou janela".', 10000);
+    } else if (!at && S.som !== 'nenhum') {
+      toast('Esta transmissão está sem som. Para mandar som, compartilhe uma aba e marque "Compartilhar áudio da guia".', 7000);
+    }
+    aplicarMudoEco();
     patchMe();
     blip('live');
     renderTudo();
@@ -1085,6 +1130,8 @@
     S.localStream = null;
     for (const vid of [...S.out.keys()]) fecharOut(vid);
     if (S.focus === S.myId) S.focus = null;
+    S.evitarEco = false;
+    aplicarMudoEco();
     patchMe();
     if (!silencioso) api('state', { sala: S.sala, live: false }).catch(() => {});
     renderTudo();
@@ -1391,6 +1438,14 @@
     $('#logoutBtn').innerHTML = icon('logout');
     $('#vpLeave').innerHTML = icon('logout');
     $('#sendBtn').innerHTML = icon('send');
+
+    const som = $('#somSelect');
+    som.value = S.som;
+    som.addEventListener('change', () => {
+      S.som = som.value;
+      salvar({ som: S.som });
+      if (S.som === 'pc') toast('Com "PC inteiro", entra todo o som do computador, inclusive chamadas de voz.', 6000);
+    });
 
     const sel = $('#qualitySelect');
     sel.innerHTML = Object.entries(QUALIDADES).map(([k, q]) => `<option value="${k}">${q.label}</option>`).join('');
