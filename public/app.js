@@ -203,6 +203,7 @@
     fetch('/api/config')
       .then((r) => r.json())
       .then((cfg) => {
+        mostrarVersao(cfg.programa, cfg.build);
         S.serverName = cfg.serverName;
         if (cfg.serverName && cfg.serverName !== MARCA) $('#loginSub').textContent = `Entre em ${cfg.serverName} para conversar e assistir junto com a galera.`;
         $('#passField').hidden = !cfg.needsPassword;
@@ -393,6 +394,7 @@
 
   async function onInit(m) {
     conferirVersaoDoPrograma(m.programa);
+    if (m.programa && `v${m.programa}` !== VERSAO.texto && !PROGRAMA) mostrarVersao(m.programa, m.build);
     S.myId = m.me.id;
     S.isAdmin = !!m.me.admin;
     S.mutedUntil = m.muted || 0;
@@ -2695,6 +2697,32 @@
     medirRede().catch(() => {});
   }, 2000);
   window.addEventListener('offline', () => { if (S.sala) medirRede(); });
+
+  // ================= Versão em uso (discreta, num canto) =================
+  // No navegador: a versão do site. No programa: a do programa instalado (em laranja se estiver
+  // mais antiga que a do site). Passando o mouse aparece o detalhe; clicando, a explicação.
+  const VERSAO = { texto: '', detalhe: '', antigo: false };
+  async function mostrarVersao(doSite, build) {
+    if (!/^\d+\.\d+\.\d+$/.test(String(doSite || '')) && !PROGRAMA) return;
+    let doPrograma = null;
+    if (PROGRAMA) {
+      try { doPrograma = (await PROGRAMA.info())?.versao || null; } catch { doPrograma = null; }
+    }
+    const site = /^\d+\.\d+\.\d+$/.test(String(doSite || '')) ? doSite : null;
+    VERSAO.antigo = !!(doPrograma && site && versaoMaisAntiga(doPrograma, site));
+    VERSAO.texto = `v${doPrograma || site}`;
+    VERSAO.detalhe = doPrograma
+      ? `Programa para Windows, versão ${doPrograma}.${VERSAO.antigo ? ` Já tem a ${site}: feche e abra o programa para atualizar.` : ' Está em dia.'}`
+      : `Caras E Telas, versão ${site}${build ? ` (envio ${build})` : ''}.`;
+    for (const el of [$('#loginVersao'), $('#railVersao')]) {
+      el.textContent = VERSAO.texto;
+      el.title = VERSAO.detalhe;
+      el.setAttribute('aria-label', VERSAO.detalhe);
+      el.classList.toggle('antiga', VERSAO.antigo);
+      el.hidden = false;
+    }
+  }
+  for (const id of ['#loginVersao', '#railVersao']) $(id).addEventListener('click', () => { if (VERSAO.detalhe) toast(VERSAO.detalhe, VERSAO.antigo ? 9000 : 4000); });
 
   // ================= Programa desatualizado =================
   // O servidor diz qual é a versão mais nova do programa; se a deste for mais antiga, avisa

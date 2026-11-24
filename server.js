@@ -396,10 +396,13 @@ const VERSAO_PROGRAMA = (() => {
     return null;
   }
 })();
+// O Render informa qual envio do GitHub está no ar (aparece no detalhe da versão)
+const COMMIT = /^[0-9a-f]{7,40}$/i.test(process.env.RENDER_GIT_COMMIT || '') ? process.env.RENDER_GIT_COMMIT.slice(0, 7) : '';
 function configPublica() {
   return {
     serverName: nomeServidor(), needsPassword: precisaSenha(), locked: !!data.settings.locked,
     ...(VERSAO_PROGRAMA ? { programa: VERSAO_PROGRAMA } : {}),
+    ...(COMMIT ? { build: COMMIT } : {}),
   };
 }
 function enviarInit(u) {

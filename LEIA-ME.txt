@@ -461,6 +461,10 @@ DICAS
     caneta, o botão "Testar na minha tela" desenha um círculo vermelho
     só para você conferir, e a linha ao lado diz se a camada está
     pronta ou por que não pode aparecer.
+  - Versão: aparece pequena no canto de baixo da tela de entrada e no
+    pé da coluna da esquerda. No navegador é a do site; no programa é
+    a do programa instalado, em laranja quando ele está desatualizado
+    (clique nela para ver o que fazer).
   - Para transmitir, use Chrome, Edge, Firefox ou Opera no computador,
     ou o programa para Windows (parte 5).
     No celular dá para assistir e conversar.

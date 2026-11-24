@@ -914,3 +914,19 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
 .cp-programa { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .cp-estado-camada { flex: 1; min-width: 200px; font-size: 12.5px; line-height: 1.4; color: var(--verde-texto); }
 .cp-estado-camada.aviso { color: var(--alerta); font-weight: 600; }
+
+/* ---------- Versão em uso (discreta) ---------- */
+.versao {
+  border: 0; background: none; padding: 2px 6px; border-radius: 6px; cursor: default;
+  font-family: inherit; font-size: 10.5px; font-weight: 600; line-height: 1.2; letter-spacing: .02em; font-variant-numeric: tabular-nums;
+  color: var(--fraco); opacity: .7; transition: opacity .2s;
+}
+.versao:hover, .versao:focus-visible { opacity: 1; }
+.versao.antiga { color: var(--alerta); opacity: 1; cursor: pointer; }
+.versao.antiga::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: currentColor; vertical-align: 1px; }
+.versao-login {
+  position: fixed; right: 12px; bottom: 10px; z-index: 3; padding: 3px 9px; border-radius: 999px; color: var(--suave);
+  background: color-mix(in srgb, var(--pop-1) 72%, transparent); border: 1px solid var(--borda-vidro);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.versao-rail { margin-top: auto; margin-bottom: 10px; }
