@@ -900,6 +900,9 @@
 
     const vivos = naSala ? pessoas.filter((u) => u.live) : [];
     sincronizarTiles(vivos.map((u) => u.id));
+    // Com vídeo na tela, os painéis param de desfocar o fundo: a placa de vídeo refazia o
+    // desfoque a cada quadro e o vídeo (e a captura de quem transmite) caía pela metade
+    document.body.classList.toggle('com-video', S.tiles.size > 0);
     $('#stageGrid').hidden = vivos.length === 0;
 
     const vazio = $('#stageEmpty');
@@ -1173,7 +1176,7 @@
       const ql = QTX.sessao?.ultimo;
       estado = S.retomando ? 'A janela capturada sumiu: tentando pegar de novo…' : n
         ? `${plural(n, 'pessoa assistindo', 'pessoas assistindo')}, ${mbps(fatia)} Mbps para cada${fatia < q.br * 0.85 ? ' (qualidade ajustada ao seu upload)' : ''}`
-          + (ql ? ` · saindo em ${ql.altura}p ${ql.fps} fps${ql.motivo === 'cpu' ? ' (computador pesado)' : ql.motivo === 'bandwidth' ? ' (internet apertada)' : ''}` : '')
+          + (ql ? ` · saindo em ${ql.altura}p ${ql.fps} fps${ql.captura !== null && ql.captura !== undefined ? ` (captura: ${ql.captura} fps)` : ''}${ql.motivo === 'cpu' ? ' · computador pesado' : ql.motivo === 'bandwidth' ? ' · internet apertada' : ''}` : '')
         : 'Ninguém assistindo ainda';
     } else if (!c || c.state === 'new' || c.state === 'connecting') {
       estado = 'Conectando…';
@@ -2174,6 +2177,8 @@
     ['H.264', 'video/H264', 'video/H264'],
   ];
   function escolherCodec() {
+    if (salvo.codecSemPlaca === true) CODEC.semPlaca = true; // a placa já deu problema neste computador
+    if (CODEC.semPlaca) return (CODEC.promessa ||= Promise.resolve(null));
     CODEC.promessa ||= (async () => {
       const caps = typeof RTCRtpSender !== 'undefined' ? RTCRtpSender.getCapabilities?.('video') : null;
       if (!caps?.codecs?.length || !navigator.mediaCapabilities?.encodingInfo) return null;
@@ -2209,7 +2214,7 @@
   const media = (soma, n) => (n ? soma / n : 0);
   const QTX = { sessao: null, avisou: false, seguidos: 0 };
   function novaSessaoEnvio() {
-    return { inicio: Date.now(), n: 0, somaAltura: 0, minAltura: 0, somaFps: 0, cpu: 0, banda: 0, somaBps: 0, nBps: 0, maxPessoas: 0, pessoas: new Set(), codec: '', hardware: null, ultimo: null, alturaFonte: 0 };
+    return { inicio: Date.now(), n: 0, somaAltura: 0, minAltura: 0, somaFps: 0, cpu: 0, banda: 0, somaBps: 0, nBps: 0, maxPessoas: 0, pessoas: new Set(), codec: '', hardware: null, ultimo: null, alturaFonte: 0, somaCaptura: 0, nCaptura: 0, encoder: '', trocouCodec: false };
   }
   async function medirEnvio() {
     if (!S.live || !S.out.size) return;
@@ -2218,13 +2223,17 @@
     const fpss = [];
     const motivos = [];
     const bpss = [];
+    const capturas = [];
     for (const [vid, c] of S.out) {
       if (c.pc.connectionState !== 'connected') continue;
       let st;
       try { st = await c.pc.getStats(); } catch { continue; }
       s.pessoas.add(userById(vid)?.name || '?');
       st.forEach((r) => {
+        // quantos quadros a captura (a tela, janela ou aba) está entregando
+        if (r.type === 'media-source' && r.kind === 'video' && typeof r.framesPerSecond === 'number') capturas.push(r.framesPerSecond);
         if (r.type !== 'outbound-rtp' || r.kind !== 'video') return;
+        if (r.encoderImplementation) s.encoder = String(r.encoderImplementation).slice(0, 60);
         if (r.frameHeight) alturas.push(r.frameHeight);
         if (r.framesPerSecond) fpss.push(r.framesPerSecond);
         motivos.push(r.qualityLimitationReason || 'none');
@@ -2249,7 +2258,13 @@
     if (motivo === 'bandwidth') s.banda++;
     if (bpss.length) { s.somaBps += media(bpss.reduce((a, b) => a + b, 0), bpss.length); s.nBps++; }
     s.maxPessoas = Math.max(s.maxPessoas, S.out.size);
-    s.ultimo = { altura, fps, motivo };
+    const captura = capturas.length ? Math.round(Math.max(...capturas)) : null;
+    if (captura !== null) { s.somaCaptura += captura; s.nCaptura++; }
+    s.ultimo = { altura, fps, motivo, captura };
+    // A placa de vídeo não dá conta: a captura manda bem mais quadros do que ela monta, sem
+    // limite de internet. Passa a montar no processador (e lembra disso neste computador).
+    QTX.placaLenta = s.hardware === true && captura >= 20 && fps < captura * 0.6 && motivo === 'none' ? (QTX.placaLenta || 0) + 1 : 0;
+    if (QTX.placaLenta >= 4 && !CODEC.semPlaca) trocarParaProcessador();
     // aviso uma vez por transmissão, se ficar limitado por ~30 s seguidos
     QTX.seguidos = motivo === 'none' ? 0 : QTX.seguidos + 1;
     if (QTX.seguidos >= 10 && !QTX.avisou) {
@@ -2273,6 +2288,18 @@
     return `${p.nome || 'placa sem nome'}${p.outras > 1 ? ` (${p.outras} placas no PC)` : ''} · codificação de vídeo ${cod}${p.codecs?.length ? `: ${p.codecs.join(', ')}` : ', sem formatos'}`;
   }
   placaDeVideo().then((p) => { QTX.gpu = textoDaPlaca(p); });
+  function trocarParaProcessador() {
+    CODEC.semPlaca = true;
+    CODEC.promessa = Promise.resolve(null);
+    CODEC.escolha = null;
+    salvar({ codecSemPlaca: true });
+    if (QTX.sessao) QTX.sessao.trocouCodec = true;
+    for (const vid of [...S.out.keys()]) {
+      fecharOut(vid);
+      sinal(vid, { k: 'restart' });
+    }
+    toast('A placa de vídeo não estava dando conta de montar a transmissão, então ela passou para o processador. Quem assiste pisca por um instante.', 10000);
+  }
   function resumoEnvio() {
     const s = QTX.sessao;
     if (!s || !s.n || Date.now() - s.inicio < 20000) return null;
@@ -2282,6 +2309,7 @@
       fpsMedio: Math.round(media(s.somaFps, s.n)), cpuPct: Math.round((s.cpu / s.n) * 100), bandaPct: Math.round((s.banda / s.n) * 100), alturaFonte: s.alturaFonte,
       mbpsMedio: Math.round(media(s.somaBps, s.nBps) / 1e5) / 10, codec: s.codec, hardware: s.hardware, programa: !!PROGRAMA,
       fpsMeta: QUALIDADES[S.quality]?.fps || 0,
+      fpsCaptura: s.nCaptura ? Math.round(media(s.somaCaptura, s.nCaptura)) : 0, encoder: s.encoder, trocouCodec: s.trocouCodec,
       placa: Object.entries(CODEC.testes).map(([k, v]) => `${k} ${v}`).join(', '),
       gpu: QTX.gpu || '',
     };
@@ -2371,16 +2399,21 @@
       if (x.cpuPct >= 25) causas.push(`computador de quem transmite sobrecarregado em ${x.cpuPct}% do tempo`);
       const ruim = x.alturaMedia && x.alturaMedia < (x.alturaFonte || 1080) * 0.8;
       const poucosQuadros = x.fpsMeta && x.fpsMedio < x.fpsMeta * 0.6;
+      const capt = x.fpsCaptura || 0;
+      const montagemLenta = capt >= 15 && x.fpsMedio < capt * 0.7; // a captura entregava, mas não saía
+      const capturaLenta = capt > 0 && x.fpsMeta && capt < Math.min(24, x.fpsMeta * 0.6);
       return `<div class="ap-qual${causas.length || ruim ? ' ruim' : ''}">
         <div><b>${esc(x.nome)}</b> transmitiu ${min} min para ${esc((x.pessoas || []).join(', ') || '?')}
           <span class="muted small">· ${esc(quandoCurto(x.t))}${FIM_DA_TRANSMISSAO[x.fim] ? ` · terminou: ${x.fim === 'captura' && !x.programa ? 'a captura acabou (janela fechada ou "Parar compartilhamento" do navegador)' : FIM_DA_TRANSMISSAO[x.fim]}` : ''}</span></div>
-        <div class="muted small">Enviou em média ${x.alturaMedia}p a ${x.fpsMedio} fps (menor: ${x.alturaMin}p${x.alturaFonte ? `; a tela capturada tem ${x.alturaFonte}p` : ''}), ${String(x.mbpsMedio).replace('.', ',')} Mbps por pessoa
-          · ${esc(x.codec || '?')} ${x.hardware === true ? 'pela placa de vídeo' : x.hardware === false ? 'pelo processador' : ''}
+        <div class="muted small">Enviou em média ${x.alturaMedia}p a ${x.fpsMedio} fps (${capt ? `a captura entregava ${capt} fps; ` : ''}menor: ${x.alturaMin}p${x.alturaFonte ? `; a tela capturada tem ${x.alturaFonte}p` : ''}), ${String(x.mbpsMedio).replace('.', ',')} Mbps por pessoa
+          · ${esc(x.codec || '?')} ${x.hardware === true ? 'pela placa de vídeo' : x.hardware === false ? 'pelo processador' : ''}${x.encoder ? ` (${esc(x.encoder)})` : ''}${x.trocouCodec ? ', trocou da placa para o processador no meio' : ''}
           · qualidade escolhida ${esc(x.qualidade || '?')}, upload ${esc(x.upload === 'auto' ? 'automático' : `${x.upload} Mbps`)}${x.programa ? ' · programa' : ' · navegador'}</div>
         ${x.placa ? `<div class="muted small">Formatos que este computador codifica: ${esc(x.placa)}</div>` : ''}
         ${x.gpu ? `<div class="muted small">Placa de vídeo: ${esc(x.gpu)}</div>` : ''}
         <div class="ap-qual-causa">${causas.length ? `O que limitou: ${esc(causas.join('; '))}.`
           : ruim ? 'Imagem abaixo da tela capturada, sem limitação registrada (talvez a qualidade escolhida).'
+            : montagemLenta ? `A captura entregava ${capt} fps, mas só ${x.fpsMedio} saíam: ${x.hardware ? 'a placa de vídeo' : 'o processador'} não deu conta de montar o vídeo.`
+            : poucosQuadros && capturaLenta ? `A captura entregou só ${capt} fps (de ${x.fpsMeta} pedidos). Com imagem parada isso é normal; com vídeo ou jogo, o computador de quem transmite não deu conta de capturar (placa de vídeo ocupada, notebook na bateria ou em economia de energia).`
             : poucosQuadros ? `Sem limitação de internet ou computador. A captura entregou ${x.fpsMedio} fps (de ${x.fpsMeta} pedidos): isso acontece quando a imagem muda pouco ou quando o próprio jogo roda a menos quadros (muitos jogos antigos ficam presos em 25 a 30 fps). A transmissão não tem como ter mais quadros que o jogo.`
               : 'Sem limitação registrada.'}${x.fim === 'captura' && x.programa ? ' A transmissão parou sozinha porque a janela ou tela capturada sumiu (o jogo fechou, trocou de modo de tela ou reiniciou a imagem).'
               : x.fim === 'pagina' ? ' A transmissão parou porque a página recarregou ou o programa fechou (F5, falha ou atualização).'

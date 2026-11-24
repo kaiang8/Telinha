@@ -1407,6 +1407,7 @@ async function api(req, res, url) {
           cpuPct: num(body.cpuPct, 100), bandaPct: num(body.bandaPct, 100), mbpsMedio: num(body.mbpsMedio, 1000),
           hardware: typeof body.hardware === 'boolean' ? body.hardware : null,
           fpsMeta: num(body.fpsMeta, 240), placa: textoLimpo(body.placa, 120), gpu: textoLimpo(body.gpu, 160),
+          fpsCaptura: num(body.fpsCaptura, 240), encoder: textoLimpo(body.encoder, 60), trocouCodec: body.trocouCodec === true,
           fim: ['voce', 'captura', 'pagina', 'sala', 'sala-apagada', 'conexao', 'admin', 'expulso', 'erro'].includes(body.fim) ? body.fim : '',
         });
       } else {

@@ -521,8 +521,14 @@ DICAS
     que entra já começa recebendo numa velocidade boa (antes começava
     quase em zero e ficava pixelada no começo). Passe o mouse na
     transmissão para ver a resolução que está chegando. Quem transmite
-    vê embaixo do próprio vídeo a resolução que está saindo e, se cair,
-    o motivo: "internet apertada" ou "computador pesado". No painel de
+    vê embaixo do próprio vídeo a resolução que está saindo, quantos
+    quadros a captura está entregando ("captura: 30 fps") e, se cair,
+    o motivo: "internet apertada" ou "computador pesado". Se a placa
+    de vídeo não der conta de montar a transmissão, o site passa
+    sozinho para o processador (quem assiste pisca um instante) e
+    lembra disso naquele computador. Com vídeo na tela, os painéis
+    deixam de desfocar o fundo: o desfoque refeito a cada quadro
+    derrubava a transmissão pela metade. No painel de
     admin (aba Problemas) fica um resumo de cada transmissão, de quem
     mandou e de quem assistiu, dizendo o que limitou a imagem, por que
     a transmissão terminou e, no programa, qual é a placa de vídeo.

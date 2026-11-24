@@ -767,6 +767,12 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
   /* os emotes ficam de fora: são curtinhos, só aparecem quando alguém clica, e a graça é a animação */
   :not(.emote-voa, .emote-voa *, .t-reacao *), ::before, ::after { animation: none !important; transition: none !important; }
 }
+/* com vídeo na tela: sem desfoque. A placa de vídeo refazia o desfoque a cada quadro e o vídeo
+   caía pela metade (inclusive a captura de quem transmite). Painéis mais opacos no lugar. */
+body.com-video :is(.sidebar, .main, .modal, .modal-card, .admin-card, .ajustes, .sons, .cmd-suggest, .toast) {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+body.com-video :is(.sidebar, .main) { background: linear-gradient(180deg, var(--pop-1), var(--pop-2)); }
 /* sem desfoque de vidro (navegadores antigos): painéis mais opacos para continuar legível */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .sidebar, .main, .login-card { background: linear-gradient(180deg, var(--pop-1), var(--pop-2)); }
