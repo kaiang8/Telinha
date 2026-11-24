@@ -441,11 +441,11 @@ static int capturar(DWORD pid, DWORD taxa) {
 }
 
 // ---------------------------------------------------------------- início
-static bool numero(const wchar_t* s, DWORD& v) {
+static bool numero(const wchar_t* s, DWORD& v, bool zeroVale = false) {
   if (!s || !*s) return false;
   wchar_t* fim = nullptr;
   unsigned long x = wcstoul(s, &fim, 10);
-  if (!fim || *fim || x == 0 || x > 0xFFFFFFFFul) return false;
+  if (!fim || *fim || (x == 0 && !zeroVale) || x > 0xFFFFFFFFul) return false;
   v = (DWORD)x;
   return true;
 }
@@ -460,7 +460,7 @@ int wmain(int argc, wchar_t** argv) {
     const wchar_t* prox = i + 1 < argc ? argv[i + 1] : nullptr;
     if (a == L"--versao") { printf("%s\n", VERSAO); return 0; }
     else if (a == L"--listar") modoListar = true;
-    else if (a == L"--ignorar" && numero(prox, ignorar)) i++;
+    else if (a == L"--ignorar" && numero(prox, ignorar, true)) i++; // 0 = não ignorar ninguém
     else if (a == L"--capturar" && numero(prox, pid)) { modoCapturar = true; i++; }
     else if (a == L"--taxa" && numero(prox, taxa)) i++;
     else { status("{\"erro\":\"argumento\"}"); return 1; }
