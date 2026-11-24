@@ -339,13 +339,16 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 .stage-controls { position: relative; }
 .ajustes {
   position: absolute; bottom: calc(100% - 6px); left: 50%; transform: translateX(-50%); z-index: 6;
-  width: min(420px, calc(100% - 24px)); background: var(--painel); border: 1px solid var(--linha); border-radius: 16px;
+  width: min(480px, calc(100% - 24px)); background: var(--painel); border: 1px solid var(--linha); border-radius: 16px;
   padding: 16px; display: grid; gap: 12px; box-shadow: 0 20px 50px rgba(0, 0, 0, .5);
 }
 .ajustes .quality { display: grid; grid-template-columns: 96px 1fr; gap: 12px; }
 .ajustes .quality > span { font-size: 13px; font-weight: 600; color: var(--suave); }
-.ajustes .quality select { width: 100%; min-width: 0; }
+.ajustes .quality select { width: 100%; min-width: 0; font-size: 15px; }
 .ajustes-dica { margin: 2px 0 0; font-size: 12px; line-height: 1.45; color: var(--fraco); }
+.som-dica { margin: -4px 0 2px; padding-left: 108px; }
+.som-dica.aviso { color: var(--brilho); }
+@media (max-width: 480px) { .som-dica { padding-left: 0; } }
 .send-vol input[type=range] { width: 120px; accent-color: var(--brilho); }
 .send-vol .vol-pct { font-size: 12px; color: var(--suave); min-width: 38px; font-variant-numeric: tabular-nums; }
 

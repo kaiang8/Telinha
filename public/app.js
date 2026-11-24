@@ -65,7 +65,8 @@
     serverName: MARCA, channels: [], messages: {}, users: [], iceServers: [],
     view: salvo.view || null, sala: null, live: false, localStream: null,
     quality: QUALIDADES[salvo.quality] ? salvo.quality : '1080p30',
-    som: ['janela', 'pc', 'nenhum'].includes(salvo.som) ? salvo.som : 'janela',
+    // somV 2: todo mundo volta uma vez para o modo sem eco (o "PC inteiro" ficou salvo em muitos navegadores)
+    som: salvo.somV === 2 && ['janela', 'pc', 'nenhum'].includes(salvo.som) ? salvo.som : 'janela',
     upload: ['auto', '5', '10', '20', '50', '100'].includes(String(salvo.upload)) ? String(salvo.upload) : 'auto',
     evitarEco: false, // pausa o som das outras transmissões enquanto mando o som do PC inteiro
     out: new Map(), // quem está me assistindo: viewerId -> conexão
@@ -80,6 +81,7 @@
     focus: null, es: null, started: false, rejoinTimer: null, lastTypingSent: 0, unseen: 0, stick: true,
   };
 
+  if (salvo.somV !== 2) salvar({ som: 'janela', somV: 2 });
   const chan = (id) => S.channels.find((c) => c.id === id);
   const textChannels = () => S.channels.filter((c) => c.type === 'text');
   const salas = () => S.channels.filter((c) => c.type === 'sala');
@@ -794,7 +796,7 @@
         <p>${n ? `${plural(n, 'pessoa', 'pessoas')} aqui${transmitindo ? `, ${transmitindo} transmitindo` : ''}. ` : 'Ninguém aqui ainda. '}Entre na sala para assistir às transmissões ou mostrar a sua tela.</p></div>`;
     } else {
       vazio.innerHTML = `<div><div class="big">${icon('screen')}</div><h2>Ninguém está transmitindo</h2>
-        <p>Clique em <b>Compartilhar tela</b> para mostrar uma janela, uma aba ou a tela inteira para quem estiver na sala. Quer que ouçam o som? Escolha em <b>Som</b> aqui embaixo e marque a opção de áudio na janela do navegador.</p></div>`;
+        <p>Clique em <b>Compartilhar tela</b> para mostrar uma janela, uma aba ou a tela inteira para quem estiver na sala. Quer que ouçam o som? Na janela de escolha, ligue a opção de áudio do aplicativo ou da guia.</p></div>`;
     }
 
     $('#joinBtn').hidden = naSala;
@@ -1240,11 +1242,11 @@
     const superficie = vt?.getSettings?.().displaySurface;
     S.audioCaptado = !!at;
     S.evitarEco = false;
-    if (at && superficie === 'monitor') {
+    if (at && (superficie === 'monitor' || S.som === 'pc')) {
       if (at.getSettings?.().restrictOwnAudio !== true) S.evitarEco = true;
-      toast(`${trocou ? 'Tela trocada. ' : ''}Você está mandando o som do PC inteiro. Se vocês conversam por chamada (Discord, WhatsApp…), os amigos vão ouvir a própria voz. Para evitar, escolha "Som: só da aba ou janela".`, 10000);
+      toast(`${trocou ? 'Tela trocada. ' : ''}Você está mandando o som do computador inteiro. Se vocês conversam por chamada (Discord, WhatsApp…), os amigos vão ouvir a própria voz. Para evitar, vá em Ajustes → Som → "Só o que estou mostrando".`, 10000);
     } else if (!at && S.som !== 'nenhum') {
-      toast(`${trocou ? 'Tela trocada, mas sem som. ' : 'Esta transmissão está sem som. '}Para mandar som, compartilhe uma aba e marque "Compartilhar áudio da guia".`, 7000);
+      toast(`${trocou ? 'Tela trocada, mas sem som. ' : 'Esta transmissão está sem som. '}Para mandar som, ligue a opção de áudio na janela de escolha: "áudio do aplicativo" para uma janela ou "áudio da guia" para uma aba.`, 8000);
     } else if (trocou) {
       toast('Tela trocada!');
     }
@@ -1793,10 +1795,20 @@
 
     const som = $('#somSelect');
     som.value = S.som;
+    const dicaSom = () => {
+      const pc = S.som === 'pc';
+      const el = $('#somDica');
+      el.classList.toggle('aviso', pc);
+      el.hidden = S.som === 'nenhum';
+      el.textContent = pc
+        ? 'Atenção: entra todo o som do computador, inclusive a chamada de voz (Discord, WhatsApp…). Quem estiver na chamada vai ouvir a própria voz.'
+        : 'Na janela de escolha, ligue o áudio: "Compartilhar áudio do aplicativo" para uma janela, ou "Compartilhar áudio da guia" para uma aba. A chamada de voz não entra.';
+    };
+    dicaSom();
     som.addEventListener('change', () => {
       S.som = som.value;
-      salvar({ som: S.som });
-      if (S.som === 'pc') toast('Com "PC inteiro", entra todo o som do computador, inclusive chamadas de voz.', 6000);
+      salvar({ som: S.som, somV: 2 });
+      dicaSom();
     });
 
     const sel = $('#qualitySelect');

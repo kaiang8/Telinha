@@ -301,22 +301,24 @@ DICAS
     próximo: fica ainda mais estável. Quem transmite vê, em cima da
     própria tela, quantas pessoas estão assistindo e quanto vai para
     cada uma.
-  - Som: escolha em "Ajustes" -> "Som", ANTES de compartilhar:
-      Só da aba ou janela (padrão) .. vai só o som do que você está
-                                      mostrando. Use este se vocês
-                                      conversam por chamada (Discord,
-                                      WhatsApp...): não dá eco.
-                                      Para uma aba, marque "Compartilhar
-                                      áudio da guia". Para uma janela
-                                      (jogo, player de vídeo), marque a
-                                      opção de áudio, se aparecer.
-      PC inteiro .................... vai todo o som do computador,
-                                      INCLUSIVE a voz dos amigos na
-                                      chamada. Eles vão se ouvir.
-      Sem som ....................... só a imagem.
-    Enquanto você manda o "PC inteiro", o som das outras transmissões
-    fica pausado no seu computador (se o navegador não conseguir
-    separar), para não voltar para elas.
+  - Som: em "Ajustes" -> "Som", ANTES de compartilhar:
+      Só o que estou mostrando (padrão, sem eco)
+          vai só o som do jogo, do vídeo ou do programa que você está
+          mostrando. A chamada de voz (Discord, WhatsApp...) NÃO entra.
+          Na janela de escolha do navegador, ligue:
+            - "Compartilhar áudio do aplicativo" (ou "da janela"),
+              quando escolher uma janela;
+            - "Compartilhar áudio da guia", quando escolher uma aba.
+      Computador inteiro (dá eco)
+          vai todo o som do PC, INCLUSIVE a voz dos amigos na chamada.
+          Eles vão se ouvir. No navegador aparece "Compartilhar com
+          áudio do sistema": se você viu essa opção, é porque está
+          neste modo.
+      Sem som
+          só a imagem.
+    Enquanto você manda o "Computador inteiro", o som das outras
+    transmissões fica pausado no seu computador (quando o navegador
+    não consegue separar), para não voltar para elas.
   - Trocar de tela: durante a transmissão, clique em "Trocar tela"
     (embaixo da sala, ou nas setinhas ao lado de "Ao vivo"). Escolha
     outra janela, aba ou tela: quem está assistindo passa a ver a nova
