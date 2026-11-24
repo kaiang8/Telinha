@@ -1941,21 +1941,31 @@
   //    Quem assiste escolhe o primeiro da lista que ele sabe mostrar, então nunca quebra.
   // 2) Medição a cada 3 s: resolução, quadros por segundo e o que está limitando (internet ou
   //    processador). Aparece na tela e vira um resumo no painel de admin quando a transmissão acaba.
-  const CODEC = { promessa: null, escolha: null };
+  const CODEC = { promessa: null, escolha: null, testes: {} };
+  // O H.264 só responde direito com os parâmetros completos (perfil básico e perfil alto)
+  const CANDIDATOS_CODEC = [
+    ['AV1', 'video/AV1', 'video/AV1'],
+    ['VP9', 'video/VP9', 'video/VP9'],
+    ['H.264', 'video/H264', 'video/H264;level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f'],
+    ['H.264', 'video/H264', 'video/H264;level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640c1f'],
+    ['H.264', 'video/H264', 'video/H264'],
+  ];
   function escolherCodec() {
     CODEC.promessa ||= (async () => {
       const caps = typeof RTCRtpSender !== 'undefined' ? RTCRtpSender.getCapabilities?.('video') : null;
       if (!caps?.codecs?.length || !navigator.mediaCapabilities?.encodingInfo) return null;
-      for (const mime of ['video/AV1', 'video/VP9', 'video/H264']) {
-        if (!caps.codecs.some((c) => c.mimeType.toLowerCase() === mime.toLowerCase())) continue;
+      const nota = { 'pela placa': 3, 'pelo processador': 2, 'não tem': 1 };
+      for (const [nome, base, tipo] of CANDIDATOS_CODEC) {
+        if (!caps.codecs.some((c) => c.mimeType.toLowerCase() === base.toLowerCase())) { CODEC.testes[nome] ||= 'não tem'; continue; }
+        let r = null;
         try {
-          const r = await navigator.mediaCapabilities.encodingInfo({
-            type: 'webrtc', video: { contentType: mime, width: 1920, height: 1080, bitrate: 4500000, framerate: 30 },
-          });
-          if (r.supported && r.powerEfficient) return mime;
-        } catch { /* esse não dá */ }
+          r = await navigator.mediaCapabilities.encodingInfo({ type: 'webrtc', video: { contentType: tipo, width: 1920, height: 1080, bitrate: 4500000, framerate: 30 } });
+        } catch { r = null; }
+        const v = r?.supported ? (r.powerEfficient ? 'pela placa' : 'pelo processador') : 'não tem';
+        if (!CODEC.testes[nome] || nota[v] > nota[CODEC.testes[nome]]) CODEC.testes[nome] = v;
       }
-      return null;
+      const melhor = CANDIDATOS_CODEC.find(([nome]) => CODEC.testes[nome] === 'pela placa');
+      return melhor ? melhor[1] : null;
     })().then((m) => { CODEC.escolha = m; return m; }).catch(() => null);
     return CODEC.promessa;
   }
@@ -2035,6 +2045,8 @@
       qualidade: S.quality, upload: S.upload, alturaMedia: Math.round(media(s.somaAltura, s.n)), alturaMin: s.minAltura,
       fpsMedio: Math.round(media(s.somaFps, s.n)), cpuPct: Math.round((s.cpu / s.n) * 100), bandaPct: Math.round((s.banda / s.n) * 100), alturaFonte: s.alturaFonte,
       mbpsMedio: Math.round(media(s.somaBps, s.nBps) / 1e5) / 10, codec: s.codec, hardware: s.hardware, programa: !!PROGRAMA,
+      fpsMeta: QUALIDADES[S.quality]?.fps || 0,
+      placa: Object.entries(CODEC.testes).map(([k, v]) => `${k} ${v}`).join(', '),
     };
   }
 
@@ -2051,8 +2063,9 @@
           q.perdidos += Math.max(0, (r.packetsLost || 0) - ant.perdidos);
           q.recebidos += Math.max(0, (r.packetsReceived || 0) - ant.recebidos);
         }
-        c.qualAntes = { perdidos: r.packetsLost || 0, recebidos: r.packetsReceived || 0 };
-        q.travadas = r.freezeCount || q.travadas;
+        const congeladas = Math.max(0, (r.freezeCount || 0) - (ant?.travadas ?? (r.freezeCount || 0)));
+        if ((r.framesPerSecond || 0) >= 15) q.travadas += congeladas;
+        c.qualAntes = { perdidos: r.packetsLost || 0, recebidos: r.packetsReceived || 0, travadas: r.freezeCount || 0 };
         const cod = r.codecId ? st.get(r.codecId) : null;
         if (cod?.mimeType) q.codec = nomeCodec(cod.mimeType);
         if (r.frameHeight) {
@@ -2113,20 +2126,29 @@
       if (x.bandaPct >= 25) causas.push(`internet de quem transmite apertada em ${x.bandaPct}% do tempo`);
       if (x.cpuPct >= 25) causas.push(`computador de quem transmite sobrecarregado em ${x.cpuPct}% do tempo`);
       const ruim = x.alturaMedia && x.alturaMedia < (x.alturaFonte || 1080) * 0.8;
+      const poucosQuadros = x.fpsMeta && x.fpsMedio < x.fpsMeta * 0.6;
       return `<div class="ap-qual${causas.length || ruim ? ' ruim' : ''}">
         <div><b>${esc(x.nome)}</b> transmitiu ${min} min para ${esc((x.pessoas || []).join(', ') || '?')}
           <span class="muted small">· ${esc(quandoCurto(x.t))}</span></div>
         <div class="muted small">Enviou em média ${x.alturaMedia}p a ${x.fpsMedio} fps (menor: ${x.alturaMin}p${x.alturaFonte ? `; a tela capturada tem ${x.alturaFonte}p` : ''}), ${String(x.mbpsMedio).replace('.', ',')} Mbps por pessoa
           · ${esc(x.codec || '?')} ${x.hardware === true ? 'pela placa de vídeo' : x.hardware === false ? 'pelo processador' : ''}
           · qualidade escolhida ${esc(x.qualidade || '?')}, upload ${esc(x.upload === 'auto' ? 'automático' : `${x.upload} Mbps`)}${x.programa ? ' · programa' : ' · navegador'}</div>
-        <div class="ap-qual-causa">${causas.length ? `O que limitou: ${esc(causas.join('; '))}.` : ruim ? 'Imagem baixa, sem limitação registrada (talvez a qualidade escolhida ou o tamanho da janela).' : 'Sem limitação registrada.'}</div>
+        ${x.placa ? `<div class="muted small">Formatos que este computador codifica: ${esc(x.placa)}</div>` : ''}
+        <div class="ap-qual-causa">${causas.length ? `O que limitou: ${esc(causas.join('; '))}.`
+          : ruim ? 'Imagem abaixo da tela capturada, sem limitação registrada (talvez a qualidade escolhida).'
+            : poucosQuadros ? `Sem limitação de internet ou computador. Os ${x.fpsMedio} fps (de ${x.fpsMeta} pedidos) quase sempre são tela que muda pouco: imagem parada manda menos quadros, e isso é normal.`
+              : 'Sem limitação registrada.'}</div>
       </div>`;
     }
-    const ruim = x.perdaPct >= 2 || x.travadas >= 3 || (x.alturaMedia && x.alturaMax && x.alturaMedia < x.alturaMax * 0.8);
+    const travou = x.travadas >= Math.max(3, x.duracao / 30); // mais de uma travada a cada 30 s, com imagem se mexendo
+    const baixa = x.alturaMedia && x.alturaMax && x.alturaMedia < x.alturaMax * 0.8;
+    const ruim = x.perdaPct >= 2 || travou || baixa;
     return `<div class="ap-qual${ruim ? ' ruim' : ''}">
       <div><b>${esc(x.nome)}</b> assistiu ${esc(x.de)} por ${min} min <span class="muted small">· ${esc(quandoCurto(x.t))}</span></div>
       <div class="muted small">Recebeu em média ${x.alturaMedia}p a ${x.fpsMedio} fps (menor: ${x.alturaMin}p) · ${esc(x.codec || '?')} · ${String(x.perdaPct).replace('.', ',')}% de perda · ${x.travadas} ${x.travadas === 1 ? 'travada' : 'travadas'}${x.programa ? ' · programa' : ' · navegador'}</div>
-      <div class="ap-qual-causa">${x.perdaPct >= 2 ? 'A internet de quem assiste (ou o caminho até ela) perdeu pacotes: a imagem pixela e trava.' : ruim ? 'Imagem baixa: veja o resumo de quem transmitiu no mesmo horário.' : 'Recebeu bem.'}</div>
+      <div class="ap-qual-causa">${x.perdaPct >= 2 ? 'A internet de quem assiste (ou o caminho até ela) perdeu pacotes: a imagem pixela e trava.'
+        : travou ? 'A imagem travou várias vezes com a tela em movimento: veja o resumo de quem transmitiu (computador ou internet apertados).'
+          : baixa ? 'Imagem abaixo do normal em parte do tempo: veja o resumo de quem transmitiu no mesmo horário.' : 'Recebeu bem.'}</div>
     </div>`;
   }
 
