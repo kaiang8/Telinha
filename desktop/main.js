@@ -503,7 +503,10 @@ async function testeRapido() {
     const telaTeste = new BrowserWindow({ show: false, webPreferences: { partition: 'caras-seletor', sandbox: true, contextIsolation: true } });
     await telaTeste.loadFile(tela('carregando.html'));
     await telaTeste.webContents.insertCSS(R.cssDoTema({ escuro: true, vars: { '--p2': '#123456' } }));
-    r.temaLocal = (await telaTeste.webContents.executeJavaScript("getComputedStyle(document.documentElement).getPropertyValue('--p2').trim()")) === '#123456' ? 'aplicado' : 'não aplicou';
+    await telaTeste.webContents.insertCSS('html { --teste-injecao: 7; }');
+    const lerVar = (n) => telaTeste.webContents.executeJavaScript(`getComputedStyle(document.documentElement).getPropertyValue('${n}').trim()`);
+    r.temaLocal = (await lerVar('--p2')) === '#123456' ? 'aplicado' : 'não aplicou';
+    r.cssInjetado = (await lerVar('--teste-injecao')) === '7' ? 'entra' : 'bloqueado';
     telaTeste.destroy();
     // ajudante de som de um programa só (informativo: a máquina do GitHub não tem placa de som)
     const lista = await ajudante.listar();

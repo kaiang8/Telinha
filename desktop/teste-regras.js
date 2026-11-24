@@ -126,7 +126,7 @@ t('tema das telas do programa: só cores puras', () => {
   });
   assert.deepEqual(v, { escuro: true, vars: { '--p2': 'hsl(205.1, 77%, 49.4%)', '--ceu': '#0b1626', '--realce': 'rgba(255, 255, 255, .14)', '--pop-1': 'hsla(205, 40%, 16%, 0.97)' } });
   const css = R.cssDoTema({ escuro: false, vars: { '--p2': '#1d93df', '--p1': '#fff;}*{display:none' } });
-  assert.equal(css, ':root { --p2: #1d93df; color-scheme: light; }');
+  assert.equal(css, 'html:root { --p2: #1d93df; color-scheme: light; }');
   assert.equal(R.cssDoTema(null), '');
   assert.equal(R.validarTema('x'), null);
 });

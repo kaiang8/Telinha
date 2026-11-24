@@ -146,7 +146,8 @@ function cssDoTema(tema) {
   if (!t) return '';
   const linhas = Object.entries(t.vars).map(([k, v]) => `${k}: ${v};`);
   linhas.push(`color-scheme: ${t.escuro ? 'dark' : 'light'};`);
-  return `:root { ${linhas.join(' ')} }`;
+  // html:root ganha do :root da própria tela (o CSS injetado entra antes do da página)
+  return `html:root { ${linhas.join(' ')} }`;
 }
 
 module.exports = {
