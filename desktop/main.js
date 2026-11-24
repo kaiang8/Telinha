@@ -186,7 +186,7 @@ function abrirSeletor(lista, { comSom, programas, janelas }) {
   return new Promise((resolver) => {
     const seletor = new BrowserWindow({
       parent: janela, modal: true, width: 960, height: 720, minWidth: 600, minHeight: 480,
-      show: false, backgroundColor: '#101233', title: 'Escolha o que compartilhar',
+      show: false, backgroundColor: '#cfeafb', title: 'Escolha o que compartilhar',
       autoHideMenuBar: true, minimizable: false, maximizable: false,
       webPreferences: {
         partition: 'caras-seletor', preload: path.join(__dirname, 'preload-seletor.js'),
@@ -340,7 +340,7 @@ function criarJanela() {
   configurarSessaoDoSite(ses);
   janela = new BrowserWindow({
     width: 1280, height: 820, minWidth: 880, minHeight: 560,
-    backgroundColor: '#101233', title: 'Caras E Telas', show: false, autoHideMenuBar: true,
+    backgroundColor: '#cfeafb', title: 'Caras E Telas', show: false, autoHideMenuBar: true,
     icon: tela('icone.png'),
     webPreferences: {
       session: ses,
