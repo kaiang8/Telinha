@@ -172,4 +172,34 @@ function vigiarTecla(args, aoMudar) {
   return { ok: true };
 }
 
-module.exports = { caminho, listar, capturar, parar, anexarPorta, vigiarTecla, soltarTecla };
+// ---- caneta: acompanha onde a janela compartilhada está ----
+// Devolve { parar } ou null; aoMudar recebe { x, y, w, h, min, vis } ou { fechada: true }
+function vigiarJanela(hwnd, aoMudar) {
+  const exe = caminho();
+  if (!exe || !Number.isInteger(hwnd) || hwnd <= 0) return null;
+  const proc = spawn(exe, ['--janela', String(hwnd)], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
+  let ativo = true;
+  let texto = '';
+  proc.stdout.on('data', (d) => {
+    texto = (texto + d).slice(-4096);
+    const linhas = texto.split('\n');
+    texto = linhas.pop();
+    for (const l of linhas) {
+      let r = null;
+      try { r = JSON.parse(l); } catch { continue; }
+      if (r?.fechada === true) aoMudar({ fechada: true });
+      else if ([r?.x, r?.y, r?.w, r?.h].every(Number.isInteger)) aoMudar({ x: r.x, y: r.y, w: r.w, h: r.h, min: r.min === true, vis: r.vis !== false });
+    }
+  });
+  const parar = () => {
+    if (!ativo) return;
+    ativo = false;
+    try { proc.stdin.end(); } catch { /* ok */ }
+    try { proc.kill(); } catch { /* ok */ }
+  };
+  proc.on('error', () => { if (ativo) aoMudar({ fechada: true }); ativo = false; });
+  proc.on('exit', () => { ativo = false; });
+  return { parar };
+}
+
+module.exports = { caminho, listar, capturar, parar, anexarPorta, vigiarTecla, soltarTecla, vigiarJanela };

@@ -29,6 +29,7 @@
     fone: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4.5" height="7" rx="1.5"/><rect x="16.5" y="14" width="4.5" height="7" rx="1.5"/>',
     foneOff: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4.5" height="7" rx="1.5"/><rect x="16.5" y="14" width="4.5" height="7" rx="1.5"/><path d="M3 3l18 18"/>',
     engrenagem: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    caneta: '<path d="M4 20l4.2-1 10.3-10.3a2.2 2.2 0 0 0-3.2-3.2L5 15.8 4 20z"/><path d="M13.8 7l3.2 3.2"/>',
     paleta: '<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.4-.5-.8-.5-1.3 0-1 .8-1.8 1.8-1.8h2.1A5.3 5.3 0 0 0 22 9.7C21.6 5.9 17.4 3 12 3z"/><circle cx="7.5" cy="11.5" r="1.2"/><circle cx="10.5" cy="7.5" r="1.2"/><circle cx="15.5" cy="7.5" r="1.2"/>',
     retry: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
     shield: '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>',
@@ -386,6 +387,7 @@
       case 'role': return onRole(m);
       case 'renamed': return onRenamed(m);
       case 'sb': return onSomTocado(m);
+      case 'tinta': return onTinta(m);
     }
   }
 
@@ -452,6 +454,7 @@
     }
     sincronizarStreams();
     renderTudo();
+    atualizarCaneta();
     atualizarPainel();
   }
 
@@ -843,6 +846,9 @@
     $('#surdoBtn').hidden = !naSala;
     $('#vozOpcoesBtn').hidden = !naSala;
     if (!naSala) { $('#ajustesPanel').hidden = true; $('#sonsPanel').hidden = true; }
+    $('#canetaBtn').hidden = !(naSala && S.live);
+    if (!S.live) $('#canetaPanel').hidden = true;
+    renderCanetaBtn();
     if (!$('#sonsPanel').hidden) avisoSons();
     $('#sendVolWrap').hidden = !(naSala && S.live && S.envio && S.audioCaptado);
     const sw = $('#swapBtn');
@@ -863,6 +869,8 @@
     el.className = 'tile';
     el.dataset.uid = uid;
     el.innerHTML = `<video autoplay playsinline muted></video>
+      <canvas class="t-tinta" aria-hidden="true"></canvas>
+      <div class="t-cores" hidden></div>
       <div class="t-top"><span class="live-badge">ao vivo</span><span class="t-state"></span></div>
       <button class="unmute-hint" data-act="center" hidden></button>
       <div class="t-bottom">
@@ -870,13 +878,20 @@
         <button class="icon-btn" data-act="mute" title="Ligar/desligar som"></button>
         <input type="range" min="0" max="2" step="0.05" value="1" data-act="vol" title="Volume desta transmissão (até 200%)">
         <span class="vol-pct">100%</span>
+        <button class="icon-btn t-caneta" data-act="caneta" title="Caneta: desenhar na tela de quem transmite" hidden>${icon('caneta')}</button>
         <button class="icon-btn" data-act="pip" title="Janela flutuante (picture-in-picture)">${icon('pip')}</button>
         <button class="icon-btn" data-act="focus"></button>
         <button class="icon-btn" data-act="full" title="Tela cheia">${icon('full')}</button>
       </div>`;
-    const t = { el, uid, video: el.querySelector('video'), userMuted: false, autoMuted: false, src: null, gain: null, audioId: null };
+    const t = { el, uid, video: el.querySelector('video'), tinta: el.querySelector('.t-tinta'), userMuted: false, autoMuted: false, src: null, gain: null, audioId: null };
     S.tiles.set(uid, t);
     definirSaida(t.video);
+    t.tinta.addEventListener('pointerdown', (e) => comecarTraco(t, e));
+    t.tinta.addEventListener('pointermove', (e) => continuarTraco(t, e));
+    for (const fim of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+      t.tinta.addEventListener(fim, (e) => { if (CANETA.traco?.sid === t.uid && e.pointerId === CANETA.traco.ponteiro) terminarTraco(); });
+    }
+    atualizarBotaoCaneta(t);
     return t;
   }
 
@@ -1003,6 +1018,8 @@
     for (const [uid, t] of S.tiles) {
       if (!ids.includes(uid)) {
         if (document.pictureInPictureElement === t.video) document.exitPictureInPicture().catch(() => {});
+        if (CANETA.ativa === uid) sairDaCaneta();
+        CANETA.tintas.delete(uid);
         desligarAudio(t);
         t.video.srcObject = null;
         t.el.remove();
@@ -1088,6 +1105,7 @@
       estado = 'Som pausado para não dar eco';
     }
     t.el.querySelector('.t-state').textContent = estado;
+    atualizarBotaoCaneta(t);
 
     const temAudio = !self && !!stream && stream.getAudioTracks().length > 0;
     const centro = t.el.querySelector('[data-act=center]');
@@ -1128,6 +1146,10 @@
     const act = e.target.closest('[data-act]')?.dataset.act;
     const v = t.video;
     if (act === 'vol') return;
+    if (act === 'caneta') return alternarCaneta(uid);
+    if (act === 'cor') return escolherCor(Number(e.target.closest('[data-cor]').dataset.cor));
+    if (act === 'sair-caneta') return sairDaCaneta();
+    if (!act && tileEl.classList.contains('desenhando')) return; // clique de desenho não muda o destaque
     if (act === 'center') {
       if (e.target.closest('[data-act]').dataset.mode === 'retry') {
         S.tries.set(uid, 0);
@@ -1161,7 +1183,7 @@
   });
   $('#stageGrid').addEventListener('dblclick', (e) => {
     const tileEl = e.target.closest('.tile');
-    if (tileEl && !e.target.closest('[data-act]')) telaCheia(tileEl);
+    if (tileEl && !e.target.closest('[data-act]') && !tileEl.classList.contains('desenhando')) telaCheia(tileEl);
   });
   $('#stageGrid').addEventListener('input', (e) => {
     if (e.target.dataset.act !== 'vol') return;
@@ -1224,6 +1246,8 @@
     fecharTodaVoz();
     definirPtt(false);
     atualizarMicrofone();
+    sairDaCaneta();
+    CANETA.tintas.clear();
   }
 
   function sairDaSala() {
@@ -1511,6 +1535,7 @@
     if (S.focus === S.myId) S.focus = null;
     S.evitarEco = false;
     aplicarMudoEco();
+    encerrarCaneta();
     patchMe();
     if (!silencioso) api('state', { sala: S.sala, live: false, ...estadoVoz() }).catch(() => {});
     renderTudo();
@@ -2670,6 +2695,386 @@
   }, 2000);
   window.addEventListener('offline', () => { if (S.sala) medirRede(); });
 
+  // ================= Caneta: quem assiste desenha por cima da transmissão =================
+  // Quem transmite escolhe quem pode desenhar (todos ou ninguém, com exceções). O servidor confere
+  // cada traço e repassa para a sala. Os pontos vão de 0 a 1 do quadro do vídeo, então caem no
+  // mesmo lugar em qualquer tamanho de tela. Cada traço fica alguns segundos e some esmaecendo.
+  const CORES_CANETA = [
+    { cor: '#ff3b30', nome: 'Vermelho' },
+    { cor: '#ffd60a', nome: 'Amarelo' },
+    { cor: '#1e88ff', nome: 'Azul' },
+    { cor: '#30d158', nome: 'Verde' },
+    { cor: '#ffffff', nome: 'Branco' },
+  ];
+  const TINTA_FICA = 3000; // quanto tempo o traço fica inteiro depois de terminar
+  const TINTA_SOME = 900; // quanto dura o esmaecer
+  const CANETA = {
+    cfg: { padrao: salvo.canetaPadrao === 'todos' ? 'todos' : 'ninguem', excecoes: new Set() },
+    cor: Number.isInteger(salvo.canetaCor) && salvo.canetaCor >= 0 && salvo.canetaCor < CORES_CANETA.length ? salvo.canetaCor : 0,
+    ativa: null, // em qual transmissão eu estou desenhando
+    traco: null, // { sid, tr, ultimo }
+    saida: [], // pedaços de traço esperando para ir ao servidor
+    enviando: false,
+    tintas: new Map(), // sid -> Map(tr -> { nome, c, pts, fim, ult, meu })
+    liberadas: null, // transmissões em que eu posso desenhar (para avisar quando muda)
+    enviandoCfg: false,
+    raf: 0,
+  };
+  const idDeTraco = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) => (b % 36).toString(36)).join('');
+
+  function possoDesenharEm(sid) {
+    if (!sid || sid === S.myId || !S.sala) return false;
+    const u = userById(sid);
+    if (!u?.live || u.sala !== S.sala || !u.caneta) return false;
+    return (u.caneta.padrao === 'todos') !== (u.caneta.excecoes || []).includes(S.myId);
+  }
+  const podeDesenharNaMinha = (id) => (CANETA.cfg.padrao === 'todos') !== CANETA.cfg.excecoes.has(id);
+
+  // Chamado a cada mudança na lista de pessoas
+  function atualizarCaneta() {
+    const agora = new Set(S.users.filter((u) => possoDesenharEm(u.id)).map((u) => u.id));
+    if (CANETA.liberadas) {
+      for (const sid of agora) {
+        if (!CANETA.liberadas.has(sid)) toast(`${userById(sid)?.name || 'Alguém'} liberou a caneta: clique no lápis na transmissão para desenhar na tela.`, 6000);
+      }
+      if (CANETA.ativa && !agora.has(CANETA.ativa)) {
+        const quem = userById(CANETA.ativa);
+        sairDaCaneta();
+        if (quem?.live) toast(`${quem.name} desligou a caneta para você.`);
+      }
+    }
+    CANETA.liberadas = agora;
+    for (const sid of [...CANETA.tintas.keys()]) if (!userById(sid)?.live) CANETA.tintas.delete(sid);
+    for (const t of S.tiles.values()) atualizarBotaoCaneta(t);
+    sincronizarCfgCaneta();
+    if (!$('#canetaPanel').hidden) renderCanetaPainel();
+    renderCanetaBtn();
+  }
+
+  // Quem transmite: manda a escolha para o servidor quando ela muda (e de novo se o servidor esquecer)
+  async function sincronizarCfgCaneta() {
+    const me = userById(S.myId);
+    if (!S.live || !me?.live || CANETA.enviandoCfg) return;
+    const ids = new Set(S.users.map((u) => u.id));
+    const quer = { padrao: CANETA.cfg.padrao, excecoes: [...CANETA.cfg.excecoes].filter((id) => ids.has(id) && id !== S.myId).sort() };
+    const tem = me.caneta ? { padrao: me.caneta.padrao, excecoes: [...(me.caneta.excecoes || [])].sort() } : { padrao: 'ninguem', excecoes: [] };
+    if (JSON.stringify(quer) === JSON.stringify(tem)) return;
+    CANETA.enviandoCfg = true;
+    try {
+      await api('caneta', quer);
+    } catch { /* tenta de novo na próxima mudança */ } finally {
+      CANETA.enviandoCfg = false;
+    }
+  }
+
+  // ----- quem assiste: botão, cores e desenho -----
+  function atualizarBotaoCaneta(t) {
+    const pode = possoDesenharEm(t.uid);
+    const btn = t.el.querySelector('[data-act=caneta]');
+    btn.hidden = !pode;
+    const desenhando = pode && CANETA.ativa === t.uid;
+    t.el.classList.toggle('desenhando', desenhando);
+    const barra = t.el.querySelector('.t-cores');
+    barra.hidden = !desenhando;
+    if (desenhando) {
+      barra.innerHTML = CORES_CANETA.map((x, i) => `<button type="button" class="t-cor${i === CANETA.cor ? ' on' : ''}" data-act="cor" data-cor="${i}"
+          style="--cor:${x.cor}" title="${x.nome}" aria-label="${x.nome}" aria-pressed="${i === CANETA.cor}"></button>`).join('')
+        + '<span class="t-cores-dica">Desenhe na tela</span><button type="button" class="t-cores-ok" data-act="sair-caneta" title="Sair da caneta (Esc)">Pronto</button>';
+    }
+  }
+  function alternarCaneta(uid) {
+    if (CANETA.ativa === uid) return sairDaCaneta();
+    if (!possoDesenharEm(uid)) return toast('A caneta não está liberada para você nessa tela.');
+    const antiga = CANETA.ativa;
+    CANETA.ativa = uid;
+    if (antiga && S.tiles.get(antiga)) atualizarBotaoCaneta(S.tiles.get(antiga));
+    const t = S.tiles.get(uid);
+    if (t) atualizarBotaoCaneta(t);
+  }
+  function sairDaCaneta() {
+    const uid = CANETA.ativa;
+    if (!uid) return;
+    terminarTraco();
+    CANETA.ativa = null;
+    const t = S.tiles.get(uid);
+    if (t) atualizarBotaoCaneta(t);
+  }
+  function escolherCor(i) {
+    if (!Number.isInteger(i) || i < 0 || i >= CORES_CANETA.length) return;
+    CANETA.cor = i;
+    salvar({ canetaCor: i });
+    const t = S.tiles.get(CANETA.ativa);
+    if (t) atualizarBotaoCaneta(t);
+  }
+
+  // onde o vídeo aparece de verdade dentro do quadro (sem as faixas pretas)
+  function quadroDo(t) {
+    const v = t.video;
+    const ew = v.clientWidth || 1;
+    const eh = v.clientHeight || 1;
+    const vw = v.videoWidth || 16;
+    const vh = v.videoHeight || 9;
+    const k = Math.min(ew / vw, eh / vh);
+    const w = vw * k;
+    const h = vh * k;
+    return { x: v.offsetLeft + (ew - w) / 2, y: v.offsetTop + (eh - h) / 2, w, h };
+  }
+  function pontoDoEvento(t, e, prender) {
+    const r = t.tinta.getBoundingClientRect();
+    const q = quadroDo(t);
+    let x = (e.clientX - r.left - q.x) / q.w;
+    let y = (e.clientY - r.top - q.y) / q.h;
+    if (!prender && (x < 0 || x > 1 || y < 0 || y > 1)) return null;
+    x = Math.min(1, Math.max(0, x));
+    y = Math.min(1, Math.max(0, y));
+    return [Math.round(x * 1e4) / 1e4, Math.round(y * 1e4) / 1e4];
+  }
+  function guardarTinta(sid, tr, dados) {
+    let mapa = CANETA.tintas.get(sid);
+    if (!mapa) CANETA.tintas.set(sid, (mapa = new Map()));
+    let s = mapa.get(tr);
+    if (!s) {
+      if (mapa.size >= 80) mapa.delete(mapa.keys().next().value); // não deixa acumular
+      s = { nome: dados.nome || '', c: dados.c, pts: [], fim: null, ult: Date.now(), meu: !!dados.meu };
+      mapa.set(tr, s);
+    }
+    for (const p of dados.pts || []) if (s.pts.length < 4000) s.pts.push(p);
+    s.ult = Date.now();
+    if (dados.fim && !s.fim) s.fim = Date.now();
+    pedirDesenho();
+  }
+  function enfileirarPontos(pts, fim) {
+    const tr = CANETA.traco;
+    if (!tr) return;
+    let peca = CANETA.saida[CANETA.saida.length - 1];
+    if (!peca || peca.tr !== tr.tr || peca.fim || peca.p.length + pts.length > 64) {
+      peca = { sid: tr.sid, tr: tr.tr, c: tr.c, p: [], fim: false };
+      CANETA.saida.push(peca);
+    }
+    peca.p.push(...pts);
+    if (!peca.p.length) peca.p.push(tr.ultimo);
+    if (fim) peca.fim = true;
+    if (CANETA.saida.length > 200) CANETA.saida.splice(0, CANETA.saida.length - 200);
+    enviarTinta();
+  }
+  // um pedido por vez: enquanto um vai, os pontos novos se juntam no próximo
+  async function enviarTinta() {
+    if (CANETA.enviando) return;
+    const peca = CANETA.saida.shift();
+    if (!peca) return;
+    CANETA.enviando = true;
+    try {
+      await api('tinta', peca);
+    } catch (e) {
+      if (e.data?.semCaneta) {
+        CANETA.saida = [];
+        sairDaCaneta();
+        toast(e.message);
+      }
+    } finally {
+      CANETA.enviando = false;
+      if (CANETA.saida.length) enviarTinta();
+    }
+  }
+  function comecarTraco(t, e) {
+    if (CANETA.ativa !== t.uid || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    const pt = pontoDoEvento(t, e, false);
+    if (!pt) return;
+    e.preventDefault();
+    try { t.tinta.setPointerCapture(e.pointerId); } catch { /* ok */ }
+    terminarTraco();
+    CANETA.traco = { sid: t.uid, tr: idDeTraco(), c: CANETA.cor, ultimo: pt, ponteiro: e.pointerId };
+    guardarTinta(t.uid, CANETA.traco.tr, { nome: 'Você', c: CANETA.cor, pts: [pt], meu: true });
+    enfileirarPontos([pt], false);
+  }
+  function continuarTraco(t, e) {
+    const tr = CANETA.traco;
+    if (!tr || tr.sid !== t.uid || e.pointerId !== tr.ponteiro) return;
+    const eventos = e.getCoalescedEvents?.() || [e];
+    const novos = [];
+    for (const ev of eventos) {
+      const pt = pontoDoEvento(t, ev, true);
+      if (Math.hypot(pt[0] - tr.ultimo[0], pt[1] - tr.ultimo[1]) < 0.003) continue;
+      tr.ultimo = pt;
+      novos.push(pt);
+    }
+    if (!novos.length) return;
+    guardarTinta(t.uid, tr.tr, { pts: novos });
+    enfileirarPontos(novos, false);
+  }
+  function terminarTraco() {
+    const tr = CANETA.traco;
+    if (!tr) return;
+    guardarTinta(tr.sid, tr.tr, { fim: true });
+    enfileirarPontos([], true);
+    CANETA.traco = null;
+  }
+  function onTinta(m) {
+    if (typeof m.sid !== 'string' || typeof m.tr !== 'string' || !Array.isArray(m.p) || !Number.isInteger(m.c) || !CORES_CANETA[m.c]) return;
+    guardarTinta(m.sid, m.tr, { nome: String(m.nome || '').slice(0, 32), c: m.c, pts: m.p, fim: m.fim });
+    // no programa, quem transmite vê os traços também por cima da tela de verdade
+    if (m.sid === S.myId && S.live && PROGRAMA?.tinta) {
+      PROGRAMA.tinta({ tr: m.tr, c: m.c, p: m.p, fim: m.fim === true, nome: String(m.nome || '') }).catch(() => {});
+    }
+  }
+
+  // ----- desenhar os traços (todo mundo da sala vê, inclusive quem transmite) -----
+  function pedirDesenho() {
+    if (!CANETA.raf) CANETA.raf = requestAnimationFrame(desenharTintas);
+  }
+  function desenharTintas() {
+    CANETA.raf = 0;
+    const agora = Date.now();
+    let vivo = false;
+    for (const t of S.tiles.values()) {
+      const mapa = CANETA.tintas.get(t.uid);
+      if (!mapa?.size && !t.tintaSuja) continue;
+      const cv = t.tinta;
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.round(cv.clientWidth * dpr);
+      const h = Math.round(cv.clientHeight * dpr);
+      if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+      const ctx = cv.getContext('2d');
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      t.tintaSuja = false;
+      if (!mapa?.size) continue;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const q = quadroDo(t);
+      for (const [tr, s] of mapa) {
+        const fim = s.fim ?? (agora - s.ult > 1500 ? s.ult : null); // pedaço final perdido: termina sozinho
+        const a = fim === null ? 1 : Math.min(1, 1 - (agora - fim - TINTA_FICA) / TINTA_SOME);
+        if (a <= 0) { mapa.delete(tr); continue; }
+        desenharTraco(ctx, s, q, a);
+        t.tintaSuja = true;
+        vivo = true;
+      }
+      if (!mapa.size) CANETA.tintas.delete(t.uid);
+    }
+    if (vivo) pedirDesenho();
+  }
+  function desenharTraco(ctx, s, q, a) {
+    if (!s.pts.length) return;
+    const larg = Math.max(2.5, Math.min(9, q.h * 0.0055));
+    const pts = s.pts.map(([x, y]) => [q.x + x * q.w, q.y + y * q.h]);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    if (pts.length === 1) ctx.lineTo(pts[0][0] + 0.01, pts[0][1]);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const mx = (pts[i][0] + pts[i + 1][0]) / 2;
+      const my = (pts[i][1] + pts[i + 1][1]) / 2;
+      ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
+    }
+    if (pts.length > 1) ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+    ctx.strokeStyle = 'rgba(0, 0, 0, .45)'; // contorno: aparece em fundo claro ou escuro
+    ctx.lineWidth = larg + 3;
+    ctx.stroke();
+    ctx.strokeStyle = CORES_CANETA[s.c]?.cor || '#ff3b30';
+    ctx.lineWidth = larg;
+    ctx.stroke();
+    if (!s.meu && s.nome) {
+      // nome pequeno de quem desenhou, no começo do traço
+      ctx.font = '600 11px "Source Sans 3", system-ui, sans-serif';
+      const tw = ctx.measureText(s.nome).width;
+      const bx = Math.min(q.x + q.w - tw - 22, Math.max(q.x + 2, pts[0][0] + 8));
+      const by = Math.max(q.y + 2, pts[0][1] - 24);
+      ctx.globalAlpha = a * 0.9;
+      ctx.fillStyle = 'rgba(6, 24, 39, .75)';
+      ctx.beginPath();
+      ctx.roundRect?.(bx, by, tw + 20, 17, 8.5);
+      ctx.fill();
+      ctx.fillStyle = CORES_CANETA[s.c]?.cor || '#fff';
+      ctx.beginPath();
+      ctx.arc(bx + 8.5, by + 8.5, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(s.nome, bx + 15, by + 12.5);
+    }
+    ctx.restore();
+  }
+  window.addEventListener('resize', () => { for (const t of S.tiles.values()) t.tintaSuja = true; pedirDesenho(); });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && CANETA.ativa) {
+      e.preventDefault();
+      sairDaCaneta();
+    }
+  }, true);
+
+  // ----- quem transmite: painel "Caneta na sua tela" -----
+  function renderCanetaBtn() {
+    const b = $('#canetaBtn');
+    if (!b) return;
+    const pessoas = [...vizinhosDeSala()];
+    const n = pessoas.filter(podeDesenharNaMinha).length;
+    b.innerHTML = `${icon('caneta')} Caneta`;
+    b.classList.toggle('caneta-on', S.live && n > 0);
+    b.title = !pessoas.length ? 'Caneta: quem assistir poderá desenhar na sua tela, se você liberar'
+      : n === 0 ? 'Caneta: ninguém pode desenhar na sua tela' : n === pessoas.length ? 'Caneta: todos podem desenhar na sua tela'
+        : `Caneta: ${plural(n, 'pessoa pode', 'pessoas podem')} desenhar na sua tela`;
+  }
+  function renderCanetaPainel() {
+    const pessoas = S.users.filter((u) => vizinhosDeSala().has(u.id)).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    const cfg = CANETA.cfg;
+    $('#canetaPanel').innerHTML = `<strong class="cp-titulo">Caneta na sua tela</strong>
+      <p class="ajustes-dica">Quem você liberar pode circular e desenhar por cima da sua transmissão, com o mouse ou o dedo. Os traços somem sozinhos em poucos segundos.</p>
+      <div><span class="ap-rotulo">Quem pode desenhar</span>
+        <div class="segmento" role="radiogroup" aria-label="Quem pode desenhar">
+          <label><input type="radio" name="cpadrao" value="ninguem"${cfg.padrao === 'ninguem' ? ' checked' : ''}><span>Ninguém</span></label>
+          <label><input type="radio" name="cpadrao" value="todos"${cfg.padrao === 'todos' ? ' checked' : ''}><span>Todos</span></label>
+        </div></div>
+      <div class="cp-lista">${pessoas.length ? pessoas.map((u) => {
+        const pode = podeDesenharNaMinha(u.id);
+        return `<label class="cp-pessoa${pode ? ' pode' : ''}">${avatar(u)}<span class="cp-nome">${esc(u.name)}</span>
+          <span class="cp-estado">${pode ? 'pode desenhar' : 'não pode'}</span>
+          <input type="checkbox" data-uid="${esc(u.id)}"${pode ? ' checked' : ''} aria-label="${esc(u.name)} pode desenhar"></label>`;
+      }).join('') : '<p class="cp-vazio">Ninguém na sala ainda. Quem entrar segue a escolha acima.</p>'}</div>
+      <p class="ajustes-dica">${PROGRAMA?.tinta
+        ? 'Os desenhos aparecem aqui no site e também por cima da sua tela de verdade (sem entrar na transmissão).'
+        : 'Você vê os desenhos aqui no site. No <a href="/baixar" target="_blank" rel="noopener">programa para Windows</a>, eles aparecem também por cima da sua tela de verdade.'}</p>`;
+  }
+  function montarCaneta() {
+    $('#canetaBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const abrir = $('#canetaPanel').hidden;
+      $('#canetaPanel').hidden = !abrir;
+      $('#ajustesPanel').hidden = true;
+      $('#sonsPanel').hidden = true;
+      if (abrir) renderCanetaPainel();
+    });
+    document.addEventListener('click', (e) => {
+      if (!$('#canetaPanel').hidden && !e.target.closest('#canetaPanel, #canetaBtn')) $('#canetaPanel').hidden = true;
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !$('#canetaPanel').hidden) { $('#canetaPanel').hidden = true; e.preventDefault(); }
+    });
+    $('#canetaPanel').addEventListener('change', (e) => {
+      const t = e.target;
+      if (t.name === 'cpadrao') {
+        CANETA.cfg.padrao = t.value === 'todos' ? 'todos' : 'ninguem';
+        CANETA.cfg.excecoes.clear(); // trocar o padrão começa do zero
+        salvar({ canetaPadrao: CANETA.cfg.padrao });
+      } else if (t.dataset.uid) {
+        const id = t.dataset.uid;
+        if (CANETA.cfg.excecoes.has(id)) CANETA.cfg.excecoes.delete(id);
+        else CANETA.cfg.excecoes.add(id);
+      } else return;
+      renderCanetaPainel();
+      renderCanetaBtn();
+      sincronizarCfgCaneta();
+    });
+    renderCanetaBtn();
+  }
+  function encerrarCaneta() {
+    CANETA.cfg.excecoes.clear();
+    CANETA.tintas.delete(S.myId);
+    $('#canetaPanel').hidden = true;
+    PROGRAMA?.tinta?.(null).catch(() => {});
+  }
+
   // ================= Aparência: tema claro/escuro e paleta de cores =================
   // As cores são calculadas pelo tema.js (carregado antes da página). A escolha fica
   // guardada neste navegador (ou neste programa) e vale na hora, sem recarregar.
@@ -2866,11 +3271,13 @@
     });
 
     montarSons();
+    montarCaneta();
     $('#ajustesBtn').innerHTML = `${icon('sliders')} Ajustes`;
     $('#ajustesBtn').addEventListener('click', (e) => {
       e.stopPropagation();
       $('#ajustesPanel').hidden = !$('#ajustesPanel').hidden;
       $('#sonsPanel').hidden = true;
+      $('#canetaPanel').hidden = true;
     });
     document.addEventListener('click', (e) => {
       if (!$('#ajustesPanel').hidden && !e.target.closest('#ajustesPanel, #ajustesBtn')) $('#ajustesPanel').hidden = true;
@@ -4086,6 +4493,7 @@
       const abrir = $('#sonsPanel').hidden;
       $('#sonsPanel').hidden = !abrir;
       $('#ajustesPanel').hidden = true;
+      $('#canetaPanel').hidden = true;
       if (abrir) {
         renderSons();
         for (const s of SB.slots) carregarBuffer(s).catch(() => {}); // deixa pronto para tocar sem atraso

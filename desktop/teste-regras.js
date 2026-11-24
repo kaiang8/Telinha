@@ -144,4 +144,19 @@ t('apertar-para-falar: só uma tecla conhecida, com argumentos seguros', () => {
   }
 });
 
+t('caneta: só traços bem formados chegam à camada por cima da tela', () => {
+  const ok = R.validarTraco({ tr: 'ab12cd', c: 2, p: [[0.1, 0.2], [1.4, -3]], fim: true, nome: 'Beto\u0007<b>', extra: 1 });
+  assert.deepEqual(ok, { tr: 'ab12cd', c: 2, p: [[0.1, 0.2], [1, 0]], fim: true, nome: 'Beto<b>' });
+  for (const ruim of [null, 'x', { tr: 'AB12', c: 0, p: [[0, 0]] }, { tr: 'ab12', c: 5, p: [[0, 0]] }, { tr: 'ab12', c: 0, p: [] },
+    { tr: 'ab12', c: 0, p: Array.from({ length: 65 }, () => [0, 0]) }, { tr: 'ab12', c: 0, p: [[0, NaN]] }, { tr: 'ab12', c: 0, p: [['1', 0]] },
+    { tr: 'ab12', c: 1.5, p: [[0, 0]] }, { tr: '../x', c: 0, p: [[0, 0]] }]) {
+    assert.equal(R.validarTraco(ruim), null, JSON.stringify(ruim));
+  }
+  assert.deepEqual(R.fonteDaCaneta({ id: 'screen:1:0', display_id: '2528732444' }), { tipo: 'tela', displayId: '2528732444' });
+  assert.deepEqual(R.fonteDaCaneta({ id: 'window:132456:0' }), { tipo: 'janela', hwnd: 132456 });
+  assert.equal(R.fonteDaCaneta({ id: 'window:0:0' }), null);
+  assert.equal(R.fonteDaCaneta({ id: 'window:99999999999:0' }), null);
+  assert.equal(R.fonteDaCaneta({ id: 'web-contents-media-stream:1' }), null);
+});
+
 console.log(`\n${n} grupos de testes passaram.`);

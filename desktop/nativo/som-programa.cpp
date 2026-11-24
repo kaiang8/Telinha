@@ -11,6 +11,9 @@
 //       Som do programa (e dos processos filhos dele) em PCM 16 bits estéreo no stdout.
 //       A 1ª linha do stderr diz se deu certo: {"ok":true} ou {"erro":"...","hr":"0x..."}.
 //       Para quando o stdin fecha (o programa principal fechou) ou quando não consegue escrever.
+//   som-programa.exe --janela HWND
+//       Caneta: escreve onde a janela compartilhada está na tela (em pixels de verdade) cada vez
+//       que ela muda: {"x":..,"y":..,"w":..,"h":..,"min":false,"vis":true}, ou {"fechada":true}.
 //   som-programa.exe --segurar (--vk N | --scan N) [--ctrl] [--alt] [--shift]
 //       Apertar-para-falar: vigia UMA tecla (ou botão do mouse) e escreve "1" quando ela é
 //       apertada e "0" quando é solta. Não vê nenhuma outra tecla. --scan é a posição física
@@ -28,6 +31,7 @@
 #include <io.h>
 #include <fcntl.h>
 #include <cstdio>
+#include <cstring>
 #include <cstdint>
 #include <cwctype>
 #include <cwchar>
@@ -37,7 +41,7 @@
 #include <string>
 #include <vector>
 
-static const char* VERSAO = "2";
+static const char* VERSAO = "3";
 
 // ---------------------------------------------------------------- texto e JSON
 static std::string utf8(const std::wstring& w) {
@@ -444,6 +448,35 @@ static int capturar(DWORD pid, DWORD taxa) {
   return 0;
 }
 
+// ---------------------------------------------------------------- --janela
+static int vigiarJanela(DWORD numero) {
+  SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2); // posições em pixels de verdade
+  HWND h = (HWND)(ULONG_PTR)numero;
+  CreateThread(nullptr, 0, vigiarEntrada, nullptr, 0, nullptr);
+  HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+  std::string ultimo;
+  while (!g_parar) {
+    char linha[192];
+    bool fechou = !IsWindow(h);
+    if (fechou) {
+      snprintf(linha, sizeof linha, "{\"fechada\":true}\n");
+    } else {
+      RECT r = {};
+      if (FAILED(DwmGetWindowAttribute(h, DWMWA_EXTENDED_FRAME_BOUNDS, &r, sizeof r))) GetWindowRect(h, &r);
+      snprintf(linha, sizeof linha, "{\"x\":%ld,\"y\":%ld,\"w\":%ld,\"h\":%ld,\"min\":%s,\"vis\":%s}\n",
+               r.left, r.top, r.right - r.left, r.bottom - r.top, IsIconic(h) ? "true" : "false", IsWindowVisible(h) ? "true" : "false");
+    }
+    if (ultimo != linha) {
+      ultimo = linha;
+      DWORD escritos = 0;
+      if (!WriteFile(out, linha, (DWORD)strlen(linha), &escritos, nullptr)) break;
+    }
+    if (fechou) break;
+    Sleep(100);
+  }
+  return 0;
+}
+
 // ---------------------------------------------------------------- --segurar
 static bool apertada(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
 
@@ -485,7 +518,7 @@ static bool numero(const wchar_t* s, DWORD& v, bool zeroVale = false) {
 int wmain(int argc, wchar_t** argv) {
   _setmode(_fileno(stdout), _O_BINARY);
   if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED))) return 3;
-  DWORD pid = 0, taxa = 48000, ignorar = 0, vk = 0, scan = 0;
+  DWORD pid = 0, taxa = 48000, ignorar = 0, vk = 0, scan = 0, hwnd = 0;
   bool modoListar = false, modoCapturar = false, modoSegurar = false, ctrl = false, alt = false, shift = false;
   for (int i = 1; i < argc; i++) {
     std::wstring a = argv[i];
@@ -496,6 +529,7 @@ int wmain(int argc, wchar_t** argv) {
     else if (a == L"--capturar" && numero(prox, pid)) { modoCapturar = true; i++; }
     else if (a == L"--taxa" && numero(prox, taxa)) i++;
     else if (a == L"--segurar") modoSegurar = true;
+    else if (a == L"--janela" && numero(prox, hwnd)) i++;
     else if (a == L"--vk" && numero(prox, vk) && vk <= 0xFE) i++;
     else if (a == L"--scan" && numero(prox, scan) && scan <= 0xE0FF) i++;
     else if (a == L"--ctrl") ctrl = true;
@@ -507,6 +541,7 @@ int wmain(int argc, wchar_t** argv) {
   if (modoListar) return listar(ignorar);
   if (modoCapturar) return capturar(pid, taxa);
   if (modoSegurar && (vk || scan)) return segurar(vk, scan, ctrl, alt, shift);
+  if (hwnd) return vigiarJanela(hwnd);
   status("{\"erro\":\"use --listar, --capturar ou --segurar\"}");
   return 1;
 }

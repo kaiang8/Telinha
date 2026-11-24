@@ -864,3 +864,49 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
 #voLimiar:disabled { opacity: .5; }
 .vo-dica { margin: 6px 0 0; font-size: 12.5px; color: var(--suave); line-height: 1.45; }
 @media (max-width: 720px) { .voz-botoes { border-right: 0; padding-right: 0; } }
+
+/* ---------- Caneta ---------- */
+.tile .t-tinta { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.tile.desenhando .t-tinta { pointer-events: auto; cursor: crosshair; touch-action: none; }
+.tile.desenhando { box-shadow: 0 0 0 1px var(--moldura-1), 0 0 0 5px var(--p-anel), 0 22px 44px -18px var(--sombra-cor); }
+.tile.desenhando .t-bottom, .tile.desenhando .unmute-hint { display: none; }
+.tile .t-cores {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 3;
+  display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border-radius: 999px;
+  background: rgba(6, 24, 39, .78); border: 1px solid rgba(255, 255, 255, .22); box-shadow: 0 8px 20px -8px rgba(0, 0, 0, .5);
+}
+.tile .t-cores[hidden] { display: none; }
+.t-cor {
+  width: 22px; height: 22px; border-radius: 50%; padding: 0; cursor: pointer; flex: none;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, .55), transparent 45%), var(--cor);
+  border: 2px solid rgba(255, 255, 255, .35); transition: transform .12s;
+}
+.t-cor:hover { transform: scale(1.12); }
+.t-cor.on { border-color: #fff; transform: scale(1.18); box-shadow: 0 0 0 2px rgba(255, 255, 255, .25); }
+.t-cores-dica { color: rgba(255, 255, 255, .8); font-size: 12px; white-space: nowrap; padding-left: 2px; }
+.t-cores-ok {
+  border: 1px solid rgba(255, 255, 255, .3); background: rgba(255, 255, 255, .14); color: #fff; font-weight: 700; font-size: 12.5px;
+  border-radius: 999px; padding: 3px 12px; cursor: pointer;
+}
+.t-cores-ok:hover { background: rgba(255, 255, 255, .26); }
+.stage-grid.focus .thumbs .tile .t-caneta, .stage-grid.focus .thumbs .tile .t-cores-dica { display: none; }
+@media (max-width: 560px) { .t-cores-dica { display: none; } }
+#canetaBtn.caneta-on { position: relative; }
+#canetaBtn.caneta-on::after {
+  content: ''; position: absolute; top: 6px; right: 8px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--gel-verde); box-shadow: 0 0 0 2px var(--sup-1);
+}
+.caneta-painel { width: min(420px, calc(100% - 24px)); }
+.cp-titulo { color: var(--texto-forte); font-size: 15px; }
+.caneta-painel .ajustes-dica { margin: 0; }
+.cp-lista { display: grid; gap: 6px; max-height: 220px; overflow: auto; }
+.cp-pessoa {
+  display: flex; align-items: center; gap: 10px; padding: 6px 10px 6px 6px; border-radius: 12px; cursor: pointer;
+  background: var(--hover); border: 1px solid var(--linha);
+}
+.cp-pessoa .avatar { width: 28px; height: 28px; font-size: 12px; }
+.cp-nome { flex: 1; min-width: 0; font-weight: 600; color: var(--texto-forte); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-estado { font-size: 12px; color: var(--fraco); }
+.cp-pessoa.pode .cp-estado { color: var(--verde-texto); font-weight: 600; }
+.cp-pessoa input { width: 18px; height: 18px; accent-color: var(--p2); }
+.cp-vazio { margin: 0; font-size: 13px; color: var(--suave); }

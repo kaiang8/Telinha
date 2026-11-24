@@ -41,6 +41,14 @@ contextBridge.exposeInMainWorld('carasETelas', {
     ouvintePtt = (_e, v) => fn(v === true);
     ipcRenderer.on('ptt', ouvintePtt);
   },
+  // Caneta: quem transmite repassa os traços para a camada por cima da tela (null = parou)
+  tinta: (d) => ipcRenderer.invoke('tinta', d && typeof d === 'object' ? {
+    tr: String(d.tr ?? '').slice(0, 12),
+    c: Number.isInteger(d.c) ? d.c : -1,
+    p: Array.isArray(d.p) ? d.p.slice(0, 64).map((xy) => (Array.isArray(xy) ? [Number(xy[0]), Number(xy[1])] : [NaN, NaN])) : [],
+    fim: d.fim === true,
+    nome: String(d.nome ?? '').slice(0, 32),
+  } : null),
   // Tema escolhido no site: o programa usa nas telas dele (carregando, seletor de tela)
   aparencia: (dados) => ipcRenderer.invoke('aparencia', {
     escuro: dados?.escuro === true,

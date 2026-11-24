@@ -17,6 +17,8 @@ O que tem:
   - Qualidade: 720p, 1080p 30 fps, 1080p 60 fps ou "texto nítido".
   - Destacar uma transmissão, tela cheia, janela flutuante e volume
     separado para cada transmissão.
+  - Caneta: quem assiste pode circular e desenhar na tela de quem
+    transmite, se essa pessoa liberar. Veja "Caneta" nas DICAS.
   - Chat dentro de cada sala.
   - PAINEL DE ADMIN e COMANDOS NO CHAT: expulsar, banir, silenciar,
     encerrar transmissões, apagar mensagens, limpar canais, criar,
@@ -269,6 +271,8 @@ abre o mesmo site, numa janela própria, com duas vantagens:
     (os que usam Ctrl ou Alt, e as teclas F1 a F12).
   - O apertar-para-falar também funciona com o jogo na frente (no
     navegador, só com a janela do site em foco).
+  - Os desenhos da caneta aparecem por cima da sua tela de verdade, e
+    não só no site.
   - Você escolhe de onde vem o som, na própria janela de
     compartilhar:
       Só desta janela     o som da janela que você está mostrando
@@ -319,6 +323,10 @@ O QUE O PROGRAMA FAZ PARA NÃO VIRAR PORTA DE ENTRADA
     link de convite e tela cheia. Câmera, USB e localização ficam
     bloqueados.
   - Os recursos de depuração do Electron vêm desligados.
+  - A camada da caneta é uma janela transparente que não recebe
+    cliques (eles passam direto para o jogo), não acessa a internet,
+    só desenha os traços que o servidor já conferiu e fica fora da
+    captura da tela. Ela só aparece enquanto tem desenho.
   - O ajudante de som (som-programa.exe) só lê o som do programa que
     você escolheu: não usa a internet e não grava nada no disco.
     No apertar-para-falar, ele olha só a tecla que você escolheu
@@ -433,6 +441,20 @@ DICAS
     mas o som de um filme alto pode vazar. Silenciado por um admin
     (/mute), o microfone desliga e os outros param de ouvir a pessoa.
     A voz funciona no navegador do celular também.
+  - Caneta: quem transmite clica em "Caneta" (embaixo da sala) e
+    escolhe quem pode desenhar: Ninguém (o padrão) ou Todos, e dá para
+    marcar ou desmarcar pessoa por pessoa (por exemplo, todos menos
+    o Fulano, ou ninguém menos o Ciclano). Quem foi liberado vê um
+    lápis na transmissão: clique nele, escolha a cor (vermelho,
+    amarelo, azul, verde ou branco) e desenhe com o mouse ou o dedo.
+    Todo mundo da sala vê o traço, com o nome de quem desenhou. Ele
+    fica uns 3 segundos e some esmaecendo. Esc ou "Pronto" para sair.
+    No programa para Windows, quem transmite vê os desenhos também por
+    cima da tela de verdade (por cima do jogo, por exemplo), sem que
+    eles entrem na transmissão. Em jogo de tela cheia exclusiva o
+    Windows não deixa nada aparecer por cima: use "tela cheia sem
+    bordas" ou janela. Isso precisa do Windows 10 versão 2004 ou mais
+    novo; nos antigos, os desenhos aparecem só no site.
   - Para transmitir, use Chrome, Edge, Firefox ou Opera no computador,
     ou o programa para Windows (parte 5).
     No celular dá para assistir e conversar.

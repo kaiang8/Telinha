@@ -192,7 +192,32 @@ function argumentosDoPtt(t) {
   return args;
 }
 
+// ---- caneta: um pedaço de traço vindo da página (vai para a camada por cima da tela) ----
+function validarTraco(d) {
+  if (!d || typeof d !== 'object') return null;
+  if (typeof d.tr !== 'string' || !/^[a-z0-9]{4,12}$/.test(d.tr)) return null;
+  if (!Number.isInteger(d.c) || d.c < 0 || d.c > 4) return null;
+  if (!Array.isArray(d.p) || !d.p.length || d.p.length > 64) return null;
+  const p = [];
+  for (const xy of d.p) {
+    if (!Array.isArray(xy) || xy.length !== 2) return null;
+    const [x, y] = xy;
+    if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+    p.push([Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))]);
+  }
+  const nome = typeof d.nome === 'string' ? d.nome.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 32) : '';
+  return { tr: d.tr, c: d.c, p, fim: d.fim === true, nome };
+}
+// fonte escolhida no seletor: a tela inteira (monitor) ou uma janela (pelo número dela)
+function fonteDaCaneta(fonte) {
+  if (!fonte || typeof fonte.id !== 'string') return null;
+  if (fonte.id.startsWith('screen:')) return { tipo: 'tela', displayId: String(fonte.display_id || '') };
+  const hwnd = /^window:(\d{1,10}):/.exec(fonte.id)?.[1];
+  return hwnd && Number(hwnd) > 0 && Number(hwnd) <= 0xffffffff ? { tipo: 'janela', hwnd: Number(hwnd) } : null;
+}
+
 module.exports = {
+  validarTraco, fonteDaCaneta,
   teclaDoPtt, argumentosDoPtt,
   validarTema, cssDoTema,
   SITE_PADRAO, origemDe, siteValido, podeNavegar, podeAbrirFora, requisicaoPermitida,

@@ -334,7 +334,28 @@ function publicUser(u) {
   return {
     id: u.id, name: u.name, color: u.color, sala: u.sala, live: u.live, admin: !!u.admin,
     mudo: !!u.mudo, surdo: !!u.surdo, silenciado: silencioDe(u) > Date.now(),
+    ...(u.live && u.caneta ? { caneta: u.caneta } : {}),
   };
+}
+
+// ---------- Caneta: quem assiste desenha por cima da transmissão ----------
+// Quem transmite escolhe o padrão (todos ou ninguém) e as exceções. Cada traço passa por aqui:
+// o servidor confere a permissão e só repassa para quem está na mesma sala.
+const CANETA_PADRAO = () => ({ padrao: 'ninguem', excecoes: [] });
+function podeDesenhar(transmissor, quem) {
+  const c = transmissor.caneta || CANETA_PADRAO();
+  return (c.padrao === 'todos') !== c.excecoes.includes(quem.id);
+}
+function pontosDaTinta(p) {
+  if (!Array.isArray(p) || !p.length || p.length > 64) return null;
+  const r = [];
+  for (const xy of p) {
+    if (!Array.isArray(xy) || xy.length !== 2) return null;
+    const [x, y] = xy.map(Number);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    r.push([Math.round(Math.min(1, Math.max(0, x)) * 1e4) / 1e4, Math.round(Math.min(1, Math.max(0, y)) * 1e4) / 1e4]);
+  }
+  return r;
 }
 function listaUsuarios() {
   return [...users.values()].filter((u) => u.joined && !u.kicked).map(publicUser);
@@ -1095,9 +1116,38 @@ async function api(req, res, url) {
       if (body.sala != null && (!sala || sala.type !== 'sala')) return json(res, 400, { error: 'sala inválida' });
       u.sala = sala ? sala.id : null;
       u.live = !!(u.sala && body.live);
+      if (!u.live) u.caneta = null; // parou de transmitir: a caneta volta para "ninguém"
       if (typeof body.mudo === 'boolean') u.mudo = body.mudo; // microfone desligado
       if (typeof body.surdo === 'boolean') u.surdo = body.surdo; // som da sala desligado
       broadcastPresenca();
+      return json(res, 200, { ok: true });
+    }
+
+    case 'caneta': {
+      // quem transmite escolhe quem pode desenhar na tela dele
+      if (!u.live) return json(res, 409, { error: 'Você não está transmitindo' });
+      const padrao = body.padrao === 'todos' ? 'todos' : 'ninguem';
+      const excecoes = Array.isArray(body.excecoes)
+        ? [...new Set(body.excecoes.map(String).filter((id) => users.has(id) && id !== u.id))].slice(0, 50) : [];
+      u.caneta = { padrao, excecoes };
+      broadcastPresenca();
+      return json(res, 200, { ok: true });
+    }
+
+    case 'tinta': {
+      // um pedaço de traço: no máximo 64 pontos, coordenadas de 0 a 1 do quadro do vídeo
+      const alvo = users.get(String(body.sid));
+      if (!alvo || alvo === u || !u.sala || alvo.sala !== u.sala || !alvo.live) return json(res, 409, { error: 'Essa transmissão acabou' });
+      if (!podeDesenhar(alvo, u)) return json(res, 403, { error: 'A caneta não está liberada para você nessa tela', semCaneta: true });
+      const agora = Date.now();
+      if (!u.tinta || agora - u.tinta.desde > 1000) u.tinta = { desde: agora, n: 0 };
+      if (++u.tinta.n > 40) return json(res, 429, { error: 'Calma com a caneta' });
+      const tr = typeof body.tr === 'string' && /^[a-z0-9]{4,12}$/.test(body.tr) ? body.tr : null;
+      const c = Number.isInteger(body.c) && body.c >= 0 && body.c < 5 ? body.c : null;
+      const p = pontosDaTinta(body.p);
+      if (!tr || c === null || !p) return json(res, 400, { error: 'traço inválido' });
+      const traco = { type: 'tinta', from: u.id, nome: u.name, sid: alvo.id, tr, c, p, fim: body.fim === true };
+      for (const x of users.values()) if (x !== u && x.sala === u.sala && !x.kicked) enviar(x, traco);
       return json(res, 200, { ok: true });
     }
 
