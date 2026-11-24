@@ -1,6 +1,6 @@
 'use strict';
 /*
- * Telinha — servidor estilo Discord para conversar e compartilhar a tela com os amigos.
+ * Caras E Telas — servidor estilo Discord para conversar e compartilhar a tela com os amigos.
  * Zero dependências: só precisa do Node.js 18 ou mais novo.
  *
  * O vídeo vai direto de um navegador para o outro (WebRTC). Este servidor só
@@ -14,9 +14,11 @@ const crypto = require('crypto');
 
 // ---------- Configuração (variáveis de ambiente) ----------
 const PORT = Number(process.env.PORT) || 3000;
-const SENHA_ENV = process.env.SENHA || '';
-const ADMIN_SENHA_ENV = process.env.ADMIN_SENHA || '';
-const NOME_ENV = (process.env.NOME_SERVIDOR || 'Nosso Servidor').slice(0, 40);
+// Tira espaços e aspas que às vezes vêm junto ao colar a senha no painel da hospedagem
+const limparEnv = (v) => String(v || '').trim().replace(/^(["'])(.*)\1$/, '$2').trim();
+const SENHA_ENV = limparEnv(process.env.SENHA);
+const ADMIN_SENHA_ENV = limparEnv(process.env.ADMIN_SENHA);
+const NOME_ENV = (process.env.NOME_SERVIDOR || 'Caras E Telas').slice(0, 40);
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data.json');
 const UPSTASH_URL = (process.env.UPSTASH_REDIS_REST_URL || '').trim().replace(/\/+$/, '');
 const UPSTASH_TOKEN = (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim();
@@ -48,6 +50,11 @@ function confereHash(tentativa, guardado) {
   const calc = crypto.scryptSync(String(tentativa || ''), salt, 32);
   const esperado = Buffer.from(h, 'hex');
   return esperado.length === calc.length && crypto.timingSafeEqual(calc, esperado);
+}
+// Aceita a senha digitada como está ou sem espaços nas pontas (teclado de celular adora pôr um espaço no fim)
+function confereSenha(tentativa, guardado) {
+  const t = String(tentativa || '');
+  return confereHash(t, guardado) || (t.trim() !== t && confereHash(t.trim(), guardado));
 }
 const SENHA_ENV_HASH = SENHA_ENV ? hashSenha(SENHA_ENV) : null;
 const ADMIN_ENV_HASH = ADMIN_SENHA_ENV ? hashSenha(ADMIN_SENHA_ENV) : null;
@@ -151,7 +158,7 @@ async function gravar() {
 const nomeServidor = () => data.settings.serverName || NOME_ENV;
 const hashSite = () => ('senhaHash' in data.settings ? data.settings.senhaHash : SENHA_ENV_HASH);
 const precisaSenha = () => !!hashSite();
-const senhaSiteConfere = (p) => !hashSite() || confereHash(p, hashSite());
+const senhaSiteConfere = (p) => !hashSite() || confereSenha(p, hashSite());
 const hashAdmin = () => ADMIN_ENV_HASH || data.settings.adminHash;
 
 function garantirSenhaAdmin() {
@@ -189,7 +196,7 @@ const users = new Map(); // id -> usuário
 const tokens = new Map(); // token -> id
 const expulsos = new Map(); // token -> motivo (para avisar quem foi expulso)
 
-const CORES = ['#5865f2', '#eb459e', '#57f287', '#fee75c', '#ed4245', '#f47b67', '#3ba55c', '#9b59b6', '#1abc9c', '#e67e22'];
+const CORES = ['#ffb23f', '#ff9a76', '#ff6b81', '#f78fd3', '#c39bff', '#9fa8ff', '#6cc6ff', '#4fe0d0', '#43d9a3', '#c3e86b'];
 
 function publicUser(u) {
   return { id: u.id, name: u.name, color: u.color, sala: u.sala, live: u.live, admin: !!u.admin };
@@ -622,7 +629,7 @@ async function acaoAdmin(u, body, res) {
         data.settings.serverName = nome;
       }
       if (body.senha !== undefined) {
-        const s = String(body.senha || '');
+        const s = String(body.senha || '').trim();
         data.settings.senhaHash = s ? hashSenha(s.slice(0, 100)) : null;
       }
       if (body.locked !== undefined) data.settings.locked = !!body.locked;
@@ -633,7 +640,7 @@ async function acaoAdmin(u, body, res) {
 
     case 'admin-password': {
       if (ADMIN_ENV_HASH) return json(res, 400, { error: 'A senha de admin está definida na variável ADMIN_SENHA da hospedagem. Troque por lá.' });
-      const s = String(body.senha || '');
+      const s = String(body.senha || '').trim();
       if (s.length < 6) return json(res, 400, { error: 'Use pelo menos 6 caracteres' });
       data.settings.adminHash = hashSenha(s.slice(0, 100));
       delete data.settings.adminGerada;
@@ -668,7 +675,7 @@ async function api(req, res, url) {
     const device = /^[a-z0-9]{8,40}$/i.test(body.device) ? body.device : '';
     let admin = false;
     if (body.adminPassword) {
-      if (!confereHash(body.adminPassword, hashAdmin())) {
+      if (!confereSenha(body.adminPassword, hashAdmin())) {
         falhou(ip);
         return json(res, 403, { error: 'Senha de admin incorreta', campo: 'admin' });
       }
@@ -787,7 +794,7 @@ async function api(req, res, url) {
     case 'admin-login': {
       const ip = ipDe(req);
       if (bloqueado(ip)) return json(res, 429, { error: 'Muitas tentativas erradas. Espere uns minutos.' });
-      if (!confereHash(body.password, hashAdmin())) {
+      if (!confereSenha(body.password, hashAdmin())) {
         falhou(ip);
         return json(res, 403, { error: 'Senha de admin incorreta' });
       }
@@ -903,7 +910,7 @@ function abrirNavegador() {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.log(`\n  A porta ${PORT} já está em uso. O Telinha já está aberto em outra janela?`);
+    console.log(`\n  A porta ${PORT} já está em uso. O Caras E Telas já está aberto em outra janela?`);
     console.log(`  Se estiver, é só acessar http://localhost:${PORT}\n`);
     abrirNavegador();
     setTimeout(() => process.exit(1), 500);

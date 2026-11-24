@@ -32,9 +32,11 @@
     close: '<path d="M6 6l12 12M18 6 6 18"/>',
     swap: '<path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/>',
   };
+  const MARCA = 'Caras E Telas';
+  const LOGO = '<svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><g transform="rotate(-9 23 24)"><rect x="5" y="10" width="36" height="27" rx="8" fill="#a9b0ff"/><g class="pisca"><circle cx="16.5" cy="21.5" r="2.7" fill="#1b1440"/><circle cx="29.5" cy="21.5" r="2.7" fill="#1b1440"/></g><path d="M16 28q7 5 14 0" fill="none" stroke="#1b1440" stroke-width="2.7" stroke-linecap="round"/></g><g transform="rotate(7 41 38)"><rect x="22.5" y="24.5" width="37" height="28" rx="8.5" fill="#ffb23f" style="stroke: var(--recorte, #101233)" stroke-width="3.5"/><path d="M32.5 36.5q3.2-3 6.4 0" fill="none" stroke="#1b1440" stroke-width="2.7" stroke-linecap="round"/><circle cx="48" cy="35.5" r="2.7" fill="#1b1440"/><path d="M34.5 42.5q7.5 6 15 0" fill="none" stroke="#1b1440" stroke-width="2.7" stroke-linecap="round"/></g></svg>';
   const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
 
-  const CORES = ['#5865f2', '#eb459e', '#3ba55c', '#faa61a', '#ed4245', '#f47b67', '#9b59b6', '#1abc9c', '#e67e22', '#607d8b'];
+  const CORES = ['#ffb23f', '#ff9a76', '#ff6b81', '#f78fd3', '#c39bff', '#9fa8ff', '#6cc6ff', '#4fe0d0', '#43d9a3', '#c3e86b'];
 
   const QUALIDADES = {
     '720p30': { label: '720p · 30 fps', w: 1280, h: 720, fps: 30, br: 2500000, hint: 'motion' },
@@ -59,7 +61,7 @@
   // ================= Estado =================
   const S = {
     token: null, myId: null, myName: '', myColor: CORES[0], password: '',
-    serverName: 'Telinha', channels: [], messages: {}, users: [], iceServers: [],
+    serverName: MARCA, channels: [], messages: {}, users: [], iceServers: [],
     view: salvo.view || null, sala: null, live: false, localStream: null,
     quality: QUALIDADES[salvo.quality] ? salvo.quality : '1080p30',
     som: ['janela', 'pc', 'nenhum'].includes(salvo.som) ? salvo.som : 'janela',
@@ -139,12 +141,12 @@
 
   // ================= Login =================
   function initLogin() {
-    $('#loginLogo').innerHTML = icon('screen');
+    $('#loginLogo').innerHTML = LOGO;
     if (location.protocol === 'file:') {
       // Abriram o index.html direto da pasta: sem o servidor nada funciona
-      $('#loginForm').innerHTML = `<div class="login-logo">${icon('screen')}</div>
+      $('#loginForm').innerHTML = `<div class="login-logo">${LOGO}</div>
         <h1>Quase lá!</h1>
-        <p class="muted">Você abriu o arquivo direto da pasta. O Telinha precisa ser aberto <b>pelo servidor</b>:</p>
+        <p class="muted">Você abriu o arquivo direto da pasta. O Caras E Telas precisa ser aberto <b>pelo servidor</b>:</p>
         <ol class="steps">
           <li>Feche esta aba.</li>
           <li>Na pasta do projeto (onde está o <code>server.js</code>), dê dois cliques em <b>iniciar.bat</b>.<br><span class="muted small">No Mac ou no Linux, rode <code>node server.js</code> num terminal dentro da pasta.</span></li>
@@ -175,8 +177,7 @@
       .then((r) => r.json())
       .then((cfg) => {
         S.serverName = cfg.serverName;
-        $('#loginTitle').textContent = cfg.serverName;
-        document.title = cfg.serverName;
+        if (cfg.serverName && cfg.serverName !== MARCA) $('#loginSub').textContent = `Entre em ${cfg.serverName} para conversar e assistir junto com a galera.`;
         $('#passField').hidden = !cfg.needsPassword;
         if (cfg.locked) $('#loginSub').textContent = 'O servidor está trancado agora: só admins conseguem entrar.';
         if (!semAuto && salvo.name && (salvo.adminPassword || !cfg.needsPassword || salvo.password)) {
@@ -381,7 +382,7 @@
       $('#app').hidden = false;
       montarBotoes();
     }
-    document.title = S.serverName;
+    document.title = MARCA;
     renderTudo();
     renderMensagens();
 
@@ -466,7 +467,7 @@
     if (deOutro && (document.hidden || !visivel)) {
       if (document.hidden) {
         S.unseen++;
-        document.title = `(${S.unseen}) ${S.serverName}`;
+        document.title = `(${S.unseen}) ${MARCA}`;
       }
       if (mencionaMe(msg.text)) blip('msg');
     }
@@ -674,7 +675,8 @@
   function renderSidebar() {
     $('#serverName').textContent = S.serverName;
     const rail = $('#railServer');
-    rail.textContent = S.serverName.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => initial(w)).join('').toUpperCase();
+    const palavras = S.serverName.split(/\s+/).filter(Boolean);
+    rail.textContent = (initial(palavras[0]) + (palavras.length > 1 ? initial(palavras[palavras.length - 1]) : '')).toUpperCase();
     rail.title = S.serverName;
 
     const cat = (tipo, nome) => `<div class="category ${S.collapsed[tipo] ? 'collapsed' : ''}">
@@ -696,9 +698,9 @@
       if (S.collapsed.sala && c.id !== S.view && c.id !== S.sala && !membros.length) continue;
       const aoVivo = membros.some((u) => u.live);
       const cls = [c.id === S.view && 'active', S.unread.has(c.id) && 'unread'].filter(Boolean).join(' ');
-      h += `<div class="channel ${cls}" data-ch="${esc(c.id)}">${icon('screen')}<span class="ch-name">${esc(c.name)}</span>${aoVivo ? '<span class="live-badge">AO VIVO</span>' : ''}${del(c)}</div>`;
+      h += `<div class="channel ${cls}" data-ch="${esc(c.id)}">${icon('screen')}<span class="ch-name">${esc(c.name)}</span>${aoVivo ? '<span class="live-badge">ao vivo</span>' : ''}${del(c)}</div>`;
       if (membros.length) {
-        h += '<div class="sala-members">' + membros.map((u) => `<div class="sala-member">${avatar(u)}<span class="ellipsis">${esc(u.name)}</span>${coroa(u)}${u.live ? '<span class="live-badge">AO VIVO</span>' : ''}</div>`).join('') + '</div>';
+        h += '<div class="sala-members">' + membros.map((u) => `<div class="sala-member">${avatar(u)}<span class="ellipsis">${esc(u.name)}</span>${coroa(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('') + '</div>';
       }
     }
     $('#channels').innerHTML = h;
@@ -739,9 +741,9 @@
 
   function renderMembros() {
     const us = [...S.users].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-    $('#members').innerHTML = `<h3>Online — ${us.length}</h3>` + us.map((u) => {
+    $('#members').innerHTML = `<h3>${us.length} online</h3>` + us.map((u) => {
       let st = '';
-      if (u.live) st = `<span class="live-badge">AO VIVO</span><span class="ellipsis">${esc(nomeSala(u.sala))}</span>`;
+      if (u.live) st = `<span class="live-badge">ao vivo</span><span class="ellipsis">${esc(nomeSala(u.sala))}</span>`;
       else if (u.sala) st = `<span class="ellipsis">Em ${esc(nomeSala(u.sala))}</span>`;
       const clic = S.isAdmin && u.id !== S.myId ? ` clickable" data-uid="${esc(u.id)}" title="Moderar ${esc(u.name)}` : '';
       return `<div class="member${clic}">${avatar(u, 'dotted')}<div class="mn"><div class="ellipsis name-line"><span style="color:${esc(u.color)}">${esc(u.name)}</span>${coroa(u)}${u.id === S.myId ? ' <span class="muted small">(você)</span>' : ''}</div>${st ? `<div class="small muted">${st}</div>` : ''}</div></div>`;
@@ -775,7 +777,7 @@
     if (!c || c.type !== 'sala') return;
     const naSala = S.sala === c.id;
     const pessoas = S.users.filter((u) => u.sala === c.id);
-    $('#stagePeople').innerHTML = pessoas.map((u) => `<div class="person-chip">${avatar(u)}<span>${esc(u.name)}${u.id === S.myId ? ' (você)' : ''}</span>${coroa(u)}${u.live ? '<span class="live-badge">AO VIVO</span>' : ''}</div>`).join('');
+    $('#stagePeople').innerHTML = pessoas.map((u) => `<div class="person-chip">${avatar(u)}<span>${esc(u.name)}${u.id === S.myId ? ' (você)' : ''}</span>${coroa(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('');
 
     const vivos = naSala ? pessoas.filter((u) => u.live) : [];
     sincronizarTiles(vivos.map((u) => u.id));
@@ -818,7 +820,7 @@
     el.className = 'tile';
     el.dataset.uid = uid;
     el.innerHTML = `<video autoplay playsinline muted></video>
-      <div class="t-top"><span class="live-badge">AO VIVO</span><span class="t-state"></span></div>
+      <div class="t-top"><span class="live-badge">ao vivo</span><span class="t-state"></span></div>
       <button class="unmute-hint" data-act="center" hidden></button>
       <div class="t-bottom">
         <span class="t-name"></span>
@@ -1659,6 +1661,7 @@
   // ================= Botões fixos =================
   function montarBotoes() {
     $('#inviteBtn').innerHTML = icon('link');
+    $('#railBrand').innerHTML = LOGO;
     $('#menuBtn').innerHTML = icon('menu');
     $('#toggleChatBtn').innerHTML = icon('chat');
     $('#toggleMembersBtn').innerHTML = icon('people');
@@ -1797,7 +1800,7 @@
   function onSettings(m) {
     S.serverName = m.serverName;
     S.locked = !!m.locked;
-    document.title = S.serverName;
+    document.title = MARCA;
     renderTudo();
     atualizarPainel();
   }
@@ -2141,7 +2144,7 @@
       const eu = u.id === S.myId;
       const tags = [
         u.admin && '<span class="ap-tag gold">admin</span>',
-        u.live && '<span class="live-badge">AO VIVO</span>',
+        u.live && '<span class="live-badge">ao vivo</span>',
         u.muted && `<span class="ap-tag orange">silenciado${u.muted - Date.now() < 300 * 864e5 ? ` até ${hhmm(new Date(u.muted))}` : ''}</span>`,
       ].filter(Boolean).join('');
       const onde = u.sala ? `Em ${esc(nomeSala(u.sala))}` : 'Online';
@@ -2323,7 +2326,7 @@
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
       S.unseen = 0;
-      document.title = S.serverName;
+      document.title = MARCA;
     }
   });
 
