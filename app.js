@@ -30,6 +30,7 @@
     pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m14 6 4 4"/>',
     megaphone: '<path d="M3 10v4h3l8 4.5v-13L6 10H3z"/><path d="M17.5 9a3.5 3.5 0 0 1 0 6"/>',
     close: '<path d="M6 6l12 12M18 6 6 18"/>',
+    swap: '<path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/>',
   };
   const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
 
@@ -764,6 +765,7 @@
       sb.innerHTML = icon(S.live ? 'screenOff' : 'screen');
       sb.title = S.live ? 'Parar transmissão' : 'Compartilhar tela';
       sb.classList.toggle('active', S.live);
+      $('#vpSwap').hidden = !S.live;
     }
   }
 
@@ -797,7 +799,11 @@
     $('#leaveBtn').hidden = !naSala;
     $('#leaveBtn').innerHTML = `${icon('logout')} Sair da sala`;
     document.querySelectorAll('.quality:not(.send-vol)').forEach((el) => { el.hidden = !naSala; });
-    $('#sendVolWrap').hidden = !(naSala && S.live && S.envio);
+    $('#sendVolWrap').hidden = !(naSala && S.live && S.envio && S.audioCaptado);
+    const sw = $('#swapBtn');
+    sw.hidden = !(naSala && S.live);
+    sw.disabled = !!S.trocando;
+    sw.innerHTML = `${icon('swap')} ${S.trocando ? 'Escolhendo…' : 'Trocar tela'}`;
     $('#sendVol').value = String(S.volEnvio);
     $('#sendVolPct').textContent = `${Math.round(S.volEnvio * 100)}%`;
     $('#somSelect').disabled = S.live;
@@ -905,17 +911,24 @@
   // Volume do som que EU mando (quem transmite ajusta para todo mundo)
   async function prepararEnvio(stream) {
     S.envio = null;
+    if (S.som === 'nenhum') return stream;
     const at = stream.getAudioTracks()[0];
     const c = audioCtx();
-    if (!at || !c || !c.createMediaStreamDestination) return stream;
+    if (!c || !c.createMediaStreamDestination) return stream;
     try {
       if (c.state !== 'running') await Promise.race([c.resume(), new Promise((ok) => setTimeout(ok, 1500))]);
       if (c.state !== 'running') return stream; // áudio ainda travado: manda o som original
-      const src = c.createMediaStreamSource(new MediaStream([at]));
+      // A faixa de som enviada existe mesmo sem som agora: assim, ao trocar de tela,
+      // dá para passar a mandar som sem refazer as conexões.
       const gain = c.createGain();
       gain.gain.value = S.volEnvio;
       const dest = c.createMediaStreamDestination();
-      src.connect(gain).connect(dest);
+      gain.connect(dest);
+      let src = null;
+      if (at) {
+        src = c.createMediaStreamSource(new MediaStream([at]));
+        src.connect(gain);
+      }
       S.envio = { src, gain, dest };
       return new MediaStream([...stream.getVideoTracks(), dest.stream.getAudioTracks()[0]]);
     } catch {
@@ -925,7 +938,7 @@
   }
   function encerrarEnvio() {
     if (!S.envio) return;
-    try { S.envio.src.disconnect(); S.envio.gain.disconnect(); } catch { /* ok */ }
+    try { S.envio.src?.disconnect(); S.envio.gain.disconnect(); } catch { /* ok */ }
     S.envio.dest.stream.getTracks().forEach((t) => t.stop());
     S.envio = null;
   }
@@ -1163,13 +1176,8 @@
   }
 
   // ================= Compartilhar tela =================
-  async function compartilharTela() {
-    if (!S.sala) return toast('Entre em uma sala primeiro.');
-    if (!navigator.mediaDevices?.getDisplayMedia) {
-      return toast(window.isSecureContext
-        ? 'Este navegador não permite compartilhar a tela. Use Chrome, Edge ou Firefox no computador.'
-        : 'Compartilhar a tela só funciona em endereços HTTPS (ou localhost). Veja o LEIA-ME.', 6000);
-    }
+  // Abre o seletor do navegador. Devolve o stream, ou null se a pessoa cancelou.
+  async function capturarTela() {
     const q = QUALIDADES[S.quality];
     // "janela": só o som da aba/janela escolhida (chamadas de voz e outras transmissões não entram)
     // "pc": o som do computador inteiro (pode levar junto a voz de quem está numa chamada)
@@ -1190,31 +1198,70 @@
       opcoes.systemAudio = 'include';
       opcoes.windowAudio = 'system';
     }
-    let stream;
     try {
-      stream = await navigator.mediaDevices.getDisplayMedia(opcoes);
+      return await navigator.mediaDevices.getDisplayMedia(opcoes);
     } catch (e) {
-      if (e.name === 'NotAllowedError' || e.name === 'AbortError') return; // cancelou
+      if (e.name === 'NotAllowedError' || e.name === 'AbortError') return null; // cancelou
       try {
-        stream = await navigator.mediaDevices.getDisplayMedia({
+        return await navigator.mediaDevices.getDisplayMedia({
           video: true,
           audio: S.som !== 'nenhum',
           ...(S.som === 'janela' ? { systemAudio: 'exclude' } : {}),
         });
       } catch (e2) {
-        if (e2.name !== 'NotAllowedError') toast('Não foi possível compartilhar: ' + e2.message);
-        return;
+        if (e2.name === 'NotAllowedError' || e2.name === 'AbortError') return null;
+        throw e2;
       }
     }
-    if (!S.sala) {
+  }
+
+  function prepararVideo(stream) {
+    const vt = stream.getVideoTracks()[0];
+    if (!vt) return;
+    try { vt.contentHint = QUALIDADES[S.quality].hint; } catch { /* ok */ }
+    // Clicou em "Parar compartilhamento" na barra do navegador
+    vt.addEventListener('ended', () => { if (S.localStream === stream) pararTransmissao(); });
+  }
+
+  // Mandando o som do PC inteiro? Avisa sobre chamadas de voz e evita que as
+  // outras transmissões tocando aqui voltem para quem está transmitindo.
+  function avaliarSom(stream, trocou) {
+    const vt = stream.getVideoTracks()[0];
+    const at = stream.getAudioTracks()[0];
+    const superficie = vt?.getSettings?.().displaySurface;
+    S.audioCaptado = !!at;
+    S.evitarEco = false;
+    if (at && superficie === 'monitor') {
+      if (at.getSettings?.().restrictOwnAudio !== true) S.evitarEco = true;
+      toast(`${trocou ? 'Tela trocada. ' : ''}Você está mandando o som do PC inteiro. Se vocês conversam por chamada (Discord, WhatsApp…), os amigos vão ouvir a própria voz. Para evitar, escolha "Som: só da aba ou janela".`, 10000);
+    } else if (!at && S.som !== 'nenhum') {
+      toast(`${trocou ? 'Tela trocada, mas sem som. ' : 'Esta transmissão está sem som. '}Para mandar som, compartilhe uma aba e marque "Compartilhar áudio da guia".`, 7000);
+    } else if (trocou) {
+      toast('Tela trocada!');
+    }
+    aplicarMudoEco();
+  }
+
+  async function compartilharTela() {
+    if (!S.sala) return toast('Entre em uma sala primeiro.');
+    if (S.live) return;
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      return toast(window.isSecureContext
+        ? 'Este navegador não permite compartilhar a tela. Use Chrome, Edge ou Firefox no computador.'
+        : 'Compartilhar a tela só funciona em endereços HTTPS (ou localhost). Veja o LEIA-ME.', 6000);
+    }
+    let stream;
+    try {
+      stream = await capturarTela();
+    } catch (e) {
+      return toast('Não foi possível compartilhar: ' + e.message);
+    }
+    if (!stream) return;
+    if (!S.sala || S.live) {
       stream.getTracks().forEach((t) => t.stop());
       return;
     }
-    const vt = stream.getVideoTracks()[0];
-    if (vt) {
-      try { vt.contentHint = q.hint; } catch { /* ok */ }
-      vt.addEventListener('ended', () => pararTransmissao());
-    }
+    prepararVideo(stream);
     S.localStream = stream;
     S.sendStream = await prepararEnvio(stream);
     if (!S.sala || S.localStream !== stream) {
@@ -1224,18 +1271,7 @@
       return;
     }
     S.live = true;
-    // Mandando o som do PC inteiro? Avisa sobre chamadas de voz e evita que as
-    // outras transmissões tocando aqui voltem para quem está transmitindo.
-    const at = stream.getAudioTracks()[0];
-    const superficie = vt?.getSettings?.().displaySurface;
-    S.evitarEco = false;
-    if (at && superficie === 'monitor') {
-      if (at.getSettings?.().restrictOwnAudio !== true) S.evitarEco = true;
-      toast('Você está mandando o som do PC inteiro. Se vocês conversam por chamada (Discord, WhatsApp…), os amigos vão ouvir a própria voz. Para evitar, escolha "Som: só da aba ou janela".', 10000);
-    } else if (!at && S.som !== 'nenhum') {
-      toast('Esta transmissão está sem som. Para mandar som, compartilhe uma aba e marque "Compartilhar áudio da guia".', 7000);
-    }
-    aplicarMudoEco();
+    avaliarSom(stream, false);
     patchMe();
     blip('live');
     renderTudo();
@@ -1247,12 +1283,75 @@
     }
   }
 
+  // Troca o que está sendo mostrado sem derrubar ninguém: a imagem (e o som)
+  // novos entram no lugar dos antigos nas conexões que já existem.
+  async function trocarTela() {
+    if (!S.live || !S.localStream || S.trocando) return;
+    S.trocando = true;
+    renderTudo();
+    let novo = null;
+    try {
+      novo = await capturarTela();
+    } catch (e) {
+      toast('Não foi possível trocar: ' + e.message);
+    } finally {
+      S.trocando = false;
+    }
+    if (!novo || !S.live || !S.localStream) {
+      if (novo) novo.getTracks().forEach((t) => t.stop());
+      return renderTudo(); // cancelou: continua mostrando a tela de antes
+    }
+    const velho = S.localStream;
+    prepararVideo(novo);
+    const nv = novo.getVideoTracks()[0];
+    const na = novo.getAudioTracks()[0] || null;
+
+    if (S.envio) {
+      // Som passa pelo Web Audio: só troca a origem, a faixa enviada continua a mesma
+      try { S.envio.src?.disconnect(); } catch { /* ok */ }
+      S.envio.src = null;
+      if (na) {
+        S.envio.src = S.envio.gain.context.createMediaStreamSource(new MediaStream([na]));
+        S.envio.src.connect(S.envio.gain);
+      }
+      S.sendStream = new MediaStream([nv, S.envio.dest.stream.getAudioTracks()[0]]);
+    } else {
+      S.sendStream = novo;
+    }
+
+    const reconectar = [];
+    for (const [vid, c] of S.out) {
+      try {
+        const trs = c.pc.getTransceivers().filter((tr) => tr.currentDirection !== 'stopped');
+        const temAudio = trs.some((tr) => tr.receiver.track.kind === 'audio');
+        for (const tr of trs) {
+          const tipo = tr.receiver.track.kind;
+          if (tipo === 'video') await tr.sender.replaceTrack(nv);
+          else if (tipo === 'audio' && !S.envio) await tr.sender.replaceTrack(na);
+        }
+        // Antes não tinha som e agora tem: essa conexão precisa ser refeita
+        if (!S.envio && na && !temAudio) reconectar.push(vid);
+      } catch {
+        reconectar.push(vid);
+      }
+    }
+    S.localStream = novo;
+    velho.getTracks().forEach((t) => t.stop());
+    for (const vid of reconectar) {
+      fecharOut(vid);
+      sinal(vid, { k: 'restart' });
+    }
+    avaliarSom(novo, true);
+    renderTudo();
+  }
+
   function pararTransmissao(silencioso) {
     if (!S.live && !S.localStream) return;
     S.live = false;
     if (S.localStream) S.localStream.getTracks().forEach((t) => t.stop());
     S.localStream = null;
     S.sendStream = null;
+    S.audioCaptado = false;
     encerrarEnvio();
     for (const vid of [...S.out.keys()]) fecharOut(vid);
     if (S.focus === S.myId) S.focus = null;
@@ -1403,6 +1502,7 @@
       if (d.k === 'watch') await pedidoParaAssistir(from);
       else if (d.k === 'offer') await recebeuOferta(from, d);
       else if (d.k === 'answer') await recebeuResposta(from, d);
+      else if (d.k === 'restart') { if (quemQueroAssistir().has(from)) { S.tries.set(from, 0); assistir(from); } }
       else if (d.k === 'ice' && d.to === 'viewer') iceComoEspectador(from, d);
       else if (d.k === 'ice' && d.to === 'sharer') iceComoTransmissor(from, d);
     } catch (e) {
@@ -1615,6 +1715,9 @@
 
     $('#shareBtn').addEventListener('click', () => (S.live ? pararTransmissao() : compartilharTela()));
     $('#vpShare').addEventListener('click', () => (S.live ? pararTransmissao() : compartilharTela()));
+    $('#swapBtn').addEventListener('click', trocarTela);
+    $('#vpSwap').innerHTML = icon('swap');
+    $('#vpSwap').addEventListener('click', trocarTela);
     $('#joinBtn').addEventListener('click', () => entrarNaSala(S.view));
     $('#leaveBtn').addEventListener('click', sairDaSala);
     $('#vpLeave').addEventListener('click', sairDaSala);
