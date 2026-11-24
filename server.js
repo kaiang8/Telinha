@@ -364,6 +364,9 @@ const TIPOS = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
 };
 // Arquivos da página. O normal é estarem na pasta public/, mas se foram enviados
 // soltos (sem a pasta), o servidor procura também ao lado do server.js.
@@ -857,6 +860,16 @@ async function api(req, res, url) {
       for (const x of users.values()) if (x.sala === c.id) { x.sala = null; x.live = false; }
       broadcast({ type: 'channels', channels: data.channels });
       broadcastPresenca();
+      return json(res, 200, { ok: true });
+    }
+
+    case 'sb': {
+      // Soundboard: avisa quem está na mesma sala qual som foi tocado (o som vai pela transmissão)
+      const agora = Date.now();
+      if (!u.sala || agora - (u.lastSb || 0) < 250) return json(res, 200, { ok: true });
+      u.lastSb = agora;
+      const aviso = { type: 'sb', uid: u.id, nome: limparNome(body.nome, 24), emoji: String(body.emoji || '').slice(0, 8) };
+      for (const x of users.values()) if (x !== u && x.sala === u.sala) enviar(x, aviso);
       return json(res, 200, { ok: true });
     }
 

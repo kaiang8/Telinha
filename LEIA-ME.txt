@@ -319,6 +319,25 @@ DICAS
     Enquanto você manda o "Computador inteiro", o som das outras
     transmissões fica pausado no seu computador (quando o navegador
     não consegue separar), para não voltar para elas.
+  - Sons (soundboard): o botão "Sons", embaixo da sala, abre os sons.
+    Durante a transmissão, quem está assistindo ouve os sons junto com
+    a sua tela (e aparece na tela deles qual som foi tocado). Sem
+    transmitir, é só uma prévia: só você ouve.
+      Padrão (feitos do zero para o site):
+        Alt+1 Trombone triste   Alt+2 Risada de plateia   Alt+3 Aplausos
+        Alt+4 Ba dum tss        Alt+5 Buzina              Alt+6 Grilos
+      Alt+0 para todos os sons.
+      Seus sons: "Adicionar som" e escolha um arquivo (MP3, WAV, OGG ou
+      M4A, até 60 segundos e 8 MB). São 30 espaços. Os arquivos ficam
+      guardados no SEU navegador (não sobem para o servidor); em outro
+      computador ou navegador, adicione de novo.
+      "Editar": mude nome, emoji, volume, troque o áudio (até dos
+      padrão) e grave o atalho que quiser (clique em "Gravar atalho" e
+      aperte as teclas). Use Alt ou Ctrl junto para o atalho funcionar
+      mesmo enquanto você digita no chat.
+      IMPORTANTE: os atalhos só funcionam com a janela do navegador em
+      foco. Dentro de um jogo, o navegador não recebe as teclas. Nesse
+      caso, deixe o site num segundo monitor e clique nos sons.
   - Trocar de tela: durante a transmissão, clique em "Trocar tela"
     (embaixo da sala, ou nas setinhas ao lado de "Ao vivo"). Escolha
     outra janela, aba ou tela: quem está assistindo passa a ver a nova

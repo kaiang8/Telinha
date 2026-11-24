@@ -363,6 +363,7 @@
       case 'force': return onForce(m);
       case 'role': return onRole(m);
       case 'renamed': return onRenamed(m);
+      case 'sb': return onSomTocado(m);
     }
   }
 
@@ -805,7 +806,9 @@
     $('#leaveBtn').hidden = !naSala;
     $('#leaveBtn').innerHTML = `${icon('logout')} Sair da sala`;
     $('#ajustesBtn').hidden = !naSala;
-    if (!naSala) $('#ajustesPanel').hidden = true;
+    $('#sonsBtn').hidden = !naSala;
+    if (!naSala) { $('#ajustesPanel').hidden = true; $('#sonsPanel').hidden = true; }
+    if (!$('#sonsPanel').hidden) avisoSons();
     $('#sendVolWrap').hidden = !(naSala && S.live && S.envio && S.audioCaptado);
     const sw = $('#swapBtn');
     sw.hidden = !(naSala && S.live);
@@ -918,8 +921,7 @@
   // Volume do som que EU mando (quem transmite ajusta para todo mundo)
   async function prepararEnvio(stream) {
     S.envio = null;
-    if (S.som === 'nenhum') return stream;
-    const at = stream.getAudioTracks()[0];
+    const at = S.som === 'nenhum' ? null : stream.getAudioTracks()[0]; // no "Sem som", a faixa leva só a soundboard
     const c = audioCtx();
     if (!c || !c.createMediaStreamDestination) return stream;
     try {
@@ -1386,6 +1388,7 @@
     if (!S.live && !S.localStream) return;
     S.live = false;
     if (S.localStream) S.localStream.getTracks().forEach((t) => t.stop());
+    pararTodos();
     S.localStream = null;
     S.sendStream = null;
     S.audioCaptado = false;
@@ -1795,10 +1798,12 @@
       if (S.envio) S.envio.gain.gain.setTargetAtTime(S.volEnvio, S.envio.gain.context.currentTime, 0.02);
     });
 
+    montarSons();
     $('#ajustesBtn').innerHTML = `${icon('sliders')} Ajustes`;
     $('#ajustesBtn').addEventListener('click', (e) => {
       e.stopPropagation();
       $('#ajustesPanel').hidden = !$('#ajustesPanel').hidden;
+      $('#sonsPanel').hidden = true;
     });
     document.addEventListener('click', (e) => {
       if (!$('#ajustesPanel').hidden && !e.target.closest('#ajustesPanel, #ajustesBtn')) $('#ajustesPanel').hidden = true;
@@ -2466,6 +2471,424 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && P.aberto && !e.defaultPrevented) fecharPainelAdmin();
   });
+
+  // ================= Soundboard =================
+  // Os sons entram no áudio da transmissão (quem assiste ouve). Os personalizados
+  // ficam guardados neste navegador (IndexedDB); os padrão vêm da pasta /sons.
+  const SONS_PADRAO = [
+    { id: 'p-trombone', nome: 'Trombone triste', emoji: '🎺', arquivo: 'sons/trombone-triste.mp3', tecla: 'Digit1' },
+    { id: 'p-risada', nome: 'Risada de plateia', emoji: '😂', arquivo: 'sons/risada.mp3', tecla: 'Digit2' },
+    { id: 'p-aplausos', nome: 'Aplausos', emoji: '👏', arquivo: 'sons/aplausos.mp3', tecla: 'Digit3' },
+    { id: 'p-badumtss', nome: 'Ba dum tss', emoji: '🥁', arquivo: 'sons/ba-dum-tss.mp3', tecla: 'Digit4' },
+    { id: 'p-buzina', nome: 'Buzina', emoji: '📯', arquivo: 'sons/buzina.mp3', tecla: 'Digit5' },
+    { id: 'p-grilos', nome: 'Grilos', emoji: '🦗', arquivo: 'sons/grilos.mp3', tecla: 'Digit6' },
+  ];
+  const MAX_PERSONALIZADOS = 30;
+  const MAX_BYTES = 8 * 1024 * 1024;
+  const MAX_SEGUNDOS = 60;
+  const ATALHO_PARAR = { code: 'Digit0', alt: true };
+
+  const SB = (() => {
+    const g = salvo.sb && typeof salvo.sb === 'object' ? salvo.sb : {};
+    const salvos = Array.isArray(g.slots) ? g.slots : [];
+    const slots = SONS_PADRAO.map((p) => {
+      const s = salvos.find((x) => x.id === p.id) || {};
+      return {
+        id: p.id, padrao: true, arquivo: p.arquivo,
+        nome: s.nome || p.nome, emoji: s.emoji || p.emoji,
+        atalho: s.atalho !== undefined ? s.atalho : { code: p.tecla, alt: true },
+        volume: typeof s.volume === 'number' ? s.volume : 1, proprio: !!s.proprio,
+      };
+    });
+    for (const s of salvos) {
+      if (!s.padrao && typeof s.id === 'string' && s.id.startsWith('c-')) {
+        slots.push({ id: s.id, padrao: false, nome: s.nome || 'Som', emoji: s.emoji || '🔊', atalho: s.atalho || null, volume: typeof s.volume === 'number' ? s.volume : 1, proprio: true });
+      }
+    }
+    return { volume: typeof g.volume === 'number' ? g.volume : 0.8, ouvir: g.ouvir !== false, slots, editando: false, gravando: null };
+  })();
+  function guardarSB() {
+    salvar({ sb: { volume: SB.volume, ouvir: SB.ouvir, slots: SB.slots.map(({ id, padrao, nome, emoji, atalho, volume, proprio }) => ({ id, padrao, nome, emoji, atalho, volume, proprio })) } });
+  }
+
+  // IndexedDB: guarda os arquivos de áudio enviados por você
+  const DB = (() => {
+    let aberto;
+    const abrir = () => (aberto ||= new Promise((ok, erro) => {
+      const r = indexedDB.open('caras-e-telas', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('sons');
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => erro(r.error);
+    }));
+    const op = async (modo, fn) => {
+      const db = await abrir();
+      return new Promise((ok, erro) => {
+        const tx = db.transaction('sons', modo);
+        const req = fn(tx.objectStore('sons'));
+        tx.oncomplete = () => ok(req ? req.result : undefined);
+        tx.onerror = () => erro(tx.error);
+        tx.onabort = () => erro(tx.error);
+      });
+    };
+    return {
+      pegar: (id) => op('readonly', (st) => st.get(id)),
+      guardar: (id, blob) => op('readwrite', (st) => st.put(blob, id)),
+      apagar: (id) => op('readwrite', (st) => st.delete(id)),
+    };
+  })();
+
+  const buffers = new Map(); // id -> AudioBuffer
+  async function carregarBuffer(slot) {
+    if (buffers.has(slot.id)) return buffers.get(slot.id);
+    const c = audioCtx();
+    let dados;
+    if (slot.proprio) {
+      const blob = await DB.pegar(slot.id);
+      if (!blob) throw new Error('arquivo não encontrado neste navegador');
+      dados = await blob.arrayBuffer();
+    } else {
+      const r = await fetch(slot.arquivo);
+      if (!r.ok) throw new Error(`não encontrei ${slot.arquivo}`);
+      dados = await r.arrayBuffer();
+    }
+    const buf = await c.decodeAudioData(dados);
+    buffers.set(slot.id, buf);
+    return buf;
+  }
+
+  const tocando = new Map(); // id -> { fonte, ganho }
+  function marcarTocando(id, dur) {
+    const el = document.querySelector(`#sbGrade [data-som="${CSS.escape(id)}"]`);
+    if (!el) return;
+    el.classList.remove('tocando');
+    if (dur) {
+      void el.offsetWidth; // reinicia a animação
+      el.style.setProperty('--dur', `${dur}s`);
+      el.classList.add('tocando');
+    }
+  }
+  function pararSom(id) {
+    const t = tocando.get(id);
+    if (!t) return;
+    tocando.delete(id);
+    try { t.fonte.stop(); } catch { /* já parou */ }
+    try { t.ganho.disconnect(); } catch { /* ok */ }
+    marcarTocando(id, 0);
+  }
+  function pararTodos() {
+    for (const id of [...tocando.keys()]) pararSom(id);
+  }
+  async function tocarSom(id, origem) {
+    const slot = SB.slots.find((s) => s.id === id);
+    const c = audioCtx();
+    if (!slot || !c) return;
+    if (c.state !== 'running') await c.resume().catch(() => {});
+    let buf;
+    try {
+      buf = await carregarBuffer(slot);
+    } catch (e) {
+      return toast(`Não consegui tocar "${slot.nome}": ${e.message}`);
+    }
+    pararSom(id); // apertar de novo recomeça
+    const fonte = c.createBufferSource();
+    fonte.buffer = buf;
+    const ganho = c.createGain();
+    ganho.gain.value = slot.volume * SB.volume;
+    fonte.connect(ganho);
+    const naTransmissao = S.live && !!S.envio;
+    if (naTransmissao) ganho.connect(S.envio.dest);
+    // ouvir aqui (se o som do PC estiver sendo capturado sem filtro, não toca aqui para não ir em dobro)
+    if (!naTransmissao || (SB.ouvir && !S.evitarEco)) ganho.connect(c.destination);
+    fonte.onended = () => {
+      if (tocando.get(id)?.fonte !== fonte) return;
+      tocando.delete(id);
+      try { ganho.disconnect(); } catch { /* ok */ }
+      marcarTocando(id, 0);
+    };
+    fonte.start();
+    tocando.set(id, { fonte, ganho });
+    marcarTocando(id, buf.duration);
+    if (naTransmissao) api('sb', { nome: slot.nome, emoji: slot.emoji }).catch(() => {});
+    else if (origem === 'atalho') toast(S.live ? 'O áudio da transmissão não está disponível: o som tocou só aqui.' : 'Você não está transmitindo: o som tocou só aqui.');
+  }
+
+  // ----- atalhos -----
+  const NOMES_TECLAS = { Space: 'Espaço', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Minus: '-', Equal: '=', Backquote: "'", BracketLeft: '´', BracketRight: '[', Backslash: ']', Semicolon: 'Ç', Quote: '~', Comma: ',', Period: '.', Slash: ';', IntlRo: '/', Insert: 'Insert', Delete: 'Delete', Home: 'Home', End: 'End', PageUp: 'PgUp', PageDown: 'PgDn', Enter: 'Enter', Tab: 'Tab' };
+  function nomeTecla(code) {
+    if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+    if (/^Digit\d$/.test(code)) return code.slice(5);
+    if (/^Numpad\d$/.test(code)) return `Num ${code.slice(6)}`;
+    if (/^Numpad/.test(code)) return `Num ${{ NumpadAdd: '+', NumpadSubtract: '-', NumpadMultiply: '*', NumpadDivide: '/', NumpadDecimal: ',', NumpadEnter: 'Enter' }[code] || code.slice(6)}`;
+    if (/^F\d{1,2}$/.test(code)) return code;
+    return NOMES_TECLAS[code] || code;
+  }
+  function textoAtalho(a) {
+    if (!a) return '';
+    return [a.ctrl && 'Ctrl', a.alt && 'Alt', a.shift && 'Shift', a.meta && 'Cmd', nomeTecla(a.code)].filter(Boolean).join('+');
+  }
+  const mesmoAtalho = (a, b) => !!a && !!b && a.code === b.code && !!a.ctrl === !!b.ctrl && !!a.alt === !!b.alt && !!a.shift === !!b.shift && !!a.meta === !!b.meta;
+  const atalhoDoEvento = (e) => ({ code: e.code, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey });
+
+  // Gravação de atalho (no editor): pega a próxima combinação de teclas
+  window.addEventListener('keydown', (e) => {
+    if (!SB.gravando) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (e.key === 'Escape') return SB.gravando(null, true);
+    if (['Shift', 'Control', 'Alt', 'Meta', 'AltGraph'].includes(e.key)) return; // espera a tecla de verdade
+    SB.gravando(atalhoDoEvento(e), false);
+  }, true);
+
+  document.addEventListener('keydown', (e) => {
+    if (SB.gravando || e.repeat || !S.started) return;
+    if (!$('#modal').hidden || P.aberto) return;
+    const comModificador = e.ctrlKey || e.altKey || e.metaKey;
+    const digitando = e.target.closest?.('input, textarea, select, [contenteditable="true"]');
+    if (digitando && !comModificador) return; // escrevendo no chat: teclas simples não disparam sons
+    const ev = atalhoDoEvento(e);
+    if (mesmoAtalho(ATALHO_PARAR, ev)) {
+      e.preventDefault();
+      return pararTodos();
+    }
+    const slot = SB.slots.find((s) => mesmoAtalho(s.atalho, ev));
+    if (!slot) return;
+    e.preventDefault();
+    tocarSom(slot.id, 'atalho');
+  });
+
+  // ----- painel -----
+  function renderSons() {
+    const personalizados = SB.slots.filter((s) => !s.padrao).length;
+    $('#sbVolume').value = String(SB.volume);
+    $('#sbVolumePct').textContent = `${Math.round(SB.volume * 100)}%`;
+    $('#sbOuvir').checked = SB.ouvir;
+    $('#sbEditar').textContent = SB.editando ? 'Pronto' : 'Editar';
+    $('#sbEditar').classList.toggle('primary', SB.editando);
+    avisoSons();
+    let h = SB.slots.map((s) => `<button type="button" class="som${SB.editando ? ' editando' : ''}${tocando.has(s.id) ? ' tocando' : ''}" data-som="${esc(s.id)}" title="${esc(s.nome)}${s.atalho ? ` (${esc(textoAtalho(s.atalho))})` : ''}">
+        <span class="som-emoji">${esc(s.emoji)}</span><span class="som-nome">${esc(s.nome)}</span>
+        ${s.atalho ? `<kbd>${esc(textoAtalho(s.atalho))}</kbd>` : `<span class="som-sem">${SB.editando ? 'sem atalho' : ''}</span>`}
+        ${SB.editando ? `<span class="som-lapis">${icon('pencil')}</span>` : ''}
+      </button>`).join('');
+    if (personalizados < MAX_PERSONALIZADOS) {
+      h += `<button type="button" class="som som-novo" data-novo="1">${icon('plus')}<span class="som-nome">Adicionar som</span><span class="som-sem">${MAX_PERSONALIZADOS - personalizados} espaços livres</span></button>`;
+    }
+    $('#sbGrade').innerHTML = h;
+  }
+
+  function avisoSons() {
+    $('#sbAviso').textContent = S.live && S.envio
+      ? 'Ao vivo: quem está assistindo ouve os sons junto com a sua transmissão.'
+      : S.live
+        ? 'O navegador não liberou o áudio da transmissão, então os sons tocam só aqui.'
+        : 'Prévia: só você ouve. Comece a transmitir para a sala ouvir.';
+    $('#sbAviso').classList.toggle('ao-vivo', !!(S.live && S.envio));
+  }
+
+  async function lerArquivoDeSom(file) {
+    if (!file) return null;
+    if (file.size > MAX_BYTES) throw new Error('Arquivo grande demais (máximo 8 MB).');
+    const c = audioCtx();
+    let buf;
+    try {
+      buf = await c.decodeAudioData(await file.arrayBuffer());
+    } catch {
+      throw new Error('Não consegui ler esse arquivo. Use MP3, WAV, OGG ou M4A.');
+    }
+    if (buf.duration > MAX_SEGUNDOS) throw new Error(`Som longo demais (máximo ${MAX_SEGUNDOS} segundos).`);
+    return buf;
+  }
+  function escolherArquivo() {
+    return new Promise((ok) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'audio/*,.mp3,.wav,.ogg,.m4a';
+      input.onchange = () => ok(input.files[0] || null);
+      input.click();
+    });
+  }
+
+  async function adicionarSom() {
+    if (SB.slots.filter((s) => !s.padrao).length >= MAX_PERSONALIZADOS) return toast('Todos os espaços estão ocupados. Apague algum som para liberar.');
+    const file = await escolherArquivo();
+    if (!file) return;
+    let buf;
+    try {
+      buf = await lerArquivoDeSom(file);
+    } catch (e) {
+      return toast(e.message, 6000);
+    }
+    const id = `c-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    try {
+      await DB.guardar(id, file);
+    } catch {
+      return toast('O navegador não deixou guardar o arquivo (falta de espaço?).', 6000);
+    }
+    const nome = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 24) || 'Meu som';
+    const slot = { id, padrao: false, nome, emoji: '🔊', atalho: null, volume: 1, proprio: true };
+    SB.slots.push(slot);
+    buffers.set(id, buf);
+    guardarSB();
+    renderSons();
+    editarSom(id, true);
+  }
+
+  function editarSom(id, novo = false) {
+    const slot = SB.slots.find((s) => s.id === id);
+    if (!slot) return;
+    let atalho = slot.atalho;
+    let arquivoNovo = null;
+    let restaurar = false;
+    abrirModal({
+      titulo: novo ? 'Novo som' : 'Editar som',
+      ok: 'Salvar',
+      corpo: `<div class="sb-editor">
+          <div class="sb-linha">
+            <label class="field sb-emoji"><span>Emoji</span><input type="text" name="emoji" maxlength="8" value="${esc(slot.emoji)}" autocomplete="off"></label>
+            <label class="field"><span>Nome</span><input type="text" name="nome" maxlength="24" required value="${esc(slot.nome)}" autocomplete="off"></label>
+          </div>
+          <div class="field"><span>Atalho de teclado</span>
+            <div class="sb-atalho"><kbd id="sbAtalhoTxt"></kbd>
+              <button type="button" class="btn sm" id="sbGravar">Gravar atalho</button>
+              <button type="button" class="btn sm ghost" id="sbSemAtalho">Sem atalho</button></div>
+            <p class="small muted sb-ajuda">Dica: use Alt ou Ctrl junto (ex.: Alt+Q) para o atalho funcionar até enquanto você digita no chat.</p>
+          </div>
+          <label class="field"><span>Volume deste som: <b id="sbVolTxt">${Math.round(slot.volume * 100)}%</b></span>
+            <input type="range" name="volume" min="0" max="1.5" step="0.05" value="${slot.volume}" class="sb-range"></label>
+          <div class="field"><span>Áudio</span>
+            <div class="sb-atalho">
+              <button type="button" class="btn sm" id="sbTestar">${icon('vol')} Ouvir</button>
+              <button type="button" class="btn sm" id="sbTrocar">Trocar áudio</button>
+              ${slot.padrao && slot.proprio ? '<button type="button" class="btn sm ghost" id="sbRestaurar">Voltar ao original</button>' : ''}
+            </div>
+            <p class="small muted sb-ajuda" id="sbArqTxt">${slot.padrao && !slot.proprio ? 'Som padrão do Caras E Telas.' : 'Arquivo guardado neste navegador.'}</p>
+          </div>
+          ${slot.padrao ? '' : '<button type="button" class="btn sm danger" id="sbApagar">Apagar este som</button>'}
+        </div>`,
+      aoConfirmar: async (fd) => {
+        const nome = String(fd.get('nome') || '').trim().slice(0, 24);
+        if (!nome) throw new Error('Dê um nome para o som');
+        if (atalho && mesmoAtalho(atalho, ATALHO_PARAR)) throw new Error('Alt+0 já é o atalho de "Parar sons".');
+        const outro = atalho && SB.slots.find((s) => s.id !== slot.id && mesmoAtalho(s.atalho, atalho));
+        if (outro) {
+          outro.atalho = null;
+          toast(`O atalho ${textoAtalho(atalho)} saiu de "${outro.nome}".`, 5000);
+        }
+        if (arquivoNovo) {
+          await DB.guardar(slot.id, arquivoNovo.file);
+          buffers.set(slot.id, arquivoNovo.buf);
+          slot.proprio = true;
+        } else if (restaurar) {
+          await DB.apagar(slot.id).catch(() => {});
+          buffers.delete(slot.id);
+          slot.proprio = false;
+        }
+        slot.nome = nome;
+        slot.emoji = String(fd.get('emoji') || '').trim().slice(0, 8) || '🔊';
+        slot.volume = Number(fd.get('volume'));
+        slot.atalho = atalho;
+        guardarSB();
+        renderSons();
+      },
+    });
+    const mostrarAtalho = () => { $('#sbAtalhoTxt').textContent = atalho ? textoAtalho(atalho) : 'nenhum'; };
+    mostrarAtalho();
+    $('#sbGravar').onclick = () => {
+      $('#sbGravar').textContent = 'Aperte as teclas…';
+      $('#sbGravar').classList.add('primary');
+      SB.gravando = (novoAtalho, cancelou) => {
+        SB.gravando = null;
+        $('#sbGravar').textContent = 'Gravar atalho';
+        $('#sbGravar').classList.remove('primary');
+        if (!cancelou) atalho = novoAtalho;
+        mostrarAtalho();
+      };
+    };
+    $('#sbSemAtalho').onclick = () => { atalho = null; mostrarAtalho(); };
+    $('#modalBody input[name=volume]').oninput = (e) => { $('#sbVolTxt').textContent = `${Math.round(Number(e.target.value) * 100)}%`; };
+    $('#sbTestar').onclick = async () => {
+      const c = audioCtx();
+      try {
+        const buf = arquivoNovo ? arquivoNovo.buf : restaurar ? await (await fetch(slot.arquivo)).arrayBuffer().then((d) => c.decodeAudioData(d)) : await carregarBuffer(slot);
+        const f = c.createBufferSource();
+        const g = c.createGain();
+        g.gain.value = Number($('#modalBody input[name=volume]').value) * SB.volume;
+        f.buffer = buf;
+        f.connect(g).connect(c.destination);
+        f.start();
+      } catch (e) {
+        toast(e.message);
+      }
+    };
+    $('#sbTrocar').onclick = async () => {
+      const file = await escolherArquivo();
+      if (!file) return;
+      try {
+        arquivoNovo = { file, buf: await lerArquivoDeSom(file) };
+        restaurar = false;
+        $('#sbArqTxt').textContent = `Novo arquivo: ${file.name} (${arquivoNovo.buf.duration.toFixed(1)} s). Clique em Salvar.`;
+      } catch (e) {
+        toast(e.message, 6000);
+      }
+    };
+    if ($('#sbRestaurar')) $('#sbRestaurar').onclick = () => { restaurar = true; arquivoNovo = null; $('#sbArqTxt').textContent = 'Vai voltar ao som original. Clique em Salvar.'; };
+    if ($('#sbApagar')) $('#sbApagar').onclick = async () => {
+      pararSom(slot.id);
+      SB.slots = SB.slots.filter((s) => s.id !== slot.id);
+      buffers.delete(slot.id);
+      await DB.apagar(slot.id).catch(() => {});
+      guardarSB();
+      renderSons();
+      $('#modal').hidden = true;
+      toast(`"${slot.nome}" foi apagado.`);
+    };
+  }
+
+  // Na tela de quem assiste: mostra qual som foi tocado
+  function onSomTocado(m) {
+    const t = S.tiles.get(m.uid);
+    if (!t) return;
+    const chip = document.createElement('div');
+    chip.className = 'sb-chip';
+    chip.textContent = `${m.emoji} ${m.nome}`;
+    t.el.appendChild(chip);
+    setTimeout(() => chip.remove(), 2600);
+  }
+
+  function montarSons() {
+    $('#sonsBtn').innerHTML = `${icon('vol')} Sons`;
+    $('#sonsBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const abrir = $('#sonsPanel').hidden;
+      $('#sonsPanel').hidden = !abrir;
+      $('#ajustesPanel').hidden = true;
+      if (abrir) {
+        renderSons();
+        for (const s of SB.slots) carregarBuffer(s).catch(() => {}); // deixa pronto para tocar sem atraso
+      }
+    });
+    document.addEventListener('click', (e) => {
+      if (!$('#sonsPanel').hidden && !e.target.closest('#sonsPanel, #sonsBtn, #modal')) $('#sonsPanel').hidden = true;
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !$('#sonsPanel').hidden && $('#modal').hidden) { $('#sonsPanel').hidden = true; e.preventDefault(); }
+    });
+    $('#sbGrade').addEventListener('click', (e) => {
+      if (e.target.closest('[data-novo]')) return adicionarSom();
+      const b = e.target.closest('[data-som]');
+      if (!b) return;
+      if (SB.editando) editarSom(b.dataset.som);
+      else tocarSom(b.dataset.som, 'clique');
+    });
+    $('#sbVolume').addEventListener('input', (e) => {
+      SB.volume = Number(e.target.value);
+      $('#sbVolumePct').textContent = `${Math.round(SB.volume * 100)}%`;
+      guardarSB();
+    });
+    $('#sbOuvir').addEventListener('change', (e) => { SB.ouvir = e.target.checked; guardarSB(); });
+    $('#sbParar').addEventListener('click', pararTodos);
+    $('#sbEditar').addEventListener('click', () => { SB.editando = !SB.editando; renderSons(); });
+  }
 
   // ================= Ciclo de vida da página =================
   function sairDaPagina() {
