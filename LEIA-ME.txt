@@ -662,6 +662,11 @@ DICAS
     mundo passa a ver "(editada)" ao lado do horário. Só dá para
     editar as próprias mensagens. Se a mensagem respondida for
     editada ou apagada, as respostas acompanham.
+  - Monitor na vertical: quando a janela fica bem mais alta que larga
+    (monitor virado em pé), o chat da sala vai para baixo do vídeo, que
+    passa a usar a largura toda, e duas transmissões ficam uma embaixo
+    da outra. Muda sozinho ao virar o monitor ou arrastar a janela para
+    ele. Em monitor deitado, nada muda.
   - Lista de membros: embaixo de quem está online aparece todo mundo
     que já entrou alguma vez, com "offline há 3 h", "há 2 dias"...
     (sem IP de ninguém). Quando a pessoa entra, ela sobe para o

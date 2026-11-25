@@ -1277,3 +1277,15 @@ html[data-tema="escuro"] .member.offline .name-line { opacity: .78; }
 .voice-panel.fora .vp-where { font-size: 11.5px; }
 .voice-panel.fora .vp-botoes { flex: none; }
 .voice-panel.fora .vp-botoes .icon-btn { flex: none; width: 40px; }
+/* ===== Monitor em pé =====
+   Só vale quando a janela é bem mais alta que larga (largura até 4/5 da altura), o que na prática
+   é um monitor virado na vertical. Em monitor deitado (e com o site em meia tela) nada disto é lido;
+   abaixo de 900 px de largura já vale o desenho de tela estreita. Muda sozinho ao virar o monitor. */
+@media (min-width: 901px) and (max-aspect-ratio: 4/5) {
+  /* o chat da sala vai para baixo, e o vídeo passa a usar a largura toda */
+  .main-body.sala-view { flex-direction: column; }
+  .main-body.sala-view .stage { flex: 1 1 60%; }
+  .main-body.sala-view .chat { width: auto; flex: 1 1 40%; border-left: 0; border-top: 1px solid var(--linha); }
+  /* duas transmissões: uma embaixo da outra (lado a lado ficariam pequenas) */
+  .stage-grid.n2 { grid-template-columns: minmax(0, 1fr); }
+}
