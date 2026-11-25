@@ -791,7 +791,7 @@
     if (m.sistema === 'boasvindas') {
       const p = S.perfis?.[m.alvo];
       const nome = `<span class="bv-nome" style="--cor:${esc(p?.cor || '#3db3f0')}">${esc(p?.nome || 'alguém')}</span>`;
-      return h + `<div class="msg boas-vindas${cls}" ${attrs}>${STICKERS[m.figura] || STICKERS[0]}
+      return h + `<div class="msg boas-vindas${cls}" ${attrs}>${telinhaDeBoasVindas(m.figura)}
         <div class="bv-texto"><div class="bv-frase">${(FRASES_BOAS_VINDAS[m.frase] || FRASES_BOAS_VINDAS[0])(nome)}</div>
           <span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span></div>${acoes}</div>`;
     }
@@ -2847,6 +2847,9 @@
       </g>
     </svg>`,
   ];
+  // as três telinhas acenando (feitas com o Creative Claw); a animação é pelo CSS
+  const TELINHAS = ['verde', 'azul', 'rosa'];
+  const telinhaDeBoasVindas = (n) => { const t = TELINHAS[n] || TELINHAS[0]; return `<img class="sticker telinha tl-${t}" src="telinhas/${t}.png" alt="" width="88" height="88" draggable="false">`; };
   const FRASES_BOAS_VINDAS = [
     (n) => `Que bom te ver por aqui, ${n}!`,
     (n) => `Olha só quem chegou: ${n}! Fica à vontade.`,
