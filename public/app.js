@@ -6300,6 +6300,16 @@
     { id: 'p-badumtss', nome: 'Ba dum tss', emoji: '🥁', arquivo: 'sons/ba-dum-tss.mp3', tecla: 'Digit4' },
     { id: 'p-buzina', nome: 'Buzina', emoji: '📯', arquivo: 'sons/buzina.mp3', tecla: 'Digit5' },
     { id: 'p-grilos', nome: 'Grilos', emoji: '🦗', arquivo: 'sons/grilos.mp3', tecla: 'Digit6' },
+    { id: 'p-boom', nome: 'Boom dramático', emoji: '💥', arquivo: 'sons/boom.mp3', tecla: 'Digit7' },
+    { id: 'p-suspense', nome: 'Suspense', emoji: '😱', arquivo: 'sons/suspense.mp3', tecla: 'Digit8' },
+    { id: 'p-escorregao', nome: 'Escorregão', emoji: '🍌', arquivo: 'sons/escorregao.mp3', tecla: 'Digit9' },
+    { id: 'p-assobio', nome: 'Fiu-fiu', emoji: '😏', arquivo: 'sons/assobio.mp3', tecla: null },
+    { id: 'p-acertou', nome: 'Acertou', emoji: '✅', arquivo: 'sons/acertou.mp3', tecla: null },
+    { id: 'p-errou', nome: 'Errou', emoji: '❌', arquivo: 'sons/errou.mp3', tecla: null },
+    { id: 'p-rufar', nome: 'Rufar de tambores', emoji: '🥁', arquivo: 'sons/rufar.mp3', tecla: null },
+    { id: 'p-sino', nome: 'Sino de luta', emoji: '🔔', arquivo: 'sons/sino-luta.mp3', tecla: null },
+    { id: 'p-atencao', nome: 'Chamar atenção', emoji: '📳', arquivo: 'sons/chamar-atencao.mp3', tecla: null },
+    { id: 'p-pum', nome: 'Pum', emoji: '💨', arquivo: 'sons/pum.mp3', tecla: null },
   ];
   const MAX_PERSONALIZADOS = 30;
   const MAX_BYTES = 8 * 1024 * 1024;
@@ -6314,7 +6324,7 @@
       return {
         id: p.id, padrao: true, arquivo: p.arquivo,
         nome: s.nome || p.nome, emoji: s.emoji || p.emoji,
-        atalho: s.atalho !== undefined ? s.atalho : { code: p.tecla, alt: true },
+        atalho: s.atalho !== undefined ? s.atalho : p.tecla ? { code: p.tecla, alt: true } : null,
         volume: typeof s.volume === 'number' ? s.volume : 1, proprio: !!s.proprio,
       };
     });
@@ -6322,6 +6332,11 @@
       if (!s.padrao && typeof s.id === 'string' && s.id.startsWith('c-')) {
         slots.push({ id: s.id, padrao: false, nome: s.nome || 'Som', emoji: s.emoji || '🔊', atalho: s.atalho || null, volume: typeof s.volume === 'number' ? s.volume : 1, proprio: true });
       }
+    }
+    // um som padrão novo não pega um atalho que a pessoa já usa em outro som
+    const mesmo = (a, b) => a && b && a.code === b.code && !!a.alt === !!b.alt && !!a.ctrl === !!b.ctrl && !!a.shift === !!b.shift;
+    for (const sl of slots) {
+      if (sl.padrao && sl.atalho && !salvos.some((x) => x.id === sl.id) && slots.some((o) => o !== sl && mesmo(o.atalho, sl.atalho))) sl.atalho = null;
     }
     return { volume: typeof g.volume === 'number' ? g.volume : 0.8, ouvir: g.ouvir !== false, slots, editando: false, gravando: null };
   })();
