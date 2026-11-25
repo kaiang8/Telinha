@@ -7,3 +7,10 @@ data.json.tmp
 *-problemas.json.tmp
 *-trafego.json
 *-trafego.json.tmp
+
+# mensagens e registros por dia (modo sem Upstash): têm conversas e IPs
+*-mensagens.json
+*-mensagens.json.tmp
+*-dias-*.json
+*-dias-*.json.tmp
+*.migrado

@@ -18,9 +18,15 @@
       <div class="login-logo" id="loginLogo"></div>
       <h1 id="loginTitle">Caras E Telas</h1>
       <p id="loginSub">Converse e assista junto com a galera.</p>
-      <label class="field">
+      <label class="field" id="nomeField">
         <span>Apelido</span>
         <input id="nameInput" name="nickname" maxlength="32" required autocomplete="nickname" placeholder="Como seus amigos te chamam">
+      </label>
+      <p class="login-dica" id="nomeDica" hidden></p>
+      <label class="field" id="codigoField" hidden>
+        <span>Código de acesso</span>
+        <input id="codigoInput" maxlength="12" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" placeholder="Ex.: K7Q2-M9XD">
+        <span class="login-dica">Gere o código num aparelho onde você já entra (clicando no seu nome) ou peça para um admin. Ele vale 15 minutos.</span>
       </label>
       <div class="field">
         <span>Sua cor</span>
@@ -36,6 +42,7 @@
       </label>
       <button type="submit" class="btn primary block" id="loginBtn">Entrar</button>
       <p id="loginError" class="error" role="alert"></p>
+      <button type="button" class="link-btn" id="codigoToggle">Já tenho um nome (entrar com código)</button>
       <button type="button" class="link-btn" id="adminToggle">Sou admin</button>
       <a class="login-programa" id="loginPrograma" href="/baixar" target="_blank" rel="noopener" hidden>Baixar o programa para Windows</a>
     </form>
@@ -79,7 +86,7 @@
 
       <div class="user-panel">
         <div class="avatar" id="meAvatar"></div>
-        <div class="up-name">
+        <div class="up-name" id="meInfo" role="button" tabindex="0" title="Seu nome e cor">
           <div id="meName" class="ellipsis"></div>
           <div class="muted small" id="meStatus">Online</div>
         </div>

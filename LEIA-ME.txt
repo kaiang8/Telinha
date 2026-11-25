@@ -205,18 +205,25 @@ O PAINEL (escudo dourado ao lado do nome do servidor)
   - Pessoas: silenciar, parar transmissão, tirar da sala, renomear,
     dar ou tirar admin, expulsar e banir. Também mostra o IP de cada
     pessoa. Clicar em alguém na lista de membros abre direto aqui.
+  - Nomes: todos os nomes registrados (veja "SEU NOME"), com quando
+    foram vistos e em quantos aparelhos. Dá para renomear (muda o nome
+    nas mensagens antigas também), gerar um código de acesso para
+    quem perdeu o aparelho ou limpou o navegador, e esquecer os
+    aparelhos de alguém (aí só entra com código).
   - Conexões: registro de quem entrou (quando, nome, IP, navegador
     ou programa, quanto tempo ficou, se foi expulso) e das tentativas
     recusadas (senha errada, senha de admin errada, banido tentando
     voltar, servidor trancado). Clique num IP para ver tudo o que veio
     dele. Recarregar a página ou cair e voltar logo em seguida conta
-    como a mesma visita. Fica guardado por 30 dias (no máximo 500
-    entradas) e dá para limpar.
+    como a mesma visita. Fica guardado por pelo menos 30 dias, sem
+    limite de quantidade, e dá para limpar.
   - Problemas: os relatos enviados pelo botão "Relatar problema" (com
     as informações técnicas de quem relatou) e os erros que
     aconteceram na página de alguém (os iguais viram uma linha só,
     com quantas vezes e com quem). Os admins online recebem um aviso
-    quando chega um relato. Fica guardado por 30 dias.
+    quando chega um relato. Fica guardado por pelo menos 30 dias, sem
+    limite de quantidade (o resumo da qualidade das transmissões
+    também).
   - Banidos: lista de banidos, com o botão para desbanir.
   - Servidor: tráfego do mês (quanto dos 5 GB grátis do Render já foi
     usado, a previsão para o fim do mês e o que mais gasta; os admins
@@ -612,8 +619,21 @@ DICAS
   - Atalhos: Enter envia, Shift+Enter pula linha, duplo clique deixa a
     transmissão em tela cheia, Esc sai do destaque e fecha o painel.
   - Privacidade: o vídeo vai criptografado direto entre os
-    navegadores. O chat passa pelo servidor, que guarda as 200 últimas
-    mensagens de cada canal.
+    navegadores. O chat passa pelo servidor, que guarda as mensagens
+    para sempre (até um admin apagar ou limpar o canal).
+  - SEU NOME: o primeiro nome que você escolhe fica sendo o seu neste
+    servidor, e o aparelho entra sempre com ele (ninguém mais consegue
+    entrar com esse nome, nem com variações como letras maiúsculas ou
+    acentos). Para trocar, clique no seu nome, embaixo à esquerda: as
+    suas mensagens antigas passam a mostrar o nome novo. Para entrar
+    em outro aparelho (ou depois de limpar o navegador), gere um
+    código de acesso nessa mesma janela, ou peça para um admin, e use
+    "Já tenho um nome" na tela de entrada. Cada código vale 15 minutos
+    e uma vez só.
+  - Mensagens antigas: o chat abre com as 100 mais recentes; subindo
+    até o topo (ou clicando em "Carregar mensagens anteriores"), as
+    mais antigas vão aparecendo. O plano grátis do Upstash guarda 256
+    MB, o que dá para centenas de milhares de mensagens de texto.
 
 
 =====================================================================

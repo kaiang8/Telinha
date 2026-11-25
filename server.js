@@ -28,7 +28,6 @@ const UPSTASH_TOKEN = (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim();
 const USA_UPSTASH = !!(UPSTASH_URL && UPSTASH_TOKEN);
 const CHAVE_UPSTASH = process.env.UPSTASH_CHAVE || 'telinha:dados';
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const MAX_MSGS_POR_CANAL = 200;
 const MAX_CANAIS = 40;
 const MAX_BODY = 64 * 1024;
 
@@ -78,6 +77,9 @@ let data = {
   bans: [],
   mutes: [],
   lembretes: [], // aparelhos lembrados como admin (só o resumo da chave, nunca a chave)
+  perfis: {}, // cada pessoa: id -> { nome, cor, criado, visto, chaves: [resumos das chaves dos aparelhos] }
+  nomesAntigos: {}, // nome (normalizado) das mensagens de antes dos perfis -> id do perfil que ficou com ele
+  nomesLegados: [], // nomes (normalizados) que aparecem nas mensagens de antes dos perfis
 };
 let podeSalvar = true;
 
@@ -89,6 +91,9 @@ function aplicarDados(raw) {
   if (Array.isArray(raw.bans)) data.bans = raw.bans;
   if (Array.isArray(raw.mutes)) data.mutes = raw.mutes;
   if (Array.isArray(raw.lembretes)) data.lembretes = raw.lembretes;
+  if (raw.perfis && typeof raw.perfis === 'object' && !Array.isArray(raw.perfis)) data.perfis = raw.perfis;
+  if (raw.nomesAntigos && typeof raw.nomesAntigos === 'object') data.nomesAntigos = raw.nomesAntigos;
+  if (Array.isArray(raw.nomesLegados)) data.nomesLegados = raw.nomesLegados;
 }
 
 async function upstash(comando, { semContar = false } = {}) {
@@ -161,7 +166,325 @@ async function gravar() {
   }
 }
 
-// ---------- Dados guardados à parte (problemas relatados, tráfego) ----------
+// ---------- Registros que duram pelo menos 30 dias ----------
+// Um pedaço por dia, cada um numa chave do Upstash que se apaga sozinha depois de 35 dias: só os
+// dias que mudaram são regravados (normalmente só o de hoje), e não tem limite de quantidade que
+// faça os mais antigos sumirem antes do prazo.
+const DIAS_REGISTROS = 31;
+const diaDe = (t) => new Date(t - 3 * 3600e3).toISOString().slice(0, 10); // dia em Brasília (UTC-3)
+function diario(nome, { maxPorDia = 2000, campo = 't' } = {}) {
+  const prefixo = `${CHAVE_UPSTASH}:dias:${nome}:`;
+  const arquivo = DATA_FILE.replace(/\.json$/i, '') + `-dias-${nome}.json`;
+  const d = { porDia: {}, sujos: new Set(), ok: true, timer: null, gravando: false };
+  const diaDoItem = (x) => diaDe(Number(x?.[campo]) || Date.now());
+  d.limpar = () => {
+    const limite = diaDe(Date.now() - DIAS_REGISTROS * 864e5);
+    for (const k of Object.keys(d.porDia)) if (k < limite) delete d.porDia[k];
+  };
+  d.todos = () => { d.limpar(); return Object.keys(d.porDia).sort().flatMap((k) => d.porDia[k]); };
+  d.marcar = (k) => {
+    d.sujos.add(k);
+    clearTimeout(d.timer);
+    d.timer = setTimeout(d.gravar, 5000);
+  };
+  d.adicionar = (item) => {
+    const k = diaDoItem(item);
+    const l = (d.porDia[k] ||= []);
+    l.push(item);
+    if (l.length > maxPorDia) l.splice(0, l.length - maxPorDia);
+    d.marcar(k);
+    return item;
+  };
+  // o item mudou (e talvez de dia: um erro que voltou a acontecer hoje vai para o dia de hoje)
+  d.mudou = (item, tAntes) => {
+    const novo = diaDoItem(item);
+    const velho = tAntes ? diaDe(tAntes) : novo;
+    if (velho !== novo && d.porDia[velho]) {
+      d.porDia[velho] = d.porDia[velho].filter((x) => x !== item);
+      d.marcar(velho);
+      (d.porDia[novo] ||= []).push(item);
+    }
+    d.marcar(novo);
+  };
+  d.achar = (pred) => {
+    for (const k of Object.keys(d.porDia).sort().reverse()) {
+      const l = d.porDia[k];
+      for (let i = l.length - 1; i >= 0; i--) if (pred(l[i])) return l[i];
+    }
+    return null;
+  };
+  d.remover = (pred) => {
+    for (const [k, l] of Object.entries(d.porDia)) {
+      const n = l.filter((x) => !pred(x));
+      if (n.length !== l.length) { d.porDia[k] = n; d.marcar(k); }
+    }
+  };
+  d.marcarTudo = () => { for (const k of Object.keys(d.porDia)) d.marcar(k); };
+  d.carregar = async () => {
+    const dias = [];
+    for (let i = 0; i <= DIAS_REGISTROS; i++) dias.push(diaDe(Date.now() - i * 864e5));
+    try {
+      if (USA_UPSTASH) {
+        const vals = await upstash(['MGET', ...dias.map((k) => prefixo + k)]);
+        dias.forEach((k, i) => {
+          const arr = vals?.[i] ? JSON.parse(vals[i]) : null;
+          if (Array.isArray(arr)) d.porDia[k] = arr;
+        });
+      } else {
+        const raw = await fs.promises.readFile(arquivo, 'utf8').catch((e) => (e.code === 'ENOENT' ? null : Promise.reject(e)));
+        const o = raw ? JSON.parse(raw) : {};
+        for (const [k, arr] of Object.entries(o)) if (Array.isArray(arr)) d.porDia[k] = arr;
+      }
+      d.limpar();
+    } catch (e) {
+      d.ok = false; // não sobrescreve o que não conseguiu ler
+      console.warn(`  Não consegui ler o registro de ${nome}:`, e.message);
+    }
+  };
+  d.gravar = async () => {
+    d.timer = null;
+    if (!d.ok || !d.sujos.size) return;
+    if (d.gravando) { d.timer = setTimeout(d.gravar, 1000); return; }
+    d.gravando = true;
+    const dias = [...d.sujos];
+    d.sujos.clear();
+    try {
+      d.limpar();
+      if (USA_UPSTASH) {
+        for (const k of dias) {
+          if (d.porDia[k]?.length) await upstash(['SET', prefixo + k, JSON.stringify(d.porDia[k]), 'EX', String((DIAS_REGISTROS + 4) * 86400)]);
+          else await upstash(['DEL', prefixo + k]);
+        }
+      } else {
+        await fs.promises.writeFile(arquivo + '.tmp', JSON.stringify(d.porDia));
+        await fs.promises.rename(arquivo + '.tmp', arquivo);
+      }
+    } catch (e) {
+      for (const k of dias) d.sujos.add(k);
+      console.warn(`Não consegui salvar o registro de ${nome}:`, e.message);
+      d.timer = setTimeout(d.gravar, 15000);
+    } finally {
+      d.gravando = false;
+    }
+  };
+  d.terminar = async () => {
+    clearTimeout(d.timer);
+    while (d.gravando) await new Promise((ok) => setTimeout(ok, 50));
+    await d.gravar();
+  };
+  return d;
+}
+// Antes, cada registro ficava numa chave só, com limite de quantidade. Passa tudo para os dias.
+async function lerGuardadoAntigo(sufixo) {
+  const chave = `${CHAVE_UPSTASH}:${sufixo}`;
+  const arquivo = DATA_FILE.replace(/\.json$/i, '') + `-${sufixo}.json`;
+  const raw = USA_UPSTASH ? await upstash(['GET', chave]) : await fs.promises.readFile(arquivo, 'utf8').catch((e) => (e.code === 'ENOENT' ? null : Promise.reject(e)));
+  return {
+    dados: raw ? JSON.parse(raw) : null,
+    apagar: async () => {
+      if (USA_UPSTASH) await upstash(['DEL', chave]);
+      else await fs.promises.rename(arquivo, arquivo + '.migrado').catch(() => {});
+    },
+  };
+}
+async function migrarParaDias(sufixo, distribuir, diarios) {
+  try {
+    const antigo = await lerGuardadoAntigo(sufixo);
+    if (!antigo.dados) return;
+    if (diarios.some((d) => !d.ok)) return;
+    distribuir(antigo.dados);
+    for (const d of diarios) await d.gravar();
+    if (diarios.every((d) => d.ok && !d.sujos.size)) await antigo.apagar();
+    console.log(`  Registro antigo de ${sufixo} passado para o formato por dia.`);
+  } catch (e) {
+    console.warn(`  Não consegui passar o registro antigo de ${sufixo}:`, e.message);
+  }
+}
+
+// ---------- Mensagens: guardadas para sempre ----------
+// Cada canal é uma lista no Upstash e cada mensagem é gravada uma vez só (antes, todas eram
+// regravadas a cada mensagem nova, e só as 200 últimas de cada canal ficavam). Na memória ficam
+// as mais recentes; as antigas vêm do banco quando alguém sobe o chat.
+const MSG_MEMORIA = 300;
+const MSG_PAGINA = 100;
+const ARQUIVO_MSGS = DATA_FILE.replace(/\.json$/i, '') + '-mensagens.json';
+const chaveMsgs = (ch) => `${CHAVE_UPSTASH}:msgs:${ch}`;
+const MSGS = {
+  recentes: {}, // canal -> as últimas mensagens (cada uma com .pos, a posição dela na lista)
+  total: {}, // canal -> quantas posições a lista tem (as apagadas continuam ocupando a delas)
+  arquivo: {}, // sem Upstash: todas as mensagens de cada canal (arquivo ao lado do data.json)
+  fila: [], // gravações pendentes no Upstash, na ordem
+  rodando: false,
+  ok: true, // se não deu para ler, não grava por cima
+  timerArquivo: null,
+};
+const semPos = ({ pos, ...m }) => m;
+function lerMensagens(itens, ini) {
+  const out = [];
+  (itens || []).forEach((x, i) => {
+    let m = x;
+    if (typeof x === 'string') { try { m = JSON.parse(x); } catch { m = null; } }
+    if (m && m.id && !m.apagada) out.push({ ...m, pos: ini + i });
+  });
+  return out;
+}
+// Mensagens de antes dos perfis não têm dono: acha pelo nome que estava nela
+function msgParaEnviar(m) {
+  if (m.pid) return m;
+  const pid = data.nomesAntigos[nomeNormal(m.name)];
+  return pid ? { ...m, pid } : m;
+}
+async function carregarMensagens() {
+  const legado = data.messages && typeof data.messages === 'object' ? data.messages : {};
+  const legados = new Set(data.nomesLegados || []);
+  for (const l of Object.values(legado)) for (const m of Array.isArray(l) ? l : []) if (m && !m.pid && m.name) legados.add(nomeNormal(m.name));
+  data.nomesLegados = [...legados].slice(0, 3000);
+  for (const c of data.channels) {
+    const velhas = (Array.isArray(legado[c.id]) ? legado[c.id] : []).filter((m) => m && m.id).map(semPos);
+    try {
+      if (USA_UPSTASH) {
+        let total = Number(await upstash(['LLEN', chaveMsgs(c.id)])) || 0;
+        if (!total && velhas.length) total = Number(await upstash(['RPUSH', chaveMsgs(c.id), ...velhas.map((m) => JSON.stringify(m))])) || 0;
+        let ini = Math.max(0, total - MSG_MEMORIA);
+        let rec = total ? lerMensagens(await upstash(['LRANGE', chaveMsgs(c.id), String(ini), String(total - 1)]), ini) : [];
+        // na troca de versão, o servidor antigo ainda gravou umas mensagens no formato velho: junta as que faltam
+        const ids = new Set(rec.map((m) => m.id));
+        const desde = rec.length ? rec[0].ts : 0;
+        const faltando = rec.length ? velhas.filter((m) => !ids.has(m.id) && m.ts > desde) : [];
+        if (faltando.length) {
+          total = Number(await upstash(['RPUSH', chaveMsgs(c.id), ...faltando.map((m) => JSON.stringify(m))])) || total;
+          ini = Math.max(0, total - MSG_MEMORIA);
+          rec = lerMensagens(await upstash(['LRANGE', chaveMsgs(c.id), String(ini), String(total - 1)]), ini);
+        }
+        MSGS.total[c.id] = total;
+        MSGS.recentes[c.id] = rec;
+      } else {
+        if (!MSGS.lidoArquivo) {
+          MSGS.lidoArquivo = true;
+          const raw = await fs.promises.readFile(ARQUIVO_MSGS, 'utf8').catch((e) => (e.code === 'ENOENT' ? null : Promise.reject(e)));
+          MSGS.arquivo = raw ? JSON.parse(raw) : {};
+        }
+        if (!MSGS.arquivo[c.id]?.length && velhas.length) { MSGS.arquivo[c.id] = velhas; salvarArquivoDeMensagens(); }
+        const lista = MSGS.arquivo[c.id] || [];
+        const ini = Math.max(0, lista.length - MSG_MEMORIA);
+        MSGS.total[c.id] = lista.length;
+        MSGS.recentes[c.id] = lerMensagens(lista.slice(ini), ini);
+      }
+    } catch (e) {
+      MSGS.ok = false;
+      console.warn(`  ATENÇÃO: não consegui ler as mensagens de ${c.name}:`, e.message);
+      MSGS.recentes[c.id] = lerMensagens(velhas.slice(-MSG_MEMORIA), 0);
+      MSGS.total[c.id] = 0;
+    }
+  }
+  // as mensagens já estão no lugar novo: tira do bloco de dados (que é regravado a cada mudança)
+  if (MSGS.ok && Object.keys(legado).length && podeSalvar) {
+    data.messages = {};
+    salvar();
+    console.log('  Mensagens passadas para o armazenamento permanente.');
+  }
+}
+function salvarArquivoDeMensagens() {
+  clearTimeout(MSGS.timerArquivo);
+  MSGS.timerArquivo = setTimeout(gravarArquivoDeMensagens, 2000);
+}
+async function gravarArquivoDeMensagens() {
+  MSGS.timerArquivo = null;
+  if (!MSGS.ok) return;
+  try {
+    await fs.promises.writeFile(ARQUIVO_MSGS + '.tmp', JSON.stringify(MSGS.arquivo));
+    await fs.promises.rename(ARQUIVO_MSGS + '.tmp', ARQUIVO_MSGS);
+  } catch (e) {
+    console.warn('Não consegui salvar as mensagens:', e.message);
+    MSGS.timerArquivo = setTimeout(gravarArquivoDeMensagens, 10000);
+  }
+}
+function filaDeMensagens(op) {
+  if (!MSGS.ok) return; // não conseguiu ler: não grava por cima do que está lá
+  MSGS.fila.push(op);
+  rodarFilaDeMensagens();
+}
+async function rodarFilaDeMensagens() {
+  if (MSGS.rodando) return;
+  MSGS.rodando = true;
+  try {
+    while (MSGS.fila.length) {
+      const op = MSGS.fila[0];
+      try {
+        if (op.tipo === 'push') {
+          const n = Number(await upstash(['RPUSH', chaveMsgs(op.ch), JSON.stringify(semPos(op.m))]));
+          if (n > 0) op.m.pos = n - 1; // a posição de verdade (se outro servidor gravou junto, corrige)
+        } else if (op.tipo === 'trocar') {
+          await upstash(['LSET', chaveMsgs(op.ch), String(op.alvo.pos), JSON.stringify(op.lapide)]);
+        } else if (op.tipo === 'del') {
+          await upstash(['DEL', chaveMsgs(op.ch)]);
+        }
+        MSGS.fila.shift();
+      } catch (e) {
+        if (/index out of range|no such key/i.test(e.message)) { MSGS.fila.shift(); continue; } // a lista mudou: não insiste
+        console.warn('Não consegui gravar mensagem (tento de novo em 5 s):', e.message);
+        if (desligando) break;
+        await new Promise((ok) => setTimeout(ok, 5000));
+      }
+    }
+  } finally {
+    MSGS.rodando = false;
+  }
+}
+function guardarMensagem(m) {
+  const pos = MSGS.total[m.ch] || 0;
+  MSGS.total[m.ch] = pos + 1;
+  const salva = { ...m, pos };
+  const rec = (MSGS.recentes[m.ch] ||= []);
+  rec.push(salva);
+  if (rec.length > MSG_MEMORIA) rec.splice(0, rec.length - MSG_MEMORIA);
+  if (USA_UPSTASH) filaDeMensagens({ tipo: 'push', ch: m.ch, m: salva });
+  else { (MSGS.arquivo[m.ch] ||= []).push(semPos(m)); salvarArquivoDeMensagens(); }
+  return salva;
+}
+// Apaga uma mensagem: some da memória, e no banco vira uma "lápide" (a posição continua ocupada,
+// para as outras não mudarem de lugar). Mensagens mais antigas que as da memória vêm pela posição.
+async function apagarMensagemGuardada(ch, id, pos, pode) {
+  const rec = MSGS.recentes[ch] || [];
+  let m = rec.find((x) => x.id === id);
+  if (!m) {
+    if (!Number.isInteger(pos) || pos < 0 || pos >= (MSGS.total[ch] || 0)) return { status: 404 };
+    if (USA_UPSTASH) {
+      const bruto = await upstash(['LINDEX', chaveMsgs(ch), String(pos)]);
+      try { m = bruto ? { ...JSON.parse(bruto), pos } : null; } catch { m = null; }
+    } else {
+      const x = MSGS.arquivo[ch]?.[pos];
+      m = x ? { ...x, pos } : null;
+    }
+    if (!m || m.id !== id || m.apagada) return { status: 404 };
+  }
+  if (!pode(m)) return { status: 403 };
+  const i = rec.indexOf(m);
+  if (i >= 0) rec.splice(i, 1);
+  const lapide = { id, ch, apagada: true, ts: m.ts };
+  if (USA_UPSTASH) filaDeMensagens({ tipo: 'trocar', ch, alvo: m, lapide });
+  else if (MSGS.arquivo[ch]) { MSGS.arquivo[ch][m.pos] = lapide; salvarArquivoDeMensagens(); }
+  return { ok: true };
+}
+function esvaziarCanal(ch, sumir = false) {
+  MSGS.recentes[ch] = [];
+  MSGS.total[ch] = 0;
+  if (USA_UPSTASH) filaDeMensagens({ tipo: 'del', ch });
+  else { MSGS.arquivo[ch] = []; salvarArquivoDeMensagens(); }
+  if (sumir) { delete MSGS.recentes[ch]; delete MSGS.total[ch]; delete MSGS.arquivo[ch]; }
+}
+async function mensagensAntigas(ch, antes) {
+  const ini = Math.max(0, antes - MSG_PAGINA);
+  const rec = MSGS.recentes[ch] || [];
+  // o pedaço ainda está na memória: não precisa ir ao banco
+  if (rec.length && ini >= rec[0].pos) return { lista: rec.filter((m) => m.pos >= ini && m.pos < antes), mais: ini > 0, desde: ini };
+  const itens = USA_UPSTASH
+    ? await upstash(['LRANGE', chaveMsgs(ch), String(ini), String(antes - 1)])
+    : (MSGS.arquivo[ch] || []).slice(ini, antes);
+  return { lista: lerMensagens(itens, ini), mais: ini > 0, desde: ini };
+}
+
+// ---------- Dados guardados à parte (tráfego) ----------
 // Cada um fica numa chave própria do Upstash (ou num arquivo ao lado do data.json), para não
 // pesar a cada mensagem salva.
 function guardadoSeparado(sufixo, padrao, { semContar = false } = {}) {
@@ -259,14 +582,19 @@ function trafegoParaAdmin() {
 }
 
 // ---------- Problemas relatados e erros da página (só admins veem) ----------
-const PROBLEMAS = guardadoSeparado('problemas', () => ({ relatos: [], erros: [], qualidade: [] }));
-const DIAS_PROBLEMAS = 30;
-function limparProblemasVelhos() {
-  const limite = Date.now() - DIAS_PROBLEMAS * 864e5;
-  const d = PROBLEMAS.dados;
-  d.relatos = (Array.isArray(d.relatos) ? d.relatos : []).filter((x) => x.t >= limite).slice(-100);
-  d.erros = (Array.isArray(d.erros) ? d.erros : []).filter((x) => x.ultima >= limite).slice(-150);
-  d.qualidade = (Array.isArray(d.qualidade) ? d.qualidade : []).filter((x) => x.t >= limite).slice(-80);
+// Cada um num registro por dia, por pelo menos 30 dias (veja "diario")
+const RELATOS = diario('relatos', { maxPorDia: 300 });
+const ERROS = diario('erros', { maxPorDia: 500, campo: 'ultima' }); // erro que volta a acontecer vai para o dia de hoje
+const QUALIDADE = diario('qualidade', { maxPorDia: 1000 });
+async function carregarProblemas() {
+  await Promise.all([RELATOS.carregar(), ERROS.carregar(), QUALIDADE.carregar()]);
+  await migrarParaDias('problemas', (d) => {
+    const ids = new Set(RELATOS.todos().map((x) => x.id));
+    for (const x of Array.isArray(d?.relatos) ? d.relatos : []) if (x && x.t && !ids.has(x.id)) RELATOS.adicionar(x);
+    for (const x of Array.isArray(d?.erros) ? d.erros : []) if (x && x.ultima && !ERROS.achar((y) => y.msg === x.msg && y.onde === x.onde)) ERROS.adicionar(x);
+    const qs = new Set(QUALIDADE.todos().map((x) => `${x.t}|${x.nome}|${x.papel}`));
+    for (const x of Array.isArray(d?.qualidade) ? d.qualidade : []) if (x && x.t && !qs.has(`${x.t}|${x.nome}|${x.papel}`)) QUALIDADE.adicionar(x);
+  }, [RELATOS, ERROS, QUALIDADE]);
 }
 function avisarAdmins(texto) {
   for (const x of users.values()) if (x.admin && x.joined && !x.kicked) enviar(x, { type: 'avisoAdmin', texto });
@@ -279,18 +607,9 @@ function limiteDe(u, campo, max, janela) {
 }
 
 // ---------- Registro de conexões (só admins veem) ----------
-// Quem entrou, de qual IP e com qual navegador, e as tentativas recusadas. Fica separado dos
-// outros dados (não pesa a cada mensagem salva) e guarda só o necessário: no máximo 500
-// entradas, por até 30 dias.
-const REGISTRO_MAX = 500;
-const REGISTRO_DIAS = 30;
-const CHAVE_REGISTRO = `${CHAVE_UPSTASH}:conexoes`;
-const ARQUIVO_REGISTRO = DATA_FILE.replace(/\.json$/i, '') + '-conexoes.json';
-let registro = [];
-let registroOk = true; // se não deu para ler o registro guardado, não sobrescreve
-let registroTimer = null;
-let registroSujo = false;
-let gravandoRegistro = false;
+// Quem entrou, de qual IP e com qual navegador, e as tentativas recusadas. Fica num pedaço por
+// dia (veja "diario"), por pelo menos 30 dias, sem limite de quantidade.
+const CONEXOES = diario('conexoes', { maxPorDia: 3000 });
 const sessoesAtivas = new Map(); // id da entrada -> quantas conexões abertas
 
 function aparelhoDe(req) {
@@ -311,28 +630,19 @@ function aparelhoDe(req) {
   return sistema ? `${app} no ${sistema}` : app;
 }
 
-function limparRegistroVelho() {
-  const limite = Date.now() - REGISTRO_DIAS * 864e5;
-  if (registro.length && registro[0].t < limite) registro = registro.filter((x) => x.t >= limite);
-}
 function anotar(entrada) {
-  limparRegistroVelho();
-  const e = { id: crypto.randomBytes(5).toString('hex'), t: Date.now(), ...entrada };
-  registro.push(e);
-  if (registro.length > REGISTRO_MAX) registro.splice(0, registro.length - REGISTRO_MAX);
-  salvarRegistro();
-  return e;
+  return CONEXOES.adicionar({ id: crypto.randomBytes(5).toString('hex'), t: Date.now(), ...entrada });
 }
 // Entrou: recarregar a página ou cair e voltar em seguida conta como a mesma visita
 function registrarEntrada(u, req) {
   const aparelho = aparelhoDe(req);
   const agora = Date.now();
-  const e = registro.findLast((x) => x.tipo === 'entrou' && x.ip === u.ip && x.nome === u.name && x.aparelho === aparelho);
+  const e = CONEXOES.achar((x) => x.tipo === 'entrou' && x.ip === u.ip && x.nome === u.name && x.aparelho === aparelho);
   if (e && (sessoesAtivas.get(e.id) > 0 || agora - (e.fim || 0) < 3 * 60e3)) {
     delete e.fim;
     delete e.saida;
     e.admin = e.admin || u.admin;
-    salvarRegistro();
+    CONEXOES.mudou(e);
     u.registro = e;
   } else {
     u.registro = anotar({ tipo: 'entrou', nome: u.name, ip: u.ip, aparelho, admin: u.admin });
@@ -348,63 +658,28 @@ function registrarSaida(u) {
   sessoesAtivas.delete(e.id);
   e.fim = Date.now();
   if (u.kicked) e.saida = u.kicked.banned ? 'banido' : 'expulso';
-  salvarRegistro();
+  CONEXOES.mudou(e);
 }
 // Recusado (senha errada, banido...): a mesma tentativa repetida vira uma linha só
 function registrarRecusa(req, ip, nome, motivo) {
   const agora = Date.now();
-  const e = registro.findLast((x) => x.tipo === 'recusado' && x.ip === ip && x.motivo === motivo);
+  const e = CONEXOES.achar((x) => x.tipo === 'recusado' && x.ip === ip && x.motivo === motivo);
   if (e && agora - (e.ultima || e.t) < 10 * 60e3) {
     e.vezes = (e.vezes || 1) + 1;
     e.ultima = agora;
     if (nome && nome !== e.nome && !e.nomes?.includes(nome) && (e.nomes || []).length < 5) e.nomes = [...(e.nomes || []), nome];
-    return salvarRegistro();
+    return CONEXOES.mudou(e);
   }
   anotar({ tipo: 'recusado', motivo, nome: nome || '?', ip, aparelho: aparelhoDe(req) });
 }
-
-function salvarRegistro() {
-  registroSujo = true;
-  clearTimeout(registroTimer);
-  registroTimer = setTimeout(gravarRegistro, 5000);
-}
-async function gravarRegistro() {
-  if (!registroOk || !registroSujo) return;
-  if (gravandoRegistro) { registroTimer = setTimeout(gravarRegistro, 1000); return; }
-  gravandoRegistro = true;
-  registroSujo = false;
-  limparRegistroVelho();
-  const conteudo = JSON.stringify(registro);
-  try {
-    if (USA_UPSTASH) {
-      await upstash(['SET', CHAVE_REGISTRO, conteudo]);
-    } else {
-      const tmp = ARQUIVO_REGISTRO + '.tmp';
-      await fs.promises.writeFile(tmp, conteudo);
-      await fs.promises.rename(tmp, ARQUIVO_REGISTRO);
-    }
-  } catch (e) {
-    registroSujo = true;
-    console.warn('Não consegui salvar o registro de conexões:', e.message);
-    registroTimer = setTimeout(gravarRegistro, 15000);
-  } finally {
-    gravandoRegistro = false;
-  }
-}
 async function carregarRegistro() {
-  try {
-    const raw = USA_UPSTASH
-      ? await upstash(['GET', CHAVE_REGISTRO])
-      : await fs.promises.readFile(ARQUIVO_REGISTRO, 'utf8').catch((e) => (e.code === 'ENOENT' ? null : Promise.reject(e)));
-    const lista = raw ? JSON.parse(raw) : [];
-    registro = (Array.isArray(lista) ? lista : []).filter((x) => x && typeof x.t === 'number' && typeof x.ip === 'string').slice(-REGISTRO_MAX);
-    // quem estava conectado quando o servidor desligou
-    for (const x of registro) if (x.tipo === 'entrou' && !x.fim) { x.fim = x.ultimaVista || x.t; x.saida = 'reinicio'; }
-    limparRegistroVelho();
-  } catch (e) {
-    registroOk = false;
-    console.warn('  Não consegui ler o registro de conexões:', e.message);
-  }
+  await CONEXOES.carregar();
+  await migrarParaDias('conexoes', (lista) => {
+    const tem = new Set(CONEXOES.todos().map((x) => x.id));
+    for (const x of Array.isArray(lista) ? lista : []) if (x && typeof x.t === 'number' && !tem.has(x.id)) CONEXOES.adicionar(x);
+  }, [CONEXOES]);
+  // quem estava conectado quando o servidor desligou
+  for (const x of CONEXOES.todos()) if (x.tipo === 'entrou' && !x.fim) { x.fim = x.ultimaVista || x.t; x.saida = 'reinicio'; CONEXOES.mudou(x); }
 }
 
 // ---------- Configurações do servidor ----------
@@ -501,6 +776,7 @@ function publicUser(u) {
     id: u.id, name: u.name, color: u.color, sala: u.sala, live: u.live, admin: !!u.admin,
     mudo: !!u.mudo, surdo: !!u.surdo, silenciado: silencioDe(u) > Date.now(),
     ...(u.efeitos ? { efeitos: true } : {}),
+    ...(u.pid ? { pid: u.pid } : {}),
     ...(u.live && u.caneta ? { caneta: u.caneta } : {}),
   };
 }
@@ -574,7 +850,12 @@ function configPublica() {
 }
 function enviarInit(u) {
   const historico = {};
-  for (const c of data.channels) historico[c.id] = (data.messages[c.id] || []).slice(-100);
+  const antigas = {};
+  for (const c of data.channels) {
+    const ult = (MSGS.recentes[c.id] || []).slice(-MSG_PAGINA);
+    historico[c.id] = ult.map(msgParaEnviar);
+    antigas[c.id] = ult.length ? ult[0].pos : (MSGS.total[c.id] || 0); // de onde começam as mais antigas (0: não tem)
+  }
   enviar(u, {
     type: 'init',
     me: publicUser(u),
@@ -582,6 +863,8 @@ function enviarInit(u) {
     ...configPublica(),
     channels: data.channels,
     messages: historico,
+    antigas,
+    perfis: perfisPublicos(),
     users: listaUsuarios(),
     iceServers,
   });
@@ -619,13 +902,63 @@ function ipCompartilhado(alvo) {
   // Se outra pessoa online usa o mesmo IP (mesma casa, mesmo proxy...), não dá para punir pelo IP.
   return [...users.values()].some((x) => x !== alvo && x.joined && !x.kicked && x.ip === alvo.ip);
 }
-function banDe(ip, device) {
-  return data.bans.find((b) => (b.ip && b.ip === ip) || (b.device && device && b.device === device));
+function banDe(ip, device, pid) {
+  return data.bans.find((b) => (b.ip && b.ip === ip) || (b.device && device && b.device === device) || (b.pid && pid && b.pid === pid));
 }
 function silencioDe(u) {
   const agora = Date.now();
-  const m = data.mutes.find((x) => x.until > agora && ((x.ip && x.ip === u.ip) || (x.device && u.device && x.device === u.device)));
+  const m = data.mutes.find((x) => x.until > agora && ((x.ip && x.ip === u.ip) || (x.device && u.device && x.device === u.device) || (x.pid && u.pid && x.pid === u.pid)));
   return m ? m.until : 0;
+}
+
+// ---------- Perfis: cada pessoa entra sempre com o mesmo nome ----------
+// O aparelho guarda uma chave (o servidor só guarda o resumo dela). Com ela, a pessoa entra
+// sempre com o nome que escolheu; dá para trocar de nome lá dentro, e as mensagens antigas
+// passam a mostrar o nome novo. Para usar outro aparelho, gera um código de acesso.
+const MAX_PERFIS = 500;
+const resumoDe = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
+const nomeNormal = (n) => String(n || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
+function donoDoNome(nome) {
+  const k = nomeNormal(nome);
+  for (const [id, p] of Object.entries(data.perfis)) if (nomeNormal(p.nome) === k) return id;
+  return null;
+}
+function perfisPublicos() {
+  const o = {};
+  for (const [id, p] of Object.entries(data.perfis)) o[id] = { nome: p.nome, cor: p.cor };
+  return o;
+}
+const CODIGOS = new Map(); // código -> { pid, ate }
+const LETRAS_CODIGO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem 0/O e 1/I, que confundem
+const codigoNormal = (c) => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+function novoCodigo(pid) {
+  const agora = Date.now();
+  for (const [c, x] of CODIGOS) if (x.pid === pid || x.ate < agora) CODIGOS.delete(c);
+  let c = '';
+  for (const b of crypto.randomBytes(8)) c += LETRAS_CODIGO[b % LETRAS_CODIGO.length];
+  const ate = agora + 15 * 60e3;
+  CODIGOS.set(c, { pid, ate });
+  return { codigo: `${c.slice(0, 4)}-${c.slice(4)}`, ate };
+}
+function mudarPerfil(pid, { nome, cor }, por = '') {
+  const p = data.perfis[pid];
+  if (!p) return { status: 404, erro: 'Perfil não encontrado' };
+  const antes = p.nome;
+  let mudou = false;
+  if (nome !== undefined) {
+    const n = limparNome(nome, 32);
+    if (!n) return { status: 400, erro: 'Escolha um nome' };
+    const dono = donoDoNome(n);
+    if (dono && dono !== pid) return { status: 409, erro: `O nome "${data.perfis[dono].nome}" já é de outra pessoa.` };
+    if (n !== p.nome) { p.nome = n; mudou = true; }
+  }
+  if (cor !== undefined && /^#[0-9a-f]{6}$/i.test(cor) && cor !== p.cor) { p.cor = cor; mudou = true; }
+  if (!mudou) return { ok: true };
+  for (const x of users.values()) if (x.pid === pid) { x.name = p.nome; x.color = p.cor; }
+  salvar();
+  broadcast({ type: 'perfil', id: pid, nome: p.nome, cor: p.cor, antes, ...(por ? { por } : {}) });
+  broadcastPresenca();
+  return { ok: true };
 }
 function limparSilenciosVencidos() {
   const agora = Date.now();
@@ -648,7 +981,7 @@ function visaoAdmin() {
   return {
     users: [...users.values()].filter((u) => u.joined && !u.kicked).map((u) => ({ ...publicUser(u), ip: u.ip, muted: silencioDe(u) })),
     bans: data.bans,
-    problemasNovos: PROBLEMAS.dados.relatos.filter((r) => !r.lido).length,
+    problemasNovos: RELATOS.todos().filter((r) => !r.lido).length,
     aparelhos: (limparLembretes(), data.lembretes.map((r) => ({ id: r.id, nome: r.nome, aparelho: r.aparelho, criado: r.criado, usado: r.usado }))),
     trafego: trafegoParaAdmin(),
     settings: {
@@ -936,41 +1269,63 @@ async function acaoAdmin(u, body, res, req) {
       return json(res, 200, { ok: true });
 
     case 'problemas':
-      limparProblemasVelhos();
       return json(res, 200, {
-        dias: DIAS_PROBLEMAS,
-        relatos: PROBLEMAS.dados.relatos.slice().reverse(),
-        erros: PROBLEMAS.dados.erros.slice().sort((a, b) => b.ultima - a.ultima),
-        qualidade: PROBLEMAS.dados.qualidade.slice().reverse(),
+        dias: DIAS_REGISTROS - 1,
+        relatos: RELATOS.todos().slice().reverse(),
+        erros: ERROS.todos().slice().sort((a, b) => b.ultima - a.ultima),
+        qualidade: QUALIDADE.todos().slice().reverse(),
       });
 
     case 'ler-problemas':
-      for (const r of PROBLEMAS.dados.relatos) r.lido = true;
-      PROBLEMAS.salvar();
+      for (const r of RELATOS.todos()) if (!r.lido) { r.lido = true; RELATOS.mudou(r); }
       return json(res, 200, { ok: true });
 
     case 'apagar-relato':
-      PROBLEMAS.dados.relatos = PROBLEMAS.dados.relatos.filter((r) => r.id !== String(body.id));
-      PROBLEMAS.salvar();
+      RELATOS.remover((r) => r.id === String(body.id));
       return json(res, 200, { ok: true });
 
     case 'limpar-erros':
-      PROBLEMAS.dados.erros = [];
-      PROBLEMAS.salvar();
+      ERROS.remover(() => true);
       return json(res, 200, { ok: true });
 
     case 'conexoes':
-      limparRegistroVelho();
       return json(res, 200, {
-        dias: REGISTRO_DIAS,
-        max: REGISTRO_MAX,
-        registro: registro.slice().reverse().map((x) => ({ ...x, online: sessoesAtivas.get(x.id) > 0 })),
+        dias: DIAS_REGISTROS - 1,
+        registro: CONEXOES.todos().slice().reverse().map((x) => ({ ...x, online: sessoesAtivas.get(x.id) > 0 })),
       });
 
     case 'limpar-conexoes':
-      registro = registro.filter((x) => sessoesAtivas.get(x.id) > 0); // quem está online continua
-      salvarRegistro();
+      CONEXOES.remover((x) => !(sessoesAtivas.get(x.id) > 0)); // quem está online continua
       return json(res, 200, { ok: true });
+
+    // ----- nomes registrados (perfis) -----
+    case 'perfis':
+      return json(res, 200, {
+        perfis: Object.entries(data.perfis).map(([id, p]) => ({
+          id, nome: p.nome, cor: p.cor, criado: p.criado, visto: p.visto, aparelhos: p.chaves.length,
+          online: [...users.values()].some((x) => x.pid === id && x.joined && !x.kicked),
+        })).sort((a, b) => (b.visto || 0) - (a.visto || 0)),
+      });
+
+    case 'perfil-renomear': {
+      const r = mudarPerfil(String(body.pid), { nome: body.nome }, u.name);
+      if (r.erro) return json(res, r.status, { error: r.erro });
+      for (const x of users.values()) if (x.pid === String(body.pid) && x !== u) enviar(x, { type: 'renamed', name: data.perfis[x.pid].nome, by: u.name });
+      return json(res, 200, { ok: true });
+    }
+
+    case 'perfil-codigo':
+      if (!data.perfis[String(body.pid)]) return json(res, 404, { error: 'Perfil não encontrado' });
+      return json(res, 200, novoCodigo(String(body.pid)));
+
+    case 'perfil-esquecer-aparelhos': {
+      const p = data.perfis[String(body.pid)];
+      if (!p) return json(res, 404, { error: 'Perfil não encontrado' });
+      p.chaves = [];
+      p.aparelhos = [];
+      salvar();
+      return json(res, 200, { ok: true });
+    }
 
     case 'kick':
       if (!precisaAlvo()) return;
@@ -988,6 +1343,7 @@ async function acaoAdmin(u, body, res, req) {
         name: alvo.name,
         ip: soAparelho ? null : alvo.ip,
         device: alvo.device || null,
+        pid: alvo.pid || null,
         reason: motivo,
         by: u.name,
         ts: Date.now(),
@@ -1011,8 +1367,8 @@ async function acaoAdmin(u, body, res, req) {
       if (alvo === u) return json(res, 400, { error: 'Você não pode silenciar a si mesmo' });
       const minutos = Number(body.minutes);
       const until = minutos > 0 ? Date.now() + Math.min(minutos, 60 * 24 * 365) * 60e3 : Date.now() + 10 * 365 * 864e5;
-      data.mutes = data.mutes.filter((m) => !((m.device && m.device === alvo.device) || (m.ip && m.ip === alvo.ip)));
-      data.mutes.push({ ip: ipCompartilhado(alvo) ? null : alvo.ip, device: alvo.device || null, name: alvo.name, until });
+      data.mutes = data.mutes.filter((m) => !((m.device && m.device === alvo.device) || (m.ip && m.ip === alvo.ip) || (m.pid && m.pid === alvo.pid)));
+      data.mutes.push({ ip: ipCompartilhado(alvo) ? null : alvo.ip, device: alvo.device || null, pid: alvo.pid || null, name: alvo.name, until });
       salvar();
       enviar(alvo, { type: 'muted', until, by: u.name });
       broadcastPresenca(); // os outros param de ouvir a voz de quem foi silenciado
@@ -1051,6 +1407,12 @@ async function acaoAdmin(u, body, res, req) {
       if (!precisaAlvo()) return;
       const nome = limparNome(body.name, 32);
       if (!nome) return json(res, 400, { error: 'Nome inválido' });
+      if (alvo.pid) {
+        const r = mudarPerfil(alvo.pid, { nome }, u.name);
+        if (r.erro) return json(res, r.status, { error: r.erro });
+        for (const x of users.values()) if (x.pid === alvo.pid) enviar(x, { type: 'renamed', name: nome, by: u.name });
+        return json(res, 200, { ok: true });
+      }
       alvo.name = nome;
       enviar(alvo, { type: 'renamed', name: nome, by: u.name });
       broadcastPresenca();
@@ -1060,8 +1422,7 @@ async function acaoAdmin(u, body, res, req) {
     case 'clear': {
       const c = canal(body.channel);
       if (!c) return json(res, 404, { error: 'Canal não existe' });
-      data.messages[c.id] = [];
-      salvar();
+      esvaziarCanal(c.id);
       broadcast({ type: 'clear', channel: c.id, by: u.name });
       return json(res, 200, { ok: true });
     }
@@ -1258,9 +1619,68 @@ async function api(req, res, url) {
         return json(res, 423, { error: 'O servidor está trancado agora. Peça para um admin destrancar.' });
       }
     }
-    const name = limparNome(body.name, 32);
-    if (!name) return json(res, 400, { error: 'Escolha um apelido' });
-    const color = /^#[0-9a-f]{6}$/i.test(body.color) ? body.color : CORES[Math.floor(Math.random() * CORES.length)];
+    // Perfil: o aparelho guarda uma chave; com ela, a pessoa entra sempre com o mesmo nome
+    let pid = null;
+    let chaveNova = null;
+    let chaveUsada = null;
+    const pedido = body.perfil && typeof body.perfil === 'object' ? body.perfil : null;
+    if (pedido && typeof pedido.id === 'string' && typeof pedido.chave === 'string') {
+      const p = data.perfis[pedido.id];
+      if (!p || !p.chaves.includes(resumoDe(pedido.chave))) {
+        registrarRecusa(req, ip, limparNome(body.name, 32), 'aparelho esquecido');
+        return json(res, 403, { error: 'Este aparelho não está mais ligado ao seu nome. Use um código de acesso (peça para um admin, ou gere num aparelho seu que ainda entra) ou escolha um nome novo.', campo: 'perfil' });
+      }
+      pid = pedido.id;
+      chaveUsada = resumoDe(pedido.chave);
+    } else if (body.codigo) {
+      const k = codigoNormal(body.codigo);
+      const c = CODIGOS.get(k);
+      if (!c || c.ate < Date.now() || !data.perfis[c.pid]) {
+        falhou(ip);
+        registrarRecusa(req, ip, '', 'código de acesso errado');
+        return json(res, 403, { error: 'Código errado ou vencido. Gere outro (cada código vale 15 minutos).', campo: 'codigo' });
+      }
+      CODIGOS.delete(k);
+      pid = c.pid;
+      chaveNova = crypto.randomBytes(24).toString('hex');
+    } else {
+      const nome = limparNome(body.name, 32);
+      if (!nome) return json(res, 400, { error: 'Escolha um apelido' });
+      const dono = donoDoNome(nome);
+      // o mesmo aparelho que criou o nome (página de antes desta versão, que não guardava a chave)
+      if (dono && device && data.perfis[dono].aparelhos?.includes(device)) {
+        pid = dono;
+        chaveNova = crypto.randomBytes(24).toString('hex');
+      } else if (dono) {
+        registrarRecusa(req, ip, nome, 'nome de outra pessoa');
+        return json(res, 409, { error: `O nome "${data.perfis[dono].nome}" já é de outra pessoa. Se é você entrando de outro aparelho, clique em "Já tenho um nome" e use um código de acesso.`, campo: 'nome' });
+      } else if (Object.keys(data.perfis).length >= MAX_PERFIS) {
+        return json(res, 507, { error: 'O servidor chegou ao limite de nomes. Peça para um admin.' });
+      } else {
+        pid = crypto.randomBytes(6).toString('hex');
+        chaveNova = crypto.randomBytes(24).toString('hex');
+        data.perfis[pid] = { nome, cor: CORES[Math.floor(Math.random() * CORES.length)], criado: Date.now(), visto: 0, chaves: [], aparelhos: [] };
+        // quem escolhe um nome que já aparecia nas mensagens de antes fica com elas
+        const k = nomeNormal(nome);
+        if (data.nomesLegados.includes(k) && !data.nomesAntigos[k]) data.nomesAntigos[k] = pid;
+      }
+    }
+    const perfil = data.perfis[pid];
+    if (!admin && banDe(null, null, pid)) {
+      registrarRecusa(req, ip, perfil.nome, 'banido');
+      return json(res, 403, { error: 'Você foi banido deste servidor.', banned: true });
+    }
+    if (chaveNova) {
+      chaveUsada = resumoDe(chaveNova);
+      perfil.chaves = [...perfil.chaves, chaveUsada].slice(-10);
+    }
+    if (device && !(perfil.aparelhos ||= []).includes(device)) perfil.aparelhos = [...perfil.aparelhos, device].slice(-10);
+    let mudouCor = false;
+    if (/^#[0-9a-f]{6}$/i.test(body.color) && body.color !== perfil.cor) { perfil.cor = body.color; mudouCor = true; }
+    perfil.visto = Date.now();
+    salvar();
+    const name = perfil.nome;
+    const color = perfil.cor;
     const u = {
       id: crypto.randomBytes(6).toString('hex'),
       token: crypto.randomBytes(24).toString('hex'),
@@ -1268,6 +1688,8 @@ async function api(req, res, url) {
       color,
       ip,
       device,
+      pid,
+      chave: chaveUsada,
       admin,
       kicked: null,
       sala: null,
@@ -1292,8 +1714,10 @@ async function api(req, res, url) {
       lembreteUsado.aparelho = aparelhoDe(req);
       salvar();
     }
+    if (mudouCor) broadcast({ type: 'perfil', id: pid, nome: perfil.nome, cor: perfil.cor, antes: perfil.nome });
     return json(res, 200, {
       id: u.id, token: u.token, admin,
+      perfil: { id: pid, nome: perfil.nome, cor: perfil.cor, ...(chaveNova ? { chave: chaveNova } : {}) },
       ...(lembrar ? { lembrete: criarLembrete(u, req) } : {}),
       ...(lembreteUsado ? { lembreteId: lembreteUsado.id } : {}),
     });
@@ -1316,32 +1740,74 @@ async function api(req, res, url) {
       if (!c || !text) return json(res, 400, { error: 'mensagem inválida' });
       const ate = silencioDe(u);
       if (ate) return json(res, 403, { error: 'Você está silenciado por um admin', muted: ate });
-      const m = {
+      const m = guardarMensagem({
         id: crypto.randomBytes(8).toString('hex'),
         ch: c.id,
         uid: u.id,
+        ...(u.pid ? { pid: u.pid } : {}),
         name: u.name,
         color: u.color,
         admin: !!u.admin,
         text,
         ts: Date.now(),
-      };
-      const lista = (data.messages[c.id] ||= []);
-      lista.push(m);
-      if (lista.length > MAX_MSGS_POR_CANAL) lista.splice(0, lista.length - MAX_MSGS_POR_CANAL);
-      salvar();
+      });
       broadcast({ type: 'msg', msg: m });
       return json(res, 200, { ok: true });
     }
 
+    case 'historico': {
+      // mensagens mais antigas que as que a página já tem (quando a pessoa sobe o chat)
+      const c = canal(body.channel);
+      const antes = Number(body.antes);
+      if (!c || !Number.isInteger(antes) || antes <= 0) return json(res, 400, { error: 'pedido inválido' });
+      if (limiteDe(u, 'limHist', 30, 10e3)) return json(res, 429, { error: 'Calma, carregando…' });
+      try {
+        const r = await mensagensAntigas(c.id, antes);
+        return json(res, 200, { mensagens: r.lista.map(msgParaEnviar), mais: r.mais, desde: r.desde });
+      } catch (e) {
+        return json(res, 503, { error: 'Não consegui buscar as mensagens antigas agora. Tente de novo.' });
+      }
+    }
+
+    case 'perfil': {
+      // trocar o próprio nome ou a cor: as mensagens antigas passam a mostrar o novo
+      if (!u.pid) return json(res, 400, { error: 'Entre de novo para ter um nome guardado' });
+      if (limiteDe(u, 'limPerfil', 6, 60e3)) return json(res, 429, { error: 'Muitas mudanças seguidas. Espere um minuto.' });
+      const r = mudarPerfil(u.pid, { nome: body.nome, cor: body.cor });
+      if (r.erro) return json(res, r.status, { error: r.erro });
+      const p = data.perfis[u.pid];
+      return json(res, 200, { ok: true, nome: p.nome, cor: p.cor });
+    }
+
+    case 'perfil-codigo':
+      // código para entrar com o mesmo nome em outro aparelho
+      if (!u.pid || !data.perfis[u.pid]) return json(res, 400, { error: 'Entre de novo para ter um nome guardado' });
+      if (limiteDe(u, 'limCodigo', 5, 10 * 60e3)) return json(res, 429, { error: 'Muitos códigos seguidos. Espere uns minutos.' });
+      return json(res, 200, novoCodigo(u.pid));
+
+    case 'perfil-esquecer': {
+      // este aparelho deixa de entrar com este nome
+      const p = data.perfis[u.pid];
+      if (p) {
+        p.chaves = p.chaves.filter((c) => c !== u.chave);
+        p.aparelhos = (p.aparelhos || []).filter((d) => d !== u.device);
+        salvar();
+      }
+      return json(res, 200, { ok: true });
+    }
+
     case 'msg-delete': {
-      const lista = data.messages[body.channel] || [];
-      const i = lista.findIndex((m) => m.id === body.id);
-      if (i < 0) return json(res, 404, { error: 'Mensagem não encontrada' });
-      if (lista[i].uid !== u.id && !u.admin) return json(res, 403, { error: 'Você só pode apagar as suas mensagens' });
-      lista.splice(i, 1);
-      salvar();
-      broadcast({ type: 'msg-delete', channel: body.channel, id: body.id });
+      const c = canal(body.channel);
+      const id = String(body.id || '');
+      if (!c || !id) return json(res, 404, { error: 'Mensagem não encontrada' });
+      // a própria (pelo perfil, ou pela sessão nas mensagens de antes dos perfis) ou admin
+      const pode = (m) => u.admin || (u.pid && msgParaEnviar(m).pid === u.pid) || m.uid === u.id;
+      let r;
+      try { r = await apagarMensagemGuardada(c.id, id, Number(body.pos), pode); } catch { r = { status: 503 }; }
+      if (r.status === 404) return json(res, 404, { error: 'Mensagem não encontrada' });
+      if (r.status === 403) return json(res, 403, { error: 'Você só pode apagar as suas mensagens' });
+      if (!r.ok) return json(res, 503, { error: 'Não consegui apagar agora. Tente de novo.' });
+      broadcast({ type: 'msg-delete', channel: c.id, id });
       return json(res, 200, { ok: true });
     }
 
@@ -1374,20 +1840,16 @@ async function api(req, res, url) {
       if (!msg) return json(res, 400, { error: 'erro vazio' });
       const onde = textoLimpo(body.onde, 200);
       const versao = textoLimpo(body.versao, 30);
-      limparProblemasVelhos();
-      const lista = PROBLEMAS.dados.erros;
-      let e = lista.find((x) => x.msg === msg && x.onde === onde);
-      if (!e) {
-        e = { msg, onde, vezes: 0, primeira: Date.now(), ultima: 0, quem: [], aparelhos: [], versoes: [] };
-        lista.push(e);
-      }
+      let e = ERROS.achar((x) => x.msg === msg && x.onde === onde);
+      const antes = e?.ultima;
+      if (!e) e = ERROS.adicionar({ msg, onde, vezes: 0, primeira: Date.now(), ultima: Date.now(), quem: [], aparelhos: [], versoes: [] });
       e.vezes++;
       e.ultima = Date.now();
       const juntar = (arr, v) => { if (v && !arr.includes(v) && arr.length < 6) arr.push(v); };
       juntar(e.quem, u.name);
       juntar(e.aparelhos, aparelhoDe(req));
       juntar(e.versoes, versao);
-      PROBLEMAS.salvar(10000);
+      ERROS.mudou(e, antes);
       return json(res, 200, { ok: true });
     }
 
@@ -1415,9 +1877,7 @@ async function api(req, res, url) {
       } else {
         Object.assign(r, { de: textoLimpo(body.de, 32), perdaPct: num(body.perdaPct, 100), travadas: num(body.travadas, 100000) });
       }
-      limparProblemasVelhos();
-      PROBLEMAS.dados.qualidade.push(r);
-      PROBLEMAS.salvar(10000);
+      QUALIDADE.adicionar(r);
       return json(res, 200, { ok: true });
     }
 
@@ -1430,11 +1890,9 @@ async function api(req, res, url) {
         const j = JSON.stringify(body.info);
         info = j.length <= 12000 ? JSON.parse(j) : { aviso: 'informações grandes demais, cortadas' };
       }
-      limparProblemasVelhos();
-      PROBLEMAS.dados.relatos.push({
+      RELATOS.adicionar({
         id: crypto.randomBytes(5).toString('hex'), t: Date.now(), nome: u.name, ip: u.ip, aparelho: aparelhoDe(req), texto, info, lido: false,
       });
-      PROBLEMAS.salvar(2000);
       avisarAdmins(`${u.name} relatou um problema. Veja no Painel de admin, em Problemas.`);
       return json(res, 200, { ok: true });
     }
@@ -1551,7 +2009,7 @@ async function api(req, res, url) {
         return json(res, 400, { error: c.type === 'sala' ? 'Precisa sobrar pelo menos uma sala' : 'Precisa sobrar pelo menos um canal de texto' });
       }
       data.channels = data.channels.filter((x) => x.id !== c.id);
-      delete data.messages[c.id];
+      esvaziarCanal(c.id, true);
       salvar();
       for (const x of users.values()) if (x.sala === c.id) { x.sala = null; x.live = false; }
       broadcast({ type: 'channels', channels: data.channels });
@@ -1650,9 +2108,10 @@ async function iniciar() {
     console.warn('  Envie esses arquivos para o GitHub, senão o site não abre.\n');
   }
   await carregarDados();
+  await carregarMensagens();
   await carregarRegistro();
   await TRAFEGO.carregar();
-  await PROBLEMAS.carregar();
+  await carregarProblemas();
   garantirSenhaAdmin();
   server.listen(PORT, () => {
     console.log(`\n  ${nomeServidor()} rodando em http://localhost:${PORT}`);
@@ -1674,14 +2133,20 @@ async function desligar() {
   clearTimeout(saveTimer);
   // Garante que a última alteração foi salva (no máximo 5 s)
   const espera = new Promise((ok) => setTimeout(ok, 5000));
-  clearTimeout(registroTimer);
   // quem está online sai do registro com a hora de agora
   for (const u of users.values()) registrarSaida(u);
   await Promise.race([Promise.all([
     (async () => { while (salvando) await new Promise((ok) => setTimeout(ok, 50)); await gravar(); })(),
-    (async () => { while (gravandoRegistro) await new Promise((ok) => setTimeout(ok, 50)); clearTimeout(registroTimer); await gravarRegistro(); })(),
+    CONEXOES.terminar(),
+    RELATOS.terminar(),
+    ERROS.terminar(),
+    QUALIDADE.terminar(),
     TRAFEGO.terminar(),
-    PROBLEMAS.terminar(),
+    // mensagens que ainda não foram para o banco
+    (async () => {
+      if (MSGS.timerArquivo) { clearTimeout(MSGS.timerArquivo); await gravarArquivoDeMensagens(); }
+      while (MSGS.fila.length && MSGS.ok) { rodarFilaDeMensagens(); await new Promise((ok) => setTimeout(ok, 50)); }
+    })(),
   ]), espera]);
   process.exit(0);
 }

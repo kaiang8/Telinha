@@ -197,6 +197,8 @@
     } catch { /* ok */ }
     if (aviso) $('#loginError').textContent = aviso;
     $('#nameInput').value = salvo.name || '';
+    travarNome();
+    $('#codigoToggle').addEventListener('click', () => mostrarCodigo($('#codigoField').hidden));
     $('#adminToggle').addEventListener('click', () => {
       $('#adminField').hidden = !$('#adminField').hidden;
       $('#adminToggle').textContent = $('#adminField').hidden ? 'Sou admin' : 'Entrar sem ser admin';
@@ -222,7 +224,8 @@
 
     $('#loginForm').addEventListener('submit', (e) => {
       e.preventDefault();
-      entrar($('#nameInput').value.trim(), S.myColor, $('#passInput').value, false, $('#adminInput').value);
+      const codigo = $('#codigoField').hidden ? '' : $('#codigoInput').value.trim();
+      entrar($('#nameInput').value.trim(), S.myColor, $('#passInput').value, false, $('#adminInput').value, codigo);
     });
   }
 
@@ -236,6 +239,28 @@
     renderColorPicker();
   });
 
+  // Perfil: a chave que faz este aparelho entrar sempre com o mesmo nome (o servidor só guarda o resumo)
+  function perfilSalvo() {
+    const p = lerSalvo().perfil;
+    return p && typeof p.id === 'string' && typeof p.chave === 'string' ? p : null;
+  }
+  function travarNome() {
+    const p = perfilSalvo();
+    const comCodigo = !$('#codigoField').hidden;
+    $('#nameInput').readOnly = !!p;
+    $('#nameInput').required = !comCodigo;
+    $('#nomeField').hidden = comCodigo;
+    $('#nomeDica').hidden = !p || comCodigo;
+    $('#nomeDica').textContent = 'Este é o seu nome neste servidor. Para trocar, entre e clique nele, embaixo à esquerda.';
+    $('#codigoToggle').hidden = !!p && !comCodigo;
+    $('#codigoToggle').textContent = comCodigo ? 'Entrar com o apelido' : 'Já tenho um nome (entrar com código)';
+  }
+  function mostrarCodigo(sim) {
+    $('#codigoField').hidden = !sim;
+    travarNome();
+    if (sim) $('#codigoInput').focus();
+  }
+
   // Aparelho lembrado como admin: a chave fica só aqui; o servidor guarda apenas o resumo dela
   function lembreteAdmin() {
     const l = lerSalvo().lembreteAdmin;
@@ -248,8 +273,8 @@
     if (l && S.token) api('esquecer-lembrete', { token: l.token }).catch(() => {});
   }
   let tentativasDeEntrada = 0;
-  async function entrar(name, color, password, auto, adminPassword = '') {
-    if (!name) return;
+  async function entrar(name, color, password, auto, adminPassword = '', codigo = '') {
+    if (!name && !codigo) return;
     const btn = $('#loginBtn');
     btn.disabled = true;
     $('#loginError').textContent = '';
@@ -259,7 +284,10 @@
       const r = await fetch('/api/join', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, color, password, adminPassword, lembrete: lembrete?.token, device: salvo.device }),
+        body: JSON.stringify({
+          name, color, password, adminPassword, lembrete: lembrete?.token, device: salvo.device,
+          ...(codigo ? { codigo } : { perfil: perfilSalvo() || undefined }),
+        }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -267,6 +295,13 @@
         err.status = r.status;
         err.campo = j.campo;
         throw err;
+      }
+      // o nome e a cor vêm do perfil (é sempre o mesmo nome)
+      if (j.perfil?.id) {
+        if (j.perfil.chave) salvar({ perfil: { id: j.perfil.id, chave: j.perfil.chave } });
+        S.myPid = j.perfil.id;
+        name = j.perfil.nome;
+        color = j.perfil.cor;
       }
       S.token = j.token;
       S.myId = j.id;
@@ -291,7 +326,14 @@
         setTimeout(() => entrar(name, color, password, true, adminPassword), 3000);
         return;
       }
-      if (e.campo === 'admin' || e.campo === 'lembrete') {
+      if (e.campo === 'perfil') {
+        // o aparelho foi esquecido: volta a escolher nome (ou a usar um código)
+        salvar({ perfil: null });
+        travarNome();
+        if (auto && !entrar.semPerfil) { entrar.semPerfil = true; return entrar(name, color, password, true, adminPassword); }
+      } else if (e.campo === 'nome' || e.campo === 'codigo') {
+        mostrarCodigo(true);
+      } else if (e.campo === 'admin' || e.campo === 'lembrete') {
         salvar({ adminPassword: '', ...(e.campo === 'lembrete' ? { lembreteAdmin: null } : {}) });
         $('#adminField').hidden = false;
         $('#adminToggle').textContent = 'Entrar sem ser admin';
@@ -378,12 +420,26 @@
         body: JSON.stringify({
           name: S.myName, color: S.myColor, password: S.password, adminPassword: S.adminPassword,
           lembrete: !S.adminPassword && S.isAdmin ? lembreteAdmin()?.token : undefined, device: salvo.device,
+          perfil: perfilSalvo() || undefined,
         }),
       });
       if (S.kicked) return;
+      if (r.status === 409) {
+        // o nome é de outra pessoa e este aparelho não é mais reconhecido: volta para a entrada
+        const j = await r.json().catch(() => ({}));
+        try { sessionStorage.setItem('telinha-aviso', j.error || 'Entre de novo.'); sessionStorage.setItem('telinha-sem-auto', '1'); } catch { /* ok */ }
+        S.saindoDeVez = true;
+        location.reload();
+        return;
+      }
       if (r.status === 403) {
         const j = await r.json().catch(() => ({}));
         if (j.banned) return foiExpulso({ banned: true, reason: '' });
+        if (j.campo === 'perfil') {
+          salvar({ perfil: null });
+          S.rejoinTimer = null;
+          return reentrar(); // tenta pelo nome (o mesmo aparelho continua reconhecido)
+        }
         if (j.campo === 'admin' || j.campo === 'lembrete') {
           S.adminPassword = '';
           S.isAdmin = false;
@@ -405,6 +461,10 @@
       for (const id of [...S.out.keys()]) fecharOut(id);
       S.token = j.token;
       S.myId = j.id;
+      if (j.perfil?.id) {
+        if (j.perfil.chave) salvar({ perfil: { id: j.perfil.id, chave: j.perfil.chave } });
+        S.myPid = j.perfil.id;
+      }
       conectar();
     } catch {
       S.rejoinTimer = setTimeout(reentrar, 3000);
@@ -416,6 +476,7 @@
       case 'init': return onInit(m);
       case 'presence': return onPresence(m.users);
       case 'msg': return onMsg(m.msg);
+      case 'perfil': return onPerfil(m);
       case 'typing': return onTyping(m);
       case 'channels': return onChannels(m.channels);
       case 'signal': return onSignal(m.from, m.data);
@@ -448,6 +509,9 @@
     S.serverName = m.serverName;
     S.channels = m.channels;
     S.messages = m.messages || {};
+    S.antigas = m.antigas || {}; // canal -> posição de onde começam as mais antigas (0: não tem)
+    S.perfis = m.perfis || {};
+    if (m.me?.pid) S.myPid = m.me.pid;
     S.iceServers = m.iceServers || [];
     S.users = m.users;
     if (S.sala && !chan(S.sala)) sairDaSalaLocal('sala-apagada');
@@ -562,7 +626,7 @@
     if (lista.some((x) => x.id === msg.id)) return;
     const prev = lista[lista.length - 1];
     lista.push(msg);
-    if (lista.length > 200) lista.shift();
+    if (lista.length > 3000) { lista.shift(); S.antigas[msg.ch] = lista[0].pos || 0; }
 
     const tm = S.typing.get(msg.ch);
     if (tm) tm.delete(msg.uid);
@@ -649,34 +713,45 @@
     return `${d.toLocaleDateString('pt-BR')} ${hhmm(d)}`;
   }
 
+  // Nome e cor de quem mandou: os atuais do perfil (trocou de nome, as mensagens antigas acompanham)
+  function autorDe(m) {
+    const p = m.pid && S.perfis?.[m.pid];
+    return p ? { name: p.nome, color: p.cor } : { name: m.name, color: m.color };
+  }
+  const mesmoAutor = (a, b) => (a.pid && b.pid ? a.pid === b.pid : a.uid === b.uid);
   function msgHtml(m, prev) {
     const d = new Date(m.ts);
+    const autor = autorDe(m);
     let h = '';
     if (!prev || !mesmoDia(prev.ts, m.ts)) {
       h += `<div class="day-sep"><span>${d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}</span></div>`;
     }
-    const agrupada = prev && prev.uid === m.uid && m.ts - prev.ts < 5 * 60e3 && mesmoDia(prev.ts, m.ts);
+    const agrupada = prev && mesmoAutor(prev, m) && m.ts - prev.ts < 5 * 60e3 && mesmoDia(prev.ts, m.ts);
     const cls = mencionaMe(m.text) ? ' mention' : '';
-    const podeApagar = m.uid === S.myId || S.isAdmin;
+    const podeApagar = (m.pid && m.pid === S.myPid) || m.uid === S.myId || S.isAdmin;
     const acoes = podeApagar ? `<div class="m-actions"><button class="icon-btn small" data-delmsg="${esc(m.id)}" title="Apagar mensagem (Shift+clique apaga sem perguntar)">${icon('trash')}</button></div>` : '';
     const attrs = `data-id="${esc(m.id)}"`;
     if (agrupada) {
       return h + `<div class="msg${cls}" ${attrs}><span class="m-stamp">${hhmm(d)}</span><div class="m-text">${formatar(m.text)}</div>${acoes}</div>`;
     }
-    return h + `<div class="msg head${cls}" ${attrs}>${avatar(m)}<div class="m-head"><span class="m-name" style="color:${esc(m.color)}">${esc(m.name)}</span>${coroa(m)}<span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span></div><div class="m-text">${formatar(m.text)}</div>${acoes}</div>`;
+    return h + `<div class="msg head${cls}" ${attrs}>${avatar(autor)}<div class="m-head"><span class="m-name" style="color:${esc(autor.color)}">${esc(autor.name)}</span>${coroa(m)}<span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span></div><div class="m-text">${formatar(m.text)}</div>${acoes}</div>`;
   }
 
-  function renderMensagens() {
+  function renderMensagens(manterScroll = false) {
     const c = chan(S.view);
     if (!c) return;
     const lista = S.messages[c.id] || [];
     const sala = c.type === 'sala';
-    let h = `<div class="welcome"><div class="wicon">${icon(sala ? 'screen' : 'hash')}</div>
+    // as mensagens ficam guardadas para sempre: as mais antigas vêm quando sobe o chat
+    let h = S.antigas?.[c.id] > 0
+      ? `<div class="antigas"><button type="button" class="btn sm ghost" data-antigas>${S.carregandoAntigas ? 'Carregando…' : 'Carregar mensagens anteriores'}</button></div>`
+      : `<div class="welcome"><div class="wicon">${icon(sala ? 'screen' : 'hash')}</div>
       <h2>${sala ? 'Chat da ' + esc(c.name) : 'Bem-vindo(a) a #' + esc(c.name) + '!'}</h2>
       <p>${sala ? 'Converse aqui enquanto assistem juntos.' : `Este é o começo do canal #${esc(c.name)}.`}</p></div>`;
     lista.forEach((m, i) => { h += msgHtml(m, lista[i - 1]); });
     const box = $('#messages');
     box.innerHTML = h;
+    if (manterScroll) return;
     box.scrollTop = box.scrollHeight;
     S.stick = true;
     atualizarComposer();
@@ -704,7 +779,33 @@
   $('#messages').addEventListener('scroll', (e) => {
     const b = e.target;
     S.stick = b.scrollHeight - b.scrollTop - b.clientHeight < 150;
+    if (b.scrollTop < 60 && S.antigas?.[S.view] > 0) carregarAntigas(S.view); // chegou no topo: busca as anteriores
   });
+  async function carregarAntigas(ch) {
+    if (S.carregandoAntigas || !(S.antigas[ch] > 0)) return;
+    S.carregandoAntigas = true;
+    const botao = $('#messages [data-antigas]');
+    if (botao) botao.textContent = 'Carregando…';
+    try {
+      const r = await api('historico', { channel: ch, antes: S.antigas[ch] });
+      const lista = S.messages[ch] || [];
+      const tem = new Set(lista.map((m) => m.id));
+      S.messages[ch] = [...r.mensagens.filter((m) => !tem.has(m.id)), ...lista];
+      S.antigas[ch] = r.mais ? r.desde : 0;
+      if (ch === S.view) {
+        // continua vendo a mesma mensagem que estava no topo
+        const box = $('#messages');
+        const antes = box.scrollHeight - box.scrollTop;
+        renderMensagens(true);
+        box.scrollTop = box.scrollHeight - antes;
+      }
+    } catch (e) {
+      if (botao) botao.textContent = 'Carregar mensagens anteriores';
+      toast(e.message);
+    } finally {
+      setTimeout(() => { S.carregandoAntigas = false; }, 300);
+    }
+  }
   // Imagens carregando depois empurram o chat: mantém colado no fim
   $('#messages').addEventListener('load', (e) => {
     if (e.target.tagName === 'IMG' && S.stick) $('#messages').scrollTop = $('#messages').scrollHeight;
@@ -712,6 +813,7 @@
   $('#messages').addEventListener('click', (e) => {
     const del = e.target.closest('[data-delmsg]');
     if (del) return apagarMensagem(del.dataset.delmsg, e.shiftKey);
+    if (e.target.closest('[data-antigas]')) return carregarAntigas(S.view);
     const img = e.target.closest('img.embed');
     if (!img) return;
     const v = document.createElement('div');
@@ -3858,7 +3960,8 @@
       <div class="ap-section"><h4>Relatos</h4>${relatos || '<p>Nenhum relato. 🎉</p>'}</div>
       <div class="ap-section"><h4>Qualidade das transmissões</h4>
         <p>Um resumo de cada transmissão, de quem mandou e de quem assistiu: a resolução de verdade e o que limitou a imagem.</p>
-        ${(r.qualidade || []).slice(0, 40).map(linhaDeQualidade).join('') || '<p>Nenhuma transmissão registrada ainda (aparecem as que duram mais de 20 segundos).</p>'}</div>
+        ${(r.qualidade || []).slice(0, P.limiteQual || 40).map(linhaDeQualidade).join('') || '<p>Nenhuma transmissão registrada ainda (aparecem as que duram mais de 20 segundos).</p>'}
+        ${(r.qualidade || []).length > (P.limiteQual || 40) ? `<button class="btn sm ghost ap-mais" data-act="mais-qualidade">Mostrar mais (${r.qualidade.length - (P.limiteQual || 40)} mais antigas)</button>` : ''}</div>
       <div class="ap-section"><h4>Erros da página ${r.erros.length ? `<button class="btn sm ghost" data-act="limpar-erros">Limpar</button>` : ''}</h4>
         ${erros || '<p>Nenhum erro registrado.</p>'}</div>`;
   }
@@ -4682,11 +4785,12 @@
         titulo: 'Sair do servidor',
         ok: 'Sair',
         perigo: true,
-        corpo: `<p>Quer sair? Da próxima vez você vai precisar digitar o apelido de novo.${lembreteAdmin() ? ' Este aparelho também deixa de ser lembrado como admin.' : ''}</p>`,
+        corpo: `<p>Quer sair? O seu nome continua guardado neste aparelho: da próxima vez, é só clicar em Entrar.${lembreteAdmin() ? ' Este aparelho deixa de ser lembrado como admin.' : ''}</p>`,
         aoConfirmar: async () => {
           const l = lembreteAdmin();
           if (l) await api('esquecer-lembrete', { token: l.token }).catch(() => {});
-          salvar({ name: '', password: '', adminPassword: '', lembreteAdmin: null });
+          salvar({ password: '', adminPassword: '', lembreteAdmin: null });
+          try { sessionStorage.setItem('telinha-sem-auto', '1'); } catch { /* ok */ }
           S.saindoDeVez = true;
           sairDaPagina();
           location.reload();
@@ -4720,6 +4824,7 @@
 
   function onClear(m) {
     S.messages[m.channel] = [];
+    if (S.antigas) S.antigas[m.channel] = 0;
     if (m.channel === S.view) renderMensagens();
     toast(`${m.by} limpou as mensagens de ${nomeCanal(m.channel)}.`);
   }
@@ -4807,6 +4912,70 @@
     rerenderMantendoScroll();
   }
 
+  function onPerfil(m) {
+    if (typeof m.id !== 'string' || typeof m.nome !== 'string') return;
+    (S.perfis ||= {})[m.id] = { nome: m.nome, cor: m.cor };
+    // o volume da voz e dos sons de cada pessoa fica guardado pelo nome: acompanha a troca
+    if (m.antes && m.antes !== m.nome) {
+      for (const [obj, chave] of [[VOLUMES_VOZ, 'volVoz'], [VOLUMES_EFEITOS, 'volEfeitos']]) {
+        if (obj[m.antes] && !obj[m.nome]) { obj[m.nome] = obj[m.antes]; delete obj[m.antes]; salvar({ [chave]: obj }); }
+      }
+    }
+    if (m.id === S.myPid) {
+      S.myName = m.nome;
+      S.myColor = m.cor;
+      salvar({ name: m.nome, color: m.cor });
+    }
+    rerenderMantendoScroll();
+    renderTudo();
+  }
+
+  // ----- Seu nome: trocar o nome e a cor, e entrar em outro aparelho -----
+  function abrirPerfil() {
+    if (!S.myPid) return toast('Entre de novo para ter um nome guardado.');
+    abrirModal({
+      titulo: 'Seu nome',
+      ok: 'Salvar',
+      corpo: `<label class="field"><span>Apelido</span><input type="text" name="nome" maxlength="32" required value="${esc(S.myName)}" autocomplete="off"></label>
+        <p class="muted small">É o nome que todo mundo vê. Trocando, as suas mensagens antigas passam a mostrar o nome novo.</p>
+        <div class="field"><span>Sua cor</span><div class="color-picker pf-cores">${CORES.map((c) => `<label class="pf-cor"><input type="radio" name="cor" value="${c}"${c === S.myColor ? ' checked' : ''}><span style="background:${c}" aria-label="Cor ${c}"></span></label>`).join('')}</div></div>
+        <div class="pf-secao"><b>Entrar em outro aparelho</b>
+          <p class="muted small">Gere um código e, no outro aparelho, clique em "Já tenho um nome" na tela de entrada. O código vale 15 minutos.</p>
+          <button type="button" class="btn sm" id="pfCodigo">Gerar código</button><div class="pf-codigo" id="pfCodigoVer" hidden></div></div>
+        <div class="pf-secao"><button type="button" class="link-btn perigo" id="pfEsquecer">Esquecer este aparelho</button>
+          <p class="muted small">Ele deixa de entrar com o seu nome. Para voltar, só com um código.</p></div>`,
+      aoConfirmar: async (fd) => {
+        const r = await api('perfil', { nome: fd.get('nome'), cor: fd.get('cor') || undefined });
+        toast(r.nome !== S.myName ? `Pronto: agora você é "${r.nome}".` : 'Salvo.');
+      },
+    });
+    $('#pfCodigo').onclick = async () => {
+      try {
+        const r = await api('perfil-codigo');
+        const ver = $('#pfCodigoVer');
+        ver.hidden = false;
+        ver.innerHTML = `<span class="pf-codigo-txt">${esc(r.codigo)}</span><span class="muted small">vale até ${hhmm(new Date(r.ate))}</span>`;
+      } catch (e) { toast(e.message); }
+    };
+    $('#pfEsquecer').onclick = () => {
+      abrirModal({
+        titulo: 'Esquecer este aparelho',
+        ok: 'Esquecer e sair',
+        perigo: true,
+        corpo: `<p>Este aparelho deixa de entrar como <b>${esc(S.myName)}</b> e você sai agora. Para voltar com o mesmo nome, vai precisar de um código de acesso (gerado num aparelho seu ou por um admin).</p>`,
+        aoConfirmar: async () => {
+          await api('perfil-esquecer').catch(() => {});
+          salvar({ perfil: null, name: '', password: '', adminPassword: '' });
+          S.saindoDeVez = true;
+          sairDaPagina();
+          location.reload();
+        },
+      });
+    };
+  }
+  $('#meInfo')?.addEventListener('click', abrirPerfil);
+  $('#meInfo')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirPerfil(); } });
+
   function onRenamed(m) {
     S.myName = m.name;
     salvar({ name: m.name });
@@ -4818,13 +4987,13 @@
   function apagarMensagem(id, direto) {
     const m = (S.messages[S.view] || []).find((x) => x.id === id);
     if (!m) return;
-    const apagar = () => api('msg-delete', { channel: S.view, id });
+    const apagar = () => api('msg-delete', { channel: S.view, id, pos: m.pos });
     if (direto) return apagar().catch((e) => toast(e.message));
     abrirModal({
       titulo: 'Apagar mensagem',
       ok: 'Apagar',
       perigo: true,
-      corpo: `<p>Apagar esta mensagem de <b>${esc(m.name)}</b>? Ela some para todo mundo.</p><div class="msg-preview">${formatar(m.text)}</div>`,
+      corpo: `<p>Apagar esta mensagem de <b>${esc(autorDe(m).name)}</b>? Ela some para todo mundo.</p><div class="msg-preview">${formatar(m.text)}</div>`,
       aoConfirmar: apagar,
     });
   }
@@ -5051,6 +5220,7 @@
     const d = P.dados;
     const abas = [
       ['pessoas', 'Pessoas', d ? d.users.length : ''],
+      ['nomes', 'Nomes', ''],
       ['conexoes', 'Conexões', ''],
       ['problemas', 'Problemas', d?.problemasNovos ? d.problemasNovos : ''],
       ['banidos', 'Banidos', d ? d.bans.length : ''],
@@ -5058,7 +5228,7 @@
       ['comandos', 'Comandos', ''],
     ];
     let corpo = '<div class="ap-empty">Carregando…</div>';
-    if (d) corpo = { pessoas: abaPessoas, conexoes: abaConexoes, problemas: abaProblemas, banidos: abaBanidos, servidor: abaServidor, comandos: abaComandos }[P.aba](d);
+    if (d) corpo = { pessoas: abaPessoas, nomes: abaNomes, conexoes: abaConexoes, problemas: abaProblemas, banidos: abaBanidos, servidor: abaServidor, comandos: abaComandos }[P.aba](d);
     // preserva o que estava sendo digitado
     const digitando = {};
     $('#adminPanel').querySelectorAll('input[id], select[id]').forEach((el) => { digitando[el.id] = el.value; });
@@ -5083,6 +5253,38 @@
       const el = $(`#adminPanel .ap-user[data-uid="${CSS.escape(P.foco)}"]`);
       if (el) el.scrollIntoView({ block: 'nearest' });
     }
+  }
+
+  // Nomes registrados: cada pessoa entra sempre com o mesmo nome (o aparelho guarda uma chave)
+  function abaNomes() {
+    const r = P.perfis;
+    if (!r) {
+      if (!P.carregandoPerfis) {
+        P.carregandoPerfis = true;
+        adm('perfis').then((x) => { P.perfis = x; }).catch((e) => toast(e.message)).finally(() => { P.carregandoPerfis = false; renderPainel(); });
+      }
+      return '<div class="ap-empty">Carregando…</div>';
+    }
+    const linhas = r.perfis.map((p) => {
+      let form = '';
+      if (P.form?.pid === p.id && P.form.tipo === 'renomear') {
+        form = `<div class="ap-form"><input id="apNomePerfil" data-keep maxlength="32" value="${esc(p.nome)}" placeholder="Novo nome">
+          <button class="btn sm primary" data-act="perfil-renomear">Salvar</button><button class="btn sm ghost" data-act="cancelar">Cancelar</button></div>`;
+      } else if (P.form?.pid === p.id && P.form.tipo === 'codigo') {
+        form = `<div class="ap-form"><span>Código de acesso para <b>${esc(p.nome)}</b>: <b class="pf-codigo-txt">${esc(P.form.codigo)}</b> (vale até ${hhmm(new Date(P.form.ate))}). Na tela de entrada, a pessoa clica em "Já tenho um nome".</span>
+          <button class="btn sm ghost" data-act="cancelar">Fechar</button></div>`;
+      }
+      return `<div class="ap-user" data-pid="${esc(p.id)}">
+        <div class="ap-u-main">${avatar({ name: p.nome, color: p.cor })}<div><div class="ap-name"><span style="color:${esc(p.cor)}">${esc(p.nome)}</span>${p.online ? '<span class="ap-tag verde">online</span>' : ''}${p.id === S.myPid ? '<span class="muted small">(você)</span>' : ''}</div>
+          <div class="muted small">desde ${esc(quandoCurto(p.criado))} · visto ${esc(quandoCurto(p.visto || p.criado))} · ${p.aparelhos ? `${p.aparelhos} ${p.aparelhos > 1 ? 'aparelhos' : 'aparelho'}` : 'nenhum aparelho (só entra com código)'}</div></div></div>
+        <div class="ap-actions">
+          <button class="btn sm" data-act="form-perfil" data-form="renomear">Renomear</button>
+          <button class="btn sm" data-act="perfil-codigo">Código de acesso</button>
+          ${p.aparelhos ? '<button class="btn sm warn" data-act="perfil-esquecer">Esquecer aparelhos</button>' : ''}
+        </div>${form}</div>`;
+    }).join('');
+    return `<p class="ap-hint">Cada pessoa entra sempre com o mesmo nome: o aparelho dela fica ligado ao nome. Quem trocar de aparelho ou limpar o navegador entra de novo com um <b>código de acesso</b> (ela mesma gera num aparelho que ainda entra, ou você gera aqui). Renomear muda o nome em todas as mensagens antigas também.</p>
+      ${linhas || '<div class="ap-empty">Ninguém entrou ainda.</div>'}`;
   }
 
   function abaPessoas(d) {
@@ -5204,7 +5406,8 @@
     const lista = r.registro.filter((x) => !f || x.ip.toLowerCase().includes(f) || x.nome.toLowerCase().includes(f)
       || (x.nomes || []).some((n) => n.toLowerCase().includes(f)) || x.aparelho.toLowerCase().includes(f));
     const SAIDA = { expulso: 'expulso', banido: 'banido', reinicio: 'o servidor reiniciou' };
-    const linhas = lista.map((x) => {
+    const mostrar = P.limiteCon || 300;
+    const linhas = lista.slice(0, mostrar).map((x) => {
       const recusa = x.tipo === 'recusado';
       let estado;
       if (recusa) estado = `<span class="ap-tag orange">recusado: ${esc(x.motivo)}${x.vezes > 1 ? ` (${x.vezes} vezes)` : ''}</span>`;
@@ -5222,10 +5425,11 @@
       </div>`;
     }).join('');
     return `<p class="ap-hint">Quem entrou no servidor, de qual IP e aparelho, e as tentativas recusadas. Só admins veem.
-        Fica guardado por ${r.dias} dias (no máximo ${r.max} entradas). Recarregar a página ou cair e voltar logo em seguida conta como a mesma visita.</p>
+        Fica guardado por ${r.dias} dias. Recarregar a página ou cair e voltar logo em seguida conta como a mesma visita.</p>
       <div class="ap-row ap-con-barra"><input id="apFiltroCon" data-keep maxlength="60" placeholder="Procurar por nome, IP ou aparelho" value="${esc(P.filtroCon)}" autocomplete="off">
         <button class="btn sm" data-act="limpar-conexoes"${r.registro.length ? '' : ' disabled'}>Limpar registro</button></div>
-      ${linhas || `<div class="ap-empty">${f ? 'Nada encontrado.' : 'Ninguém entrou ainda.'}</div>`}`;
+      ${linhas || `<div class="ap-empty">${f ? 'Nada encontrado.' : 'Ninguém entrou ainda.'}</div>`}
+      ${lista.length > mostrar ? `<button class="btn sm ghost ap-mais" data-act="mais-conexoes">Mostrar mais (${lista.length - mostrar} mais antigas)</button>` : ''}`;
   }
 
   // Aparelhos lembrados como admin (não precisam digitar a senha)
@@ -5260,6 +5464,7 @@
       P.aba = tab.dataset.tab;
       P.form = null;
       if (P.aba === 'conexoes' && P.conexoes) carregarPainel(); // atualiza sem piscar a lista
+      if (P.aba === 'nomes') P.perfis = null; // busca de novo
       if (P.aba === 'problemas') carregarProblemas();
       return renderPainel();
     }
@@ -5275,6 +5480,30 @@
         case 'fechar': return fecharPainelAdmin();
         case 'form': P.form = { uid, tipo: b.dataset.form }; P.foco = uid; renderPainel(); document.querySelector('#apMotivo, #apRename, #apMuteMin')?.focus(); return;
         case 'cancelar': P.form = null; return renderPainel();
+        case 'form-perfil': P.form = { pid: b.closest('[data-pid]').dataset.pid, tipo: b.dataset.form }; renderPainel(); document.querySelector('#apNomePerfil')?.focus(); return;
+        case 'perfil-renomear': {
+          const pid = b.closest('[data-pid]').dataset.pid;
+          await adm('perfil-renomear', { pid, nome: val('apNomePerfil') });
+          P.form = null;
+          P.perfis = await adm('perfis');
+          toast('Nome trocado (as mensagens antigas também).');
+          return renderPainel();
+        }
+        case 'perfil-codigo': {
+          const pid = b.closest('[data-pid]').dataset.pid;
+          const r = await adm('perfil-codigo', { pid });
+          P.form = { pid, tipo: 'codigo', codigo: r.codigo, ate: r.ate };
+          return renderPainel();
+        }
+        case 'perfil-esquecer': {
+          const pid = b.closest('[data-pid]').dataset.pid;
+          const nome = P.perfis?.perfis.find((x) => x.id === pid)?.nome || 'a pessoa';
+          return abrirModal({
+            titulo: 'Esquecer aparelhos', ok: 'Esquecer', perigo: true,
+            corpo: `<p>Os aparelhos de <b>${esc(nome)}</b> deixam de entrar com esse nome. Quem estiver online continua até sair; para voltar, vai precisar de um código de acesso.</p>`,
+            aoConfirmar: async () => { await adm('perfil-esquecer-aparelhos', { pid }); P.perfis = await adm('perfis'); renderPainel(); toast('Aparelhos esquecidos.'); },
+          });
+        }
         case 'mute': {
           const min = Number(val('apMuteMin'));
           await adm('mute', { uid, minutes: min });
@@ -5309,6 +5538,8 @@
           await adm('limpar-erros');
           toast('Erros apagados.');
           return carregarProblemas();
+        case 'mais-conexoes': P.limiteCon = (P.limiteCon || 300) + 300; return renderPainel();
+        case 'mais-qualidade': P.limiteQual = (P.limiteQual || 40) + 40; return renderPainel();
         case 'filtrar-ip': {
           P.filtroCon = b.dataset.ip;
           const campo = document.getElementById('apFiltroCon');
