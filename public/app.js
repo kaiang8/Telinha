@@ -1105,7 +1105,11 @@
   }
 
   function renderSidebar() {
-    $('#serverName').textContent = S.serverName;
+    // com o nome de sempre, aparece a logo (brilha ao passar o mouse); com outro nome, o texto
+    const sn = $('#serverName');
+    if (S.serverName.trim().toLowerCase() === 'caras e telas') {
+      if (!sn.querySelector('.logo-ct')) sn.innerHTML = '<span class="logo-ct" role="img" aria-label="Caras E Telas"><img src="logo-ct.png" alt="" draggable="false"><span class="logo-brilho"></span></span>';
+    } else sn.textContent = S.serverName;
     const rail = $('#railServer');
     const palavras = S.serverName.split(/\s+/).filter(Boolean);
     rail.textContent = (initial(palavras[0]) + (palavras.length > 1 ? initial(palavras[palavras.length - 1]) : '')).toUpperCase();

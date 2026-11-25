@@ -776,7 +776,7 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
 }
 @media (prefers-reduced-motion: reduce) {
   /* os emotes ficam de fora: são curtinhos, só aparecem quando alguém clica, e a graça é a animação */
-  :not(.emote-voa, .emote-voa *, .t-reacao *, .sticker, .sticker *), ::before, ::after { animation: none !important; transition: none !important; }
+  :not(.emote-voa, .emote-voa *, .t-reacao *, .sticker, .sticker *, .logo-brilho), ::before, ::after { animation: none !important; transition: none !important; }
 }
 /* com vídeo na tela: sem desfoque. A placa de vídeo refazia o desfoque a cada quadro e o vídeo
    caía pela metade (inclusive a captura de quem transmite). Painéis mais opacos no lugar. */
@@ -1288,4 +1288,21 @@ html[data-tema="escuro"] .member.offline .name-line { opacity: .78; }
   .main-body.sala-view .chat { width: auto; flex: 1 1 40%; border-left: 0; border-top: 1px solid var(--linha); }
   /* duas transmissões: uma embaixo da outra (lado a lado ficariam pequenas) */
   .stage-grid.n2 { grid-template-columns: minmax(0, 1fr); }
+}
+/* ===== Logo no lugar do nome do servidor: dois riscos de brilho correm pelas letras ao passar o mouse ===== */
+#serverName:has(.logo-ct) { overflow: visible; }
+.logo-ct { position: relative; display: block; height: 34px; max-width: 100%; }
+.logo-ct img { display: block; height: 100%; width: auto; max-width: 100%; object-fit: contain; object-position: left center; user-select: none; }
+.logo-brilho {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  -webkit-mask: url(logo-ct.png) left center / contain no-repeat; mask: url(logo-ct.png) left center / contain no-repeat;
+  background: linear-gradient(115deg, transparent 0 30%, rgba(255, 255, 255, .95) 33%, rgba(255, 255, 255, .95) 39%, transparent 42%,
+    transparent 47%, rgba(255, 255, 255, .85) 49%, rgba(255, 255, 255, .85) 52%, transparent 54%) no-repeat;
+  background-size: 300% 100%; background-position: 100% 0;
+}
+.sidebar-header:hover .logo-brilho { animation: brilhoLogo 1.8s ease-in-out infinite; }
+@keyframes brilhoLogo {
+  0% { background-position: 100% 0; opacity: 1; }
+  55% { background-position: 0% 0; opacity: 1; }
+  56%, 100% { background-position: 0% 0; opacity: 0; }
 }
