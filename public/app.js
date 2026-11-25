@@ -1438,10 +1438,21 @@
     $('#meName').textContent = S.myName;
     $('#meStatus').textContent = S.live ? 'Transmitindo' : S.sala ? `Em ${nomeSala(S.sala)}` : S.isAdmin ? 'Online · Admin' : 'Online';
 
+    // o painel de voz fica sempre à vista: fora de uma sala, só com o microfone e o som
+    // (o que for escolhido aqui já vale quando a pessoa entrar)
     const vp = $('#voicePanel');
-    vp.hidden = !S.sala;
+    vp.hidden = false;
+    vp.classList.toggle('fora', !S.sala);
+    for (const sel of ['#vpShare', '#vpLeave']) $(sel).hidden = !S.sala;
+    $('#vpInfo').title = S.sala ? 'Voltar para a sala' : '';
+    const st = $('#vpStatus');
+    if (!S.sala) {
+      st.classList.remove('live');
+      st.textContent = 'Fora da sala';
+      $('#vpWhere').textContent = 'vale ao entrar';
+      $('#vpSwap').hidden = true;
+    }
     if (S.sala) {
-      const st = $('#vpStatus');
       st.classList.toggle('live', S.live);
       st.textContent = S.live ? '● Ao vivo' : 'Conectado à sala';
       $('#vpWhere').textContent = `${nomeSala(S.sala)} / ${S.serverName}`;

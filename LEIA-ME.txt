@@ -451,8 +451,11 @@ DICAS
     principal (botões e seleção) e a do fundo (as ondas atrás dos
     painéis). A escolha fica guardada só no seu navegador ou programa:
     cada amigo usa a que quiser.
-  - Voz: ao entrar numa sala o microfone começa desligado. Os botões
-    ficam embaixo da sala (e no painel verde, à esquerda):
+  - Voz: na primeira vez o microfone começa desligado. Os botões de
+    microfone e de mutar a sala ficam sempre no painel de baixo, à
+    esquerda, mesmo fora de uma sala: o que você escolher ali já vale
+    quando entrar (e o microfone só é ligado dentro da sala). Dentro
+    da sala, eles também aparecem embaixo da tela:
       Microfone       liga e desliga (mudo). No mudo, o microfone fica
                       desligado de verdade.
       Fone            muta a sala: você para de ouvir as vozes, as
