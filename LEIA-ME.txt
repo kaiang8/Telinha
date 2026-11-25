@@ -496,8 +496,10 @@ DICAS
     pronta ou por que não pode aparecer.
   - Reações: leve o mouse para perto da parte de baixo da transmissão
     (no celular, toque nela) e aparece uma barrinha com cinco emotes,
-    junto com os botões de volume, caneta e tela cheia. Parado, tudo
-    se recolhe em uns segundos, então a tela cheia fica limpa. Emotes: chorando, apaixonado, fogo,
+    junto com os botões de volume, caneta e tela cheia. Na tela cheia,
+    à esquerda dessa barra também ficam os botões de ligar/desligar o
+    microfone e de mutar/desmutar a sala. Parado, tudo se recolhe em
+    uns segundos, então a tela cheia fica limpa. Emotes: chorando, apaixonado, fogo,
     berinjela e gargalhando. Cada clique solta um que nasce num ponto
     sorteado da parte de baixo, sobe balançando, diminui e some em 2
     segundos, sem som. Todo mundo da sala que está vendo aquela

@@ -988,6 +988,10 @@
       <button class="unmute-hint" data-act="center" hidden></button>
       ${barraDeReacoes()}
       <div class="t-bottom">
+        <span class="t-voz" role="group" aria-label="Sua voz na sala">
+          <button class="icon-btn" data-act="voz-mic"></button>
+          <button class="icon-btn" data-act="voz-surdo"></button>
+        </span>
         <span class="t-name"></span>
         <button class="icon-btn" data-act="mute" title="Ligar/desligar som"></button>
         <input type="range" min="0" max="2" step="0.05" value="1" data-act="vol" title="Volume desta transmissão (até 200%)">
@@ -1000,6 +1004,7 @@
     const t = { el, uid, video: el.querySelector('video'), tinta: el.querySelector('.t-tinta'), userMuted: false, autoMuted: false, src: null, gain: null, audioId: null };
     S.tiles.set(uid, t);
     definirSaida(t.video);
+    vozNoTile(t);
     // barra de baixo e emotes: aparecem com o cursor perto deles e se recolhem sozinhos
     el.addEventListener('pointermove', (e) => mexeuNoTile(t, e));
     el.addEventListener('pointerdown', (e) => mexeuNoTile(t, e));
@@ -1279,6 +1284,8 @@
     const v = t.video;
     if (act === 'vol') return;
     if (act === 'emote') return reagir(uid, Number(e.target.closest('[data-emote]').dataset.emote));
+    if (act === 'voz-mic') return alternarMudo(); // microfone e mutar a sala, dentro da tela cheia
+    if (act === 'voz-surdo') return alternarSurdo();
     if (e.target.closest('.t-reacoes')) return; // clique entre os emotes não muda o destaque
     if (act === 'caneta') return alternarCaneta(uid);
     if (act === 'cor') return escolherCor(Number(e.target.closest('[data-cor]').dataset.cor));
@@ -2965,26 +2972,30 @@
     mudouVoz();
   }
 
-  function renderVoz() {
+  function pintarBotaoDeMic(b) {
     const mudo = VOZ.mudo || silenciado();
-    for (const sel of ['#micBtn', '#vpMic']) {
-      const b = $(sel);
-      if (!b) continue;
-      b.innerHTML = icon(mudo ? 'micOff' : 'mic');
-      b.classList.toggle('desligado', mudo);
-      b.title = silenciado() ? 'Um admin silenciou você' : mudo ? 'Ligar o microfone' : 'Desligar o microfone (mudo)';
-      b.setAttribute('aria-label', b.title);
-      b.setAttribute('aria-pressed', String(mudo));
-    }
-    for (const sel of ['#surdoBtn', '#vpSurdo']) {
-      const b = $(sel);
-      if (!b) continue;
-      b.innerHTML = icon(VOZ.surdo ? 'foneOff' : 'fone');
-      b.classList.toggle('desligado', VOZ.surdo);
-      b.title = VOZ.surdo ? 'Ligar o som da sala' : 'Mutar a sala (você para de ouvir e o microfone desliga)';
-      b.setAttribute('aria-label', b.title);
-      b.setAttribute('aria-pressed', String(VOZ.surdo));
-    }
+    b.innerHTML = icon(mudo ? 'micOff' : 'mic');
+    b.classList.toggle('desligado', mudo);
+    b.title = silenciado() ? 'Um admin silenciou você' : mudo ? 'Ligar o microfone' : 'Desligar o microfone (mudo)';
+    b.setAttribute('aria-label', b.title);
+    b.setAttribute('aria-pressed', String(mudo));
+  }
+  function pintarBotaoDeSurdo(b) {
+    b.innerHTML = icon(VOZ.surdo ? 'foneOff' : 'fone');
+    b.classList.toggle('desligado', VOZ.surdo);
+    b.title = VOZ.surdo ? 'Ligar o som da sala' : 'Mutar a sala (você para de ouvir e o microfone desliga)';
+    b.setAttribute('aria-label', b.title);
+    b.setAttribute('aria-pressed', String(VOZ.surdo));
+  }
+  // os mesmos dois botões na barra de baixo de cada transmissão (aparecem só na tela cheia)
+  function vozNoTile(t) {
+    pintarBotaoDeMic(t.el.querySelector('[data-act="voz-mic"]'));
+    pintarBotaoDeSurdo(t.el.querySelector('[data-act="voz-surdo"]'));
+  }
+  function renderVoz() {
+    for (const sel of ['#micBtn', '#vpMic']) if ($(sel)) pintarBotaoDeMic($(sel));
+    for (const sel of ['#surdoBtn', '#vpSurdo']) if ($(sel)) pintarBotaoDeSurdo($(sel));
+    for (const t of S.tiles.values()) vozNoTile(t);
   }
 
   // ícones de mudo / sala muda ao lado do nome de cada pessoa da sala

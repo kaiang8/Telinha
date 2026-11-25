@@ -500,6 +500,13 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
    (show-ctrl vem do app.js) e se recolhem sozinhos depois de uns segundos */
 .tile.show-ctrl .t-bottom { opacity: 1; transform: none; pointer-events: auto; }
 .tile .t-name { color: #fff; font-weight: 700; font-size: 14px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* microfone e mutar a sala na barra da transmissão: só na tela cheia (fora dela, os botões de
+   sempre continuam à vista na tela) */
+.tile .t-voz { display: none; align-items: center; gap: 6px; padding-right: 10px; margin-right: 2px; border-right: 1px solid rgba(255, 255, 255, .25); }
+.tile:fullscreen .t-voz { display: inline-flex; }
+.tile .t-voz .icon-btn.desligado, .tile .t-voz .icon-btn.desligado:hover {
+  color: #fff; background: linear-gradient(180deg, #ff7272, #d61f2c); border-color: #a5161f;
+}
 .tile .icon-btn { color: #fff; background: rgba(255, 255, 255, .14); border-color: rgba(255, 255, 255, .2); }
 .tile .icon-btn:hover { background: rgba(255, 255, 255, .28); color: #fff; }
 .tile input[type=range] { width: 100px; accent-color: var(--p1); }
