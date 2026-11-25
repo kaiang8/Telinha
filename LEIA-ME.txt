@@ -494,8 +494,10 @@ DICAS
     caneta, o botão "Testar na minha tela" desenha um círculo vermelho
     só para você conferir, e a linha ao lado diz se a camada está
     pronta ou por que não pode aparecer.
-  - Reações: passe o mouse na transmissão (no celular, toque nela) e
-    aparece uma barrinha com cinco emotes: chorando, apaixonado, fogo,
+  - Reações: leve o mouse para perto da parte de baixo da transmissão
+    (no celular, toque nela) e aparece uma barrinha com cinco emotes,
+    junto com os botões de volume, caneta e tela cheia. Parado, tudo
+    se recolhe em uns segundos, então a tela cheia fica limpa. Emotes: chorando, apaixonado, fogo,
     berinjela e gargalhando. Cada clique solta um que nasce num ponto
     sorteado da parte de baixo, sobe balançando, diminui e some em 2
     segundos, sem som. Todo mundo da sala que está vendo aquela

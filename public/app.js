@@ -946,6 +946,25 @@
     sb.classList.toggle('primary', !S.live);
   }
 
+  // Os controles de baixo (volume, caneta, tela cheia...) e os emotes ficam escondidos e só
+  // aparecem quando o cursor chega perto deles; parado, eles se recolhem em uns segundos.
+  // No toque, qualquer toque no vídeo mostra.
+  function mexeuNoTile(t, e) {
+    const r = t.el.getBoundingClientRect();
+    const zona = Math.min(150, r.height * 0.5);
+    if (e.pointerType !== 'touch' && e.clientY < r.bottom - zona) return; // longe deles: deixa recolher
+    t.el.classList.add('show-ctrl');
+    recolherControles(t, e.pointerType === 'touch' ? 4000 : 2500);
+  }
+  function recolherControles(t, ms) {
+    clearTimeout(t.ctrlTimer);
+    t.ctrlTimer = setTimeout(() => {
+      // com o cursor em cima de um botão ou emote (ou arrastando o volume), espera mais um pouco
+      if (t.el.querySelector('.t-bottom:hover, .t-reacoes:hover, input[type=range]:active')) return recolherControles(t, 1200);
+      t.el.classList.remove('show-ctrl');
+    }, ms);
+  }
+
   function criarTile(uid) {
     const el = document.createElement('div');
     el.className = 'tile';
@@ -970,6 +989,10 @@
     const t = { el, uid, video: el.querySelector('video'), tinta: el.querySelector('.t-tinta'), userMuted: false, autoMuted: false, src: null, gain: null, audioId: null };
     S.tiles.set(uid, t);
     definirSaida(t.video);
+    // barra de baixo e emotes: aparecem com o cursor perto deles e se recolhem sozinhos
+    el.addEventListener('pointermove', (e) => mexeuNoTile(t, e));
+    el.addEventListener('pointerdown', (e) => mexeuNoTile(t, e));
+    el.addEventListener('pointerleave', () => recolherControles(t, 600));
     t.tinta.addEventListener('pointerdown', (e) => comecarTraco(t, e));
     t.tinta.addEventListener('pointermove', (e) => continuarTraco(t, e));
     for (const fim of ['pointerup', 'pointercancel', 'lostpointercapture']) {
@@ -1106,6 +1129,7 @@
         CANETA.tintas.delete(uid);
         desligarAudio(t);
         t.video.srcObject = null;
+        clearTimeout(t.ctrlTimer);
         t.el.remove();
         S.tiles.delete(uid);
       }
