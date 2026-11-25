@@ -1,0 +1,44 @@
+name: Trocar sons do soundboard
+
+# Roda só na mão (Actions → "Trocar sons do soundboard" → Run workflow). Recebe pares
+# "nome URL" separados por ponto e vírgula, baixa cada som do Creative Claw, deixa todos com o
+# mesmo volume e grava em public/sons/<nome>.mp3 (os nomes que o soundboard já usa).
+on:
+  workflow_dispatch:
+    inputs:
+      sons:
+        description: 'Pares "nome URL" separados por ";" (ex.: buzina https://cdn.creativeclaw.co/...mp3)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  trocar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Baixar e igualar o volume
+        env:
+          SONS: ${{ inputs.sons }}
+        run: |
+          set -e
+          command -v ffmpeg >/dev/null || { sudo apt-get -qq update && sudo apt-get -qq install -y ffmpeg >/dev/null; }
+          echo "$SONS" | tr ';' '\n' | while read -r nome url; do
+            [ -z "$nome" ] && continue
+            case "$nome" in *[!a-z0-9-]*) echo "nome inválido: $nome"; exit 1;; esac
+            case "$url" in https://cdn.creativeclaw.co/*.mp3) ;; *) echo "endereço fora do Creative Claw: $url"; exit 1;; esac
+            curl -fsSL --max-time 60 -o "/tmp/$nome.mp3" "$url"
+            ffmpeg -hide_banner -loglevel error -y -i "/tmp/$nome.mp3" -af "loudnorm=I=-16:TP=-1.5:LRA=11" -ar 44100 -ac 2 -b:a 128k "public/sons/$nome.mp3"
+            echo "$nome: $(ffprobe -v error -show_entries format=duration -of csv=p=0 "public/sons/$nome.mp3") s, $(stat -c %s "public/sons/$nome.mp3") bytes"
+          done
+      - name: Enviar
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/sons
+          if git diff --cached --quiet; then echo "nada mudou"; exit 0; fi
+          git commit -m "Sons do soundboard refeitos com o Creative Claw" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01U5Q578wLhtDL9uaeTfL7PG"
+          git push
