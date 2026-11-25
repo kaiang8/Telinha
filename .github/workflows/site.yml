@@ -49,7 +49,11 @@ jobs:
             # o plano grátis dorme: a primeira resposta pode demorar quase um minuto
             no_ar=$(curl -s --max-time 60 "$SITE/api/config" | python3 -c 'import sys, json; print(json.load(sys.stdin).get("build", ""))' 2>/dev/null || true)
             echo "$(date -u +%H:%M:%S) no ar: ${no_ar:-?} | esperando: $alvo"
-            if [ "$no_ar" = "$alvo" ]; then exit 0; fi
+            if [ "$no_ar" = "$alvo" ]; then
+              sleep 8
+              echo "TURN: $(curl -s --max-time 60 "$SITE/api/config" | python3 -c 'import sys, json; print(json.load(sys.stdin).get("turn", "não configurado"))' 2>/dev/null || echo '?')"
+              exit 0
+            fi
             sleep 10
           done
           echo "O site não chegou nesta versão em 25 minutos."

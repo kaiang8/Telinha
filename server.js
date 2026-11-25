@@ -68,6 +68,7 @@ const TURN = {
   gerando: new Map(),
   conferido: 0,
   erro: '',
+  chave: null, // null: ainda não testou; '' : a chave do TURN funcionou; texto: o erro
 };
 const turnUsado = () => Object.values(VARS_TURN).some(Boolean);
 const turnFaltando = () => Object.entries(VARS_TURN).filter(([, v]) => !v).map(([k]) => k);
@@ -91,6 +92,8 @@ function motivoTurnParado() {
   if (!USO_TURN.ok) return 'não consegui ler o histórico de uso guardado';
   if (Date.now() - TURN.conferido > 15 * 60e3) return TURN.erro || 'conferindo o uso na Cloudflare…';
   if (usoTurn31().total >= TURN_LIMITE_GB * 1e9) return `chegou no limite de ${TURN_LIMITE_GB} GB nos últimos 31 dias`;
+  if (TURN.chave === null) return 'testando a chave do TURN…';
+  if (TURN.chave) return `a chave do TURN não funcionou (${TURN.chave}); confira CLOUDFLARE_TURN_ID e CLOUDFLARE_TURN_TOKEN`;
   return '';
 }
 const turnLiberado = () => !motivoTurnParado();
@@ -187,6 +190,19 @@ async function conferirTurn() {
       USO_TURN.salvar(1000);
       TURN.conferido = Date.now();
       TURN.erro = '';
+      // uma vez por início: testa a chave do TURN com uma senha de 1 min, que é cancelada em seguida
+      if (TURN.chave === null || TURN.chave) {
+        try {
+          const j = await chamarCloudflare(`${CF.apiTurn}/turn/keys/${encodeURIComponent(CF.turnId)}/credentials/generate`, CF.turnToken, { ttl: 60, customIdentifier: 'teste-do-servidor' });
+          const u = [].concat(j.iceServers || []).find((x) => x && x.username)?.username;
+          if (!u) throw new Error('a resposta não trouxe a senha');
+          revogarTurn(u);
+          TURN.chave = '';
+        } catch (e) {
+          TURN.chave = e.message;
+          console.warn('  TURN: a chave não funcionou:', e.message);
+        }
+      }
     } catch (e) {
       TURN.erro = `não consegui consultar o uso na Cloudflare (${e.message})`;
       console.warn('  TURN:', TURN.erro);
@@ -1062,6 +1078,8 @@ function configPublica() {
     serverName: nomeServidor(), needsPassword: precisaSenha(), locked: !!data.settings.locked,
     ...(VERSAO_PROGRAMA ? { programa: VERSAO_PROGRAMA } : {}),
     ...(COMMIT ? { build: COMMIT } : {}),
+    // só se o TURN da Cloudflare está funcionando (nada de senha): ajuda a conferir de fora
+    ...(turnUsado() ? { turn: turnLiberado() ? 'ligado' : `parado: ${motivoTurnParado()}` } : {}),
   };
 }
 function enviarInit(u) {
