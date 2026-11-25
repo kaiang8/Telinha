@@ -960,7 +960,7 @@
     clearTimeout(t.ctrlTimer);
     t.ctrlTimer = setTimeout(() => {
       // com o cursor em cima de um botão ou emote (ou arrastando o volume), espera mais um pouco
-      if (t.el.querySelector('.t-bottom:hover, .t-reacoes:hover, input[type=range]:active')) return recolherControles(t, 1200);
+      if (t.focoTeclado || t.el.querySelector('.t-bottom :is(button, input):hover, .t-reacao:hover, input[type=range]:active')) return recolherControles(t, 1200);
       t.el.classList.remove('show-ctrl');
     }, ms);
   }
@@ -993,6 +993,17 @@
     el.addEventListener('pointermove', (e) => mexeuNoTile(t, e));
     el.addEventListener('pointerdown', (e) => mexeuNoTile(t, e));
     el.addEventListener('pointerleave', () => recolherControles(t, 600));
+    // pelo teclado: só quando chegou no botão com Tab (um botão clicado com o mouse continua
+    // com foco, e qualquer tecla apertada depois, como a de falar, não pode prender a barra)
+    el.addEventListener('focusin', (e) => {
+      t.focoTeclado = e.target.matches(':focus-visible');
+      if (t.focoTeclado) { t.el.classList.add('show-ctrl'); clearTimeout(t.ctrlTimer); }
+    });
+    el.addEventListener('focusout', () => {
+      if (!t.focoTeclado) return;
+      t.focoTeclado = false;
+      recolherControles(t, 1500);
+    });
     t.tinta.addEventListener('pointerdown', (e) => comecarTraco(t, e));
     t.tinta.addEventListener('pointermove', (e) => continuarTraco(t, e));
     for (const fim of ['pointerup', 'pointercancel', 'lostpointercapture']) {
