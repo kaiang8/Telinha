@@ -504,7 +504,9 @@ DICAS
     sorteado da parte de baixo, sobe balançando, diminui e some em 2
     segundos, sem som. Todo mundo da sala que está vendo aquela
     transmissão vê, inclusive quem transmite (na prévia da própria
-    tela). Dá para mandar até 6 por segundo. Os emotes ficam animados
+    tela). Dá para mandar até 6 por segundo. O olho no fim da barrinha
+    esconde (ou mostra de novo) os emotes dos outros na sua tela; os
+    que você manda continuam aparecendo para todo mundo. Os emotes ficam animados
     mesmo com as animações do Windows desligadas.
   - Relatar problema: o ponto de interrogação no canto de baixo, à
     esquerda. Conte o que aconteceu; dá para mandar junto (ou não) as
@@ -574,9 +576,12 @@ DICAS
     transmissões fica pausado no seu computador (quando o navegador
     não consegue separar), para não voltar para elas.
   - Sons (soundboard): o botão "Sons", embaixo da sala, abre os sons.
-    Durante a transmissão, quem está assistindo ouve os sons junto com
-    a sua tela (e aparece na tela deles qual som foi tocado). Sem
-    transmitir, é só uma prévia: só você ouve.
+    Todo mundo na chamada ouve os sons que você tocar, transmitindo ou
+    não (e aparece ao lado do seu nome qual som foi). Os sons vão
+    separados da voz: clicando no nome de alguém da sala, dá para mudar
+    o volume dos sons dessa pessoa (até 200%) ou silenciar só os sons
+    dela, sem mexer na voz. Isso só muda o que você ouve. Quem mutou a
+    sala não ouve os sons, e quem foi silenciado por um admin não toca.
       Padrão (feitos do zero para o site):
         Alt+1 Trombone triste   Alt+2 Risada de plateia   Alt+3 Aplausos
         Alt+4 Ba dum tss        Alt+5 Buzina              Alt+6 Grilos

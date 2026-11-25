@@ -861,6 +861,9 @@ body.com-video :is(.sidebar, .main) { background: linear-gradient(180deg, var(--
 .voz-icone { display: inline-flex; color: var(--fraco); flex: none; }
 .voz-icone svg.i { width: 14px; height: 14px; }
 .voz-icone.vermelho { color: var(--ao-vivo); }
+/* o som que a pessoa acabou de tocar, ao lado do nome */
+.voz-som { display: inline-flex; font-size: 13px; line-height: 1; flex: none; animation: vozSom .35s ease-out; }
+@keyframes vozSom { from { transform: scale(.3); opacity: 0; } }
 
 /* janela "Opções de áudio" */
 .voz-opcoes { display: grid; gap: 16px; }
@@ -927,6 +930,15 @@ body.com-video :is(.sidebar, .main) { background: linear-gradient(180deg, var(--
 .t-reacao:hover { background: rgba(255, 255, 255, .16); transform: translateY(-2px) scale(1.14); }
 .t-reacao:active { transform: scale(.9); }
 .t-reacao:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.t-reacoes-sep { width: 1px; align-self: stretch; margin: 4px 3px; background: rgba(255, 255, 255, .25); }
+.t-ver-emotes {
+  width: 36px; height: 36px; padding: 8px; border: 0; border-radius: 50%; background: transparent; cursor: pointer;
+  color: #fff; display: grid; place-items: center; transition: background-color .12s;
+}
+.t-ver-emotes svg.i { width: 20px; height: 20px; }
+.t-ver-emotes:hover { background: rgba(255, 255, 255, .16); }
+.t-ver-emotes.desligado { color: #ff8a8a; }
+.t-ver-emotes:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 
 .emote-voa {
   position: absolute; bottom: 5%; width: var(--tam); height: var(--tam); margin-left: calc(var(--tam) / -2);
@@ -1052,6 +1064,7 @@ body.com-video :is(.sidebar, .main) { background: linear-gradient(180deg, var(--
 .vv-topo { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--texto-forte); }
 .vv-topo .avatar { width: 28px; height: 28px; font-size: 12px; flex: none; }
 .vv-linha { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--suave); }
+.vv-linha.vv-sep { margin-top: 6px; padding-top: 10px; border-top: 1px solid rgba(127, 140, 160, .25); }
 .vv-pct { font-variant-numeric: tabular-nums; color: var(--texto-forte); }
 .vol-voz input[type=range] { width: 100%; accent-color: var(--p2); }
 .vv-rodape { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

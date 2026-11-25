@@ -11,6 +11,9 @@
     screenOff: '<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4M9.5 8l5 5M14.5 8l-5 5"/>',
     vol: '<path d="M4 9.5v5h3.5L12 19V5L7.5 9.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18.5 6a8 8 0 0 1 0 12"/>',
     mute: '<path d="M4 9.5v5h3.5L12 19V5L7.5 9.5H4z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/>',
+    somOff: '<path d="M9 17.5V6.5l10-2v10"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="14.5" r="2.5"/><path d="M3.5 3.5l17 17"/>',
+    olho: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+    olhoOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/><path d="M4 4l16 16"/>',
     full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
     pip: '<rect x="2.5" y="4.5" width="19" height="15" rx="2"/><rect x="12" y="11.5" width="7" height="5.5" rx="1" fill="currentColor" stroke="none"/>',
     focus: '<path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/>',
@@ -969,7 +972,7 @@
   function cursorEmCimaDeBotao(t) {
     const p = t.ponteiro;
     if (!p) return false;
-    for (const b of t.el.querySelectorAll('.t-bottom button, .t-bottom input, .t-reacao')) {
+    for (const b of t.el.querySelectorAll('.t-bottom button, .t-bottom input, .t-reacao, .t-ver-emotes')) {
       const r = b.getBoundingClientRect();
       if (r.width && p.x >= r.left - 3 && p.x <= r.right + 3 && p.y >= r.top - 3 && p.y <= r.bottom + 3) return true;
     }
@@ -1284,6 +1287,7 @@
     const v = t.video;
     if (act === 'vol') return;
     if (act === 'emote') return reagir(uid, Number(e.target.closest('[data-emote]').dataset.emote));
+    if (act === 'ver-emotes') return alternarVerEmotes();
     if (act === 'voz-mic') return alternarMudo(); // microfone e mutar a sala, dentro da tela cheia
     if (act === 'voz-surdo') return alternarSurdo();
     if (e.target.closest('.t-reacoes')) return; // clique entre os emotes não muda o destaque
@@ -2172,11 +2176,29 @@
     document.body.appendChild(d.firstElementChild);
   }
   montarDefsDosEmotes();
+  // Cada um escolhe se os emotes dos outros aparecem na sua tela (o olho no fim da barra)
+  let VER_EMOTES = salvo.verEmotes !== false;
+  const textoVerEmotes = () => (VER_EMOTES ? 'Esconder os emotes dos outros na sua tela' : 'Mostrar os emotes dos outros na sua tela');
   const barraDeReacoes = () => `<div class="t-reacoes" role="group" aria-label="Reações">${EMOTES.map((x, i) =>
-    `<button type="button" class="t-reacao" data-act="emote" data-emote="${i}" title="${x.nome}" aria-label="Reagir: ${x.nome}">${x.svg}</button>`).join('')}</div>`;
+    `<button type="button" class="t-reacao" data-act="emote" data-emote="${i}" title="${x.nome}" aria-label="Reagir: ${x.nome}">${x.svg}</button>`).join('')}
+    <span class="t-reacoes-sep" aria-hidden="true"></span>
+    <button type="button" class="t-ver-emotes${VER_EMOTES ? '' : ' desligado'}" data-act="ver-emotes" title="${textoVerEmotes()}" aria-label="${textoVerEmotes()}" aria-pressed="${!VER_EMOTES}">${icon(VER_EMOTES ? 'olho' : 'olhoOff')}</button></div>`;
+  function alternarVerEmotes() {
+    VER_EMOTES = !VER_EMOTES;
+    salvar({ verEmotes: VER_EMOTES });
+    for (const b of document.querySelectorAll('.t-ver-emotes')) {
+      b.innerHTML = icon(VER_EMOTES ? 'olho' : 'olhoOff');
+      b.classList.toggle('desligado', !VER_EMOTES);
+      b.title = textoVerEmotes();
+      b.setAttribute('aria-label', b.title);
+      b.setAttribute('aria-pressed', String(!VER_EMOTES));
+    }
+    if (!VER_EMOTES) for (const e of document.querySelectorAll('.t-emotes .emote-voa:not(.meu)')) e.remove();
+    toast(VER_EMOTES ? 'Os emotes de todo mundo voltam a aparecer na sua tela.' : 'Os emotes dos outros não aparecem mais na sua tela. Os que você mandar continuam aparecendo para todo mundo.', 6000);
+  }
 
   const REACAO = { cliques: [] };
-  function soltarEmote(sid, e, x) {
+  function soltarEmote(sid, e, x, meu = false) {
     const t = S.tiles.get(sid);
     if (!t || !EMOTES[e]) return;
     const camada = t.el.querySelector('.t-emotes');
@@ -2186,7 +2208,7 @@
     // cada um nasce num ponto diferente da parte de baixo, com tamanho, subida e balanço um pouco diferentes
     const tam = Math.round(Math.max(40, Math.min(92, h * 0.14)) * sorteio(0.8, 1.2));
     const el = document.createElement('div');
-    el.className = `emote-voa emo-${EMOTES[e].id}`;
+    el.className = `emote-voa emo-${EMOTES[e].id}${meu ? ' meu' : ''}`;
     el.style.cssText = `left:${(x * 100).toFixed(1)}%;bottom:${sorteio(2, 22).toFixed(1)}%;--tam:${tam}px`
       + `;--sobe:${Math.round(h * sorteio(0.45, 0.72))}px;--dx:${Math.round(sorteio(-0.9, 0.9) * tam)}px`
       + `;--gira:${sorteio(-14, 14).toFixed(1)}deg`;
@@ -2203,12 +2225,13 @@
     if (REACAO.cliques.length >= 6) return; // no máximo 6 por segundo
     REACAO.cliques.push(agora);
     const x = Math.round((0.1 + Math.random() * 0.8) * 1000) / 1000;
-    soltarEmote(sid, e, x);
+    soltarEmote(sid, e, x, true); // o seu sempre aparece para você (mostra que foi)
     api('emote', { sid, e, x }).catch((err) => {
       if (/silenciad/i.test(err.message) && agora - (REACAO.avisou || 0) > 5000) { REACAO.avisou = agora; toast(err.message); }
     });
   }
   function onEmote(m) {
+    if (!VER_EMOTES) return; // escolheu não ver os emotes dos outros
     if (typeof m.sid !== 'string' || !Number.isInteger(m.e) || !EMOTES[m.e]) return;
     soltarEmote(m.sid, m.e, Math.min(0.9, Math.max(0.1, Number(m.x) || 0.5)));
   }
@@ -2532,7 +2555,7 @@
     aoMedir: null,
   };
   const silenciado = () => S.mutedUntil > Date.now();
-  function estadoVoz() { return { mudo: VOZ.mudo || silenciado(), surdo: VOZ.surdo }; }
+  function estadoVoz() { return { mudo: VOZ.mudo || silenciado(), surdo: VOZ.surdo, efeitos: true }; }
   function guardarVoz() { salvar({ voz: VOZ.cfg, vozMudo: VOZ.mudo, vozSurdo: VOZ.surdo }); }
   const transmitindoVoz = () => !!S.sala && !VOZ.mudo && !VOZ.surdo && !silenciado();
 
@@ -2765,6 +2788,26 @@
     atualizarMicrofone();
   }
 
+  // ----- sons (soundboard) pela chamada -----
+  // Vão numa segunda faixa de áudio da conexão de voz, separada da voz: assim cada pessoa
+  // controla o volume (ou silencia) os sons de cada um sem mexer na voz dele.
+  let EFEITOS = null; // { dest, faixa }
+  function faixaDeEfeitos() {
+    if (!EFEITOS) {
+      const c = audioCtx();
+      if (!c) return null;
+      const dest = c.createMediaStreamDestination();
+      EFEITOS = { dest, faixa: dest.stream.getAudioTracks()[0] };
+    }
+    return EFEITOS.faixa;
+  }
+  async function ligarFaixaDeEfeitos(tr) {
+    if (!tr) return;
+    tr.direction = 'sendrecv';
+    const f = faixaDeEfeitos();
+    if (f) await tr.sender.replaceTrack(f).catch(() => {});
+  }
+
   function novaVoz(id) {
     fecharVoz(id);
     const pc = new RTCPeerConnection({ iceServers: S.iceServers });
@@ -2773,7 +2816,12 @@
     pc.onicecandidate = (e) => {
       if (e.candidate && v.sess) sinal(id, { k: 'voz-ice', sess: v.sess, c: e.candidate.toJSON() });
     };
-    pc.ontrack = (e) => ouvirVoz(id, v, e.streams[0] || new MediaStream([e.track]));
+    pc.ontrack = (e) => {
+      const stream = e.streams[0] || new MediaStream([e.track]);
+      // a primeira faixa é a voz; a segunda, os sons
+      if (pc.getTransceivers().indexOf(e.transceiver) === 1) ouvirEfeitos(id, v, stream);
+      else ouvirVoz(id, v, stream);
+    };
     pc.onconnectionstatechange = () => {
       if (VOZ.pcs.get(id) !== v) return;
       clearTimeout(v.timer);
@@ -2799,6 +2847,12 @@
     }
     try { v.src?.disconnect(); } catch { /* ok */ }
     try { v.ganho?.disconnect(); } catch { /* ok */ }
+    if (v.fx) {
+      v.fx.audio.pause();
+      v.fx.audio.srcObject = null;
+      try { v.fx.src?.disconnect(); } catch { /* ok */ }
+      try { v.fx.ganho?.disconnect(); } catch { /* ok */ }
+    }
     VOZ.ultimaFala.delete(id);
   }
   function fecharTodaVoz() {
@@ -2811,6 +2865,8 @@
     v.sess = Math.random().toString(36).slice(2, 10);
     const tr = v.pc.addTransceiver('audio', { direction: 'sendrecv' });
     if (VOZ.mic) await tr.sender.replaceTrack(VOZ.mic.faixa).catch(() => {});
+    // a faixa dos sons só vai para quem sabe recebê-la (página antiga trocaria a voz por ela)
+    if (userById(id)?.efeitos) await ligarFaixaDeEfeitos(v.pc.addTransceiver('audio', { direction: 'sendrecv' }));
     const oferta = await v.pc.createOffer();
     if (VOZ.pcs.get(id) !== v) return;
     await v.pc.setLocalDescription(oferta);
@@ -2827,6 +2883,7 @@
       tr.direction = 'sendrecv';
       if (VOZ.mic) await tr.sender.replaceTrack(VOZ.mic.faixa).catch(() => {});
     }
+    await ligarFaixaDeEfeitos(v.pc.getTransceivers()[1]); // a faixa dos sons, se quem ofereceu mandou
     const resposta = await v.pc.createAnswer();
     if (VOZ.pcs.get(id) !== v) return;
     await v.pc.setLocalDescription(resposta);
@@ -2868,6 +2925,7 @@
 
   // ----- ouvir os outros -----
   function aplicarSomDaVoz(id, v) {
+    aplicarSomDosEfeitos(id, v);
     if (!v.audio) return;
     const cfg = volumeDaVoz(id);
     v.calado = VOZ.surdo || !!userById(id)?.silenciado || cfg.mudo;
@@ -2912,8 +2970,50 @@
     } catch { v.analisador = null; }
     aplicarSomDaVoz(id, v);
   }
+  function ouvirEfeitos(id, v, stream) {
+    if (!v.fx) {
+      v.fx = { audio: new Audio(), src: null, ganho: null };
+      v.fx.audio.autoplay = true;
+      definirSaida(v.fx.audio);
+    }
+    v.fx.audio.srcObject = stream;
+    v.fx.audio.play().catch(() => { /* destrava no próximo clique */ });
+    try { v.fx.src?.disconnect(); } catch { /* ok */ }
+    try { v.fx.ganho?.disconnect(); } catch { /* ok */ }
+    v.fx.ganho = null;
+    try { v.fx.src = audioCtx().createMediaStreamSource(stream); } catch { v.fx.src = null; }
+    aplicarSomDosEfeitos(id, v);
+  }
+  function aplicarSomDosEfeitos(id, v) {
+    const fx = v.fx;
+    if (!fx) return;
+    const cfg = volumeDosEfeitos(id);
+    const calado = VOZ.surdo || !!userById(id)?.silenciado || cfg.mudo;
+    const vol = calado ? 0 : cfg.v;
+    if (vol > 1 && fx.src) {
+      // acima de 100%: passa por um amplificador
+      if (!fx.ganho) {
+        fx.ganho = audioCtx().createGain();
+        fx.src.connect(fx.ganho);
+        fx.ganho.connect(audioCtx().destination);
+      }
+      fx.ganho.gain.value = vol;
+      fx.audio.muted = true;
+    } else {
+      if (fx.ganho) {
+        try { fx.ganho.disconnect(); } catch { /* ok */ }
+        try { fx.src?.disconnect(fx.ganho); } catch { /* ok */ }
+        fx.ganho = null;
+      }
+      fx.audio.muted = calado;
+      fx.audio.volume = Math.min(1, vol);
+    }
+  }
   function destravarVozes() {
-    for (const v of VOZ.pcs.values()) if (v.audio?.paused && v.audio.srcObject) v.audio.play().catch(() => {});
+    for (const v of VOZ.pcs.values()) {
+      if (v.audio?.paused && v.audio.srcObject) v.audio.play().catch(() => {});
+      if (v.fx?.audio.paused && v.fx.audio.srcObject) v.fx.audio.play().catch(() => {});
+    }
   }
   document.addEventListener('pointerdown', destravarVozes, true);
   document.addEventListener('keydown', destravarVozes, true);
@@ -3001,9 +3101,13 @@
   // ícones de mudo / sala muda ao lado do nome de cada pessoa da sala
   function vozIcones(u) {
     if (!u.sala) return '';
-    const paraMim = u.id !== S.myId && VOLUMES_VOZ[u.name]?.mudo ? `<span class="voz-icone" title="Silenciado para você">${icon('mute')}</span>` : '';
-    return paraMim + vozIconesDoUsuario(u);
+    const paraMim = u.id !== S.myId && VOLUMES_VOZ[u.name]?.mudo ? `<span class="voz-icone" title="Voz silenciada para você">${icon('mute')}</span>` : '';
+    const somRecente = SOM_RECENTE.get(u.id);
+    const tocou = somRecente && somRecente.ate > Date.now() ? `<span class="voz-som" title="Tocou: ${esc(somRecente.nome)}">${esc(somRecente.emoji)}</span>` : '';
+    const sonsMudos = u.id !== S.myId && VOLUMES_EFEITOS[u.name]?.mudo ? `<span class="voz-icone" title="Sons silenciados para você">${icon('somOff')}</span>` : '';
+    return tocou + paraMim + sonsMudos + vozIconesDoUsuario(u);
   }
+  const SOM_RECENTE = new Map(); // id -> { emoji, nome, ate }
   function vozIconesDoUsuario(u) {
     if (u.silenciado) return `<span class="voz-icone vermelho" title="Silenciado por um admin">${icon('micOff')}</span>`;
     if (u.surdo) return `<span class="voz-icone" title="Mutou a sala">${icon('foneOff')}</span>`;
@@ -3067,6 +3171,24 @@
       mudo: x?.mudo === true,
     };
   }
+  const VOLUMES_EFEITOS = salvo.volEfeitos && typeof salvo.volEfeitos === 'object' ? { ...salvo.volEfeitos } : {};
+  function volumeDosEfeitos(id) {
+    const x = VOLUMES_EFEITOS[userById(id)?.name];
+    return {
+      v: typeof x?.v === 'number' ? Math.min(2, Math.max(0, x.v)) : 1,
+      mudo: x?.mudo === true,
+    };
+  }
+  function guardarVolumeDosEfeitos(id, mudanca) {
+    const nome = userById(id)?.name;
+    if (!nome) return;
+    const novo = { ...volumeDosEfeitos(id), ...mudanca };
+    if (novo.v === 1 && !novo.mudo) delete VOLUMES_EFEITOS[nome];
+    else VOLUMES_EFEITOS[nome] = novo;
+    salvar({ volEfeitos: VOLUMES_EFEITOS });
+    const v = VOZ.pcs.get(id);
+    if (v) aplicarSomDosEfeitos(id, v);
+  }
   function guardarVolumeDaVoz(id, mudanca) {
     const nome = userById(id)?.name;
     if (!nome) return;
@@ -3090,6 +3212,7 @@
     fecharVolumeDaVoz();
     if (jaAberto) return;
     const cfg = volumeDaVoz(id);
+    const fx = volumeDosEfeitos(id);
     const el = document.createElement('div');
     el.className = 'vol-voz';
     el.id = 'volVoz';
@@ -3098,8 +3221,11 @@
     el.setAttribute('aria-label', `Volume da voz de ${u.name}`);
     el.innerHTML = `<div class="vv-topo">${avatar(u)}<strong class="ellipsis">${esc(u.name)}</strong></div>
       <div class="vv-linha"><span>Volume da voz</span><span class="vv-pct">${Math.round(cfg.v * 100)}%</span></div>
-      <input type="range" min="0" max="2" step="0.05" value="${cfg.v}" aria-label="Volume da voz de ${esc(u.name)}">
-      <label class="sons-check"><input type="checkbox" class="vv-mudo"${cfg.mudo ? ' checked' : ''}> Silenciar para mim</label>
+      <input type="range" class="vv-voz" min="0" max="2" step="0.05" value="${cfg.v}" aria-label="Volume da voz de ${esc(u.name)}">
+      <label class="sons-check"><input type="checkbox" class="vv-mudo"${cfg.mudo ? ' checked' : ''}> Silenciar a voz para mim</label>
+      <div class="vv-linha vv-sep"><span>Volume dos sons</span><span class="vv-pct vv-pct-fx">${Math.round(fx.v * 100)}%</span></div>
+      <input type="range" class="vv-fx" min="0" max="2" step="0.05" value="${fx.v}" aria-label="Volume dos sons que ${esc(u.name)} toca">
+      <label class="sons-check"><input type="checkbox" class="vv-fx-mudo"${fx.mudo ? ' checked' : ''}> Silenciar os sons para mim</label>
       <div class="vv-rodape"><span class="vo-dica">Só muda o que você ouve.</span><button type="button" class="btn sm ghost vv-reset">100%</button></div>`;
     document.body.appendChild(el);
     const r = ancora.getBoundingClientRect();
@@ -3109,8 +3235,19 @@
     const y = r.bottom + 8 + h < innerHeight ? r.bottom + 8 : Math.max(8, r.top - h - 8);
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
-    const faixa = el.querySelector('input[type=range]');
+    const faixa = el.querySelector('.vv-voz');
     const pct = el.querySelector('.vv-pct');
+    const faixaFx = el.querySelector('.vv-fx');
+    const pctFx = el.querySelector('.vv-pct-fx');
+    faixaFx.addEventListener('input', () => {
+      const v = Number(faixaFx.value);
+      pctFx.textContent = `${Math.round(v * 100)}%`;
+      guardarVolumeDosEfeitos(id, { v });
+    });
+    el.querySelector('.vv-fx-mudo').addEventListener('change', (e) => {
+      guardarVolumeDosEfeitos(id, { mudo: e.target.checked });
+      renderTudo();
+    });
     faixa.addEventListener('input', () => {
       const v = Number(faixa.value);
       pct.textContent = `${Math.round(v * 100)}%`;
@@ -3124,6 +3261,9 @@
       faixa.value = '1';
       pct.textContent = '100%';
       guardarVolumeDaVoz(id, { v: 1 });
+      faixaFx.value = '1';
+      pctFx.textContent = '100%';
+      guardarVolumeDosEfeitos(id, { v: 1 });
     });
     faixa.focus();
   }
@@ -3405,7 +3545,7 @@
     const quer = VOZ.cfg.saida;
     saidaAtual = quer && (await saidasDisponiveis()).some((d) => d.deviceId === quer) ? quer : '';
     definirSaidaDoAudio(actx);
-    for (const v of VOZ.pcs.values()) definirSaida(v.audio);
+    for (const v of VOZ.pcs.values()) { definirSaida(v.audio); definirSaida(v.fx?.audio); }
     for (const t of S.tiles.values()) definirSaida(t.video);
   }
   navigator.mediaDevices?.addEventListener?.('devicechange', () => aplicarSaida());
@@ -5374,6 +5514,7 @@
     const slot = SB.slots.find((s) => s.id === id);
     const c = audioCtx();
     if (!slot || !c) return;
+    if (S.sala && silenciado()) return toast('Um admin silenciou você: os sons ficam bloqueados até o silêncio acabar.');
     if (c.state !== 'running') await c.resume().catch(() => {});
     let buf;
     try {
@@ -5387,10 +5528,12 @@
     const ganho = c.createGain();
     ganho.gain.value = slot.volume * SB.volume;
     fonte.connect(ganho);
-    const naTransmissao = S.live && !!S.envio;
-    if (naTransmissao) ganho.connect(S.envio.dest);
-    // ouvir aqui (se o som do PC estiver sendo capturado sem filtro, não toca aqui para não ir em dobro)
-    if ((!naTransmissao || (SB.ouvir && !S.evitarEco)) && !VOZ.surdo) ganho.connect(c.destination);
+    // numa sala, o som vai pela chamada para todo mundo (cada um controla o volume dos seus sons)
+    const naChamada = !!S.sala && !!faixaDeEfeitos();
+    if (naChamada) ganho.connect(EFEITOS.dest);
+    // ouvir aqui: fora de uma sala, sempre (é a prévia). Na sala, se "Ouvir aqui" estiver ligado; mas
+    // não com o som do PC inteiro indo na transmissão (ele seria capturado e iria em dobro)
+    if (!VOZ.surdo && (!naChamada || (SB.ouvir && !(S.live && S.evitarEco)))) ganho.connect(c.destination);
     fonte.onended = () => {
       if (tocando.get(id)?.fonte !== fonte) return;
       tocando.delete(id);
@@ -5400,8 +5543,8 @@
     fonte.start();
     tocando.set(id, { fonte, ganho });
     marcarTocando(id, buf.duration);
-    if (naTransmissao) api('sb', { nome: slot.nome, emoji: slot.emoji }).catch(() => {});
-    else if (origem === 'atalho') toast(S.live ? 'O áudio da transmissão não está disponível: o som tocou só aqui.' : 'Você não está transmitindo: o som tocou só aqui.');
+    if (naChamada) api('sb', { nome: slot.nome, emoji: slot.emoji }).catch(() => {});
+    else if (origem === 'atalho') toast('Você não está numa sala: o som tocou só aqui.');
   }
 
   // ----- atalhos -----
@@ -5497,12 +5640,14 @@
   }
 
   function avisoSons() {
-    $('#sbAviso').textContent = S.live && S.envio
-      ? 'Ao vivo: quem está assistindo ouve os sons junto com a sua transmissão.'
-      : S.live
-        ? 'O navegador não liberou o áudio da transmissão, então os sons tocam só aqui.'
-        : 'Prévia: só você ouve. Comece a transmitir para a sala ouvir.';
-    $('#sbAviso').classList.toggle('ao-vivo', !!(S.live && S.envio));
+    const antigos = S.sala ? [...vizinhosDeSala()].map(userById).filter((u) => u && !u.efeitos).map((u) => u.name) : [];
+    $('#sbAviso').textContent = !S.sala
+      ? 'Fora de uma sala, só você ouve.'
+      : silenciado()
+        ? 'Um admin silenciou você: os sons ficam bloqueados até o silêncio acabar.'
+        : 'Todo mundo na chamada ouve os sons que você tocar. Cada um pode baixar o volume ou silenciar os seus sons clicando no seu nome.'
+          + (antigos.length ? ` ${antigos.join(', ')} ${antigos.length > 1 ? 'estão' : 'está'} com a página desatualizada e só vai ouvir depois de recarregar.` : '');
+    $('#sbAviso').classList.toggle('ao-vivo', !!S.sala && !silenciado());
   }
 
   async function lerArquivoDeSom(file) {
@@ -5675,6 +5820,10 @@
 
   // Na tela de quem assiste: mostra qual som foi tocado
   function onSomTocado(m) {
+    if (volumeDosEfeitos(m.uid).mudo || VOZ.surdo) return; // silenciou os sons dessa pessoa
+    SOM_RECENTE.set(m.uid, { emoji: m.emoji || '🔊', nome: m.nome || 'som', ate: Date.now() + 2600 });
+    renderTudo();
+    setTimeout(() => { if ((SOM_RECENTE.get(m.uid)?.ate || 0) <= Date.now()) { SOM_RECENTE.delete(m.uid); renderTudo(); } }, 2700);
     const t = S.tiles.get(m.uid);
     if (!t) return;
     const chip = document.createElement('div');

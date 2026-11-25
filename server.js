@@ -500,6 +500,7 @@ function publicUser(u) {
   return {
     id: u.id, name: u.name, color: u.color, sala: u.sala, live: u.live, admin: !!u.admin,
     mudo: !!u.mudo, surdo: !!u.surdo, silenciado: silencioDe(u) > Date.now(),
+    ...(u.efeitos ? { efeitos: true } : {}),
     ...(u.live && u.caneta ? { caneta: u.caneta } : {}),
   };
 }
@@ -1361,6 +1362,7 @@ async function api(req, res, url) {
       if (!u.live) u.caneta = null; // parou de transmitir: a caneta volta para "ninguém"
       if (typeof body.mudo === 'boolean') u.mudo = body.mudo; // microfone desligado
       if (typeof body.surdo === 'boolean') u.surdo = body.surdo; // som da sala desligado
+      if (body.efeitos === true) u.efeitos = true; // a página sabe mandar e ouvir os sons pela chamada
       broadcastPresenca();
       return json(res, 200, { ok: true });
     }
@@ -1558,7 +1560,7 @@ async function api(req, res, url) {
     }
 
     case 'sb': {
-      // Soundboard: avisa quem está na mesma sala qual som foi tocado (o som vai pela transmissão)
+      // Soundboard: avisa quem está na mesma sala qual som foi tocado (o som vai pela chamada, direto entre as pessoas)
       const agora = Date.now();
       if (!u.sala || agora - (u.lastSb || 0) < 250) return json(res, 200, { ok: true });
       u.lastSb = agora;
