@@ -637,9 +637,8 @@ DICAS
       Padrão (criados do zero para o site com o Creative Claw):
         Alt+1 Trombone triste   Alt+2 Risada de plateia   Alt+3 Aplausos
         Alt+4 Ba dum tss        Alt+5 Buzina              Alt+6 Grilos
-        Alt+7 Boom dramático    Alt+8 Suspense            Alt+9 Escorregão
-        Sem atalho (escolha em "Editar"): Fiu-fiu, Acertou, Errou, Rufar
-        de tambores, Sino de luta, Chamar atenção e Pum.
+        Alt+7 Fiu-fiu           Alt+8 Rufar de tambores   Alt+9 Sino de luta
+        Sem atalho (escolha em "Editar"): Pum.
       Alt+0 para todos os sons.
       Seus sons: "Adicionar som" e escolha um arquivo (MP3, WAV, OGG ou
       M4A, até 60 segundos e 8 MB). São 30 espaços. Os arquivos ficam

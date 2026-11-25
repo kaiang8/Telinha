@@ -6300,15 +6300,9 @@
     { id: 'p-badumtss', nome: 'Ba dum tss', emoji: '🥁', arquivo: 'sons/ba-dum-tss.mp3', tecla: 'Digit4' },
     { id: 'p-buzina', nome: 'Buzina', emoji: '📯', arquivo: 'sons/buzina.mp3', tecla: 'Digit5' },
     { id: 'p-grilos', nome: 'Grilos', emoji: '🦗', arquivo: 'sons/grilos.mp3', tecla: 'Digit6' },
-    { id: 'p-boom', nome: 'Boom dramático', emoji: '💥', arquivo: 'sons/boom.mp3', tecla: 'Digit7' },
-    { id: 'p-suspense', nome: 'Suspense', emoji: '😱', arquivo: 'sons/suspense.mp3', tecla: 'Digit8' },
-    { id: 'p-escorregao', nome: 'Escorregão', emoji: '🍌', arquivo: 'sons/escorregao.mp3', tecla: 'Digit9' },
-    { id: 'p-assobio', nome: 'Fiu-fiu', emoji: '😏', arquivo: 'sons/assobio.mp3', tecla: null },
-    { id: 'p-acertou', nome: 'Acertou', emoji: '✅', arquivo: 'sons/acertou.mp3', tecla: null },
-    { id: 'p-errou', nome: 'Errou', emoji: '❌', arquivo: 'sons/errou.mp3', tecla: null },
-    { id: 'p-rufar', nome: 'Rufar de tambores', emoji: '🥁', arquivo: 'sons/rufar.mp3', tecla: null },
-    { id: 'p-sino', nome: 'Sino de luta', emoji: '🔔', arquivo: 'sons/sino-luta.mp3', tecla: null },
-    { id: 'p-atencao', nome: 'Chamar atenção', emoji: '📳', arquivo: 'sons/chamar-atencao.mp3', tecla: null },
+    { id: 'p-assobio', nome: 'Fiu-fiu', emoji: '😏', arquivo: 'sons/assobio.mp3', tecla: 'Digit7' },
+    { id: 'p-rufar', nome: 'Rufar de tambores', emoji: '📣', arquivo: 'sons/rufar.mp3', tecla: 'Digit8' },
+    { id: 'p-sino', nome: 'Sino de luta', emoji: '🔔', arquivo: 'sons/sino-luta.mp3', tecla: 'Digit9' },
     { id: 'p-pum', nome: 'Pum', emoji: '💨', arquivo: 'sons/pum.mp3', tecla: null },
   ];
   const MAX_PERSONALIZADOS = 30;
