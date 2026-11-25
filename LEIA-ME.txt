@@ -417,6 +417,8 @@ CONFIGURAÇÕES (variáveis de ambiente)
   DATA_FILE         Arquivo de dados quando não usa o Upstash.
   TURN_URL, TURN_USUARIO, TURN_SENHA
                     Servidor TURN (veja abaixo).
+  CLOUDFLARE_TURN_ID, CLOUDFLARE_TURN_TOKEN
+                    TURN da Cloudflare (veja abaixo).
   LINK_PROGRAMA     Para onde o /baixar leva (o padrão é o instalador
                     mais novo no GitHub).
 
@@ -427,9 +429,24 @@ ALGUÉM NÃO CONSEGUE VER A TELA?
 
 Algumas redes (4G/5G, CGNAT, empresa ou faculdade) bloqueiam a
 conexão direta entre navegadores. A solução é um servidor TURN, que
-repassa o vídeo. Opção grátis: o Open Relay da Metered (metered.ca),
-com 20 GB por mês. Crie a conta, copie as credenciais e adicione no
-Render (Environment):
+repassa o vídeo (só para quem precisa; os outros continuam com a
+conexão direta).
+
+Opção recomendada: o TURN da Cloudflare, com 1.000 GB grátis por mês
+(depois disso, US$ 0,05 por GB).
+  1) No painel da Cloudflare (dash.cloudflare.com), abra Realtime →
+     TURN Server e crie uma chave (Create). Ela mostra um ID ("Turn
+     Token ID") e um token ("API Token"). Copie os dois.
+  2) No Render, em Telas e Bocas → Environment, adicione:
+         CLOUDFLARE_TURN_ID=o ID copiado
+         CLOUDFLARE_TURN_TOKEN=o token copiado
+     e clique em "Save and deploy".
+  3) Confira em Painel de admin → Servidor → Servidor TURN: tem que
+     aparecer "Cloudflare ligado". O site gera senhas temporárias
+     sozinho e renova a cada 12 horas.
+
+Outra opção: o Open Relay da Metered (metered.ca), com 20 GB por mês.
+Crie a conta, copie as credenciais e adicione no Render (Environment):
 
     TURN_URL=turn:ENDERECO:80,turn:ENDERECO:443?transport=tcp
     TURN_USUARIO=seu-usuario

@@ -39,6 +39,41 @@ if (process.env.TURN_URL) {
     credential: process.env.TURN_SENHA || '',
   });
 }
+// TURN da Cloudflare (para quem está em rede que bloqueia a conexão direta: 4G/5G, CGNAT...).
+// A Cloudflare só aceita senhas temporárias: o servidor gera umas que valem 48 h e renova a cada
+// 12 h, então quem entra sempre recebe uma válida por pelo menos 36 h. Sem as duas chaves no
+// Render (ou se a Cloudflare não responder), tudo funciona como antes, só sem o TURN.
+const CF_TURN = { id: (process.env.CLOUDFLARE_TURN_ID || '').trim(), token: (process.env.CLOUDFLARE_TURN_TOKEN || '').trim(), servidores: [], quando: 0, erro: '' };
+const CF_TURN_API = (process.env.CLOUDFLARE_TURN_API || 'https://rtc.live.cloudflare.com/v1').replace(/\/+$/, '');
+async function renovarTurnCloudflare() {
+  if (!CF_TURN.id || !CF_TURN.token) return;
+  let espera = 12 * 3600e3;
+  try {
+    const r = await fetch(`${CF_TURN_API}/turn/keys/${encodeURIComponent(CF_TURN.id)}/credentials/generate-ice-servers`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${CF_TURN.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ttl: 172800 }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`HTTP ${r.status}${j?.error ? `: ${j.error}` : ''}`);
+    // só os de TURN (os de STUN já estão na lista), e sem a porta 53, que alguns navegadores bloqueiam
+    const turn = (Array.isArray(j.iceServers) ? j.iceServers : []).filter((x) => x && x.username && x.credential).map((x) => ({
+      urls: [].concat(x.urls).filter((u) => typeof u === 'string' && /^turns?:/.test(u) && !/:53(\?|$)/.test(u)),
+      username: String(x.username), credential: String(x.credential),
+    })).filter((x) => x.urls.length);
+    if (!turn.length) throw new Error('a resposta não trouxe servidores TURN');
+    CF_TURN.servidores = turn;
+    CF_TURN.quando = Date.now();
+    CF_TURN.erro = '';
+  } catch (e) {
+    CF_TURN.erro = e.message;
+    console.warn('  TURN da Cloudflare: não consegui gerar as senhas:', e.message);
+    espera = 5 * 60e3; // tenta de novo daqui a pouco
+  }
+  setTimeout(renovarTurnCloudflare, espera).unref();
+}
+const iceParaEnviar = () => [...iceServers, ...CF_TURN.servidores];
 
 // ---------- Senhas (guardadas só como hash) ----------
 function hashSenha(s) {
@@ -902,7 +937,7 @@ function enviarInit(u) {
     antigas,
     perfis: perfisPublicos(),
     users: listaUsuarios(),
-    iceServers,
+    iceServers: iceParaEnviar(),
   });
 }
 function broadcast(obj) {
@@ -1091,6 +1126,10 @@ function visaoAdmin() {
       ...configPublica(),
       adminFromEnv: !!ADMIN_ENV_HASH,
       storage: USA_UPSTASH ? 'upstash' : 'arquivo',
+      turn: {
+        proprio: !!process.env.TURN_URL,
+        cloudflare: CF_TURN.id && CF_TURN.token ? (CF_TURN.servidores.length ? { ok: true, quando: CF_TURN.quando } : { ok: false, erro: CF_TURN.erro || 'gerando as senhas…' }) : null,
+      },
     },
   };
 }
@@ -2310,6 +2349,7 @@ server.on('error', (err) => {
 
 async function iniciar() {
   console.log('');
+  renovarTurnCloudflare();
   const faltando = ARQUIVOS_DA_PAGINA.filter((n) => !acharArquivoDaPagina(n));
   if (faltando.length) {
     console.warn(`  ATENÇÃO: não encontrei ${faltando.join(', ')} (nem em public/, nem ao lado do server.js).`);

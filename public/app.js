@@ -6022,6 +6022,10 @@
           ? '<p>Ela está definida na variável <b>ADMIN_SENHA</b> da hospedagem. Para trocar, mude lá e reinicie o serviço.</p>'
           : `<p>Mínimo de 6 caracteres. Você vai precisar dela para entrar como admin de novo.</p>
         <div class="ap-row"><input id="apAdminSenha" data-keep type="password" maxlength="100" placeholder="Nova senha de admin" autocomplete="new-password"><button class="btn sm primary" data-act="admin-senha">Trocar</button></div>`}</div>
+      <div class="ap-section"><h4>Servidor TURN</h4>
+        <p>${st.turn?.cloudflare?.ok ? `Cloudflare ligado (senhas renovadas ${esc(quandoCurto(st.turn.cloudflare.quando))}). Quem está em 4G/5G ou rede que bloqueia a conexão direta consegue ver as telas.`
+          : st.turn?.cloudflare ? `Cloudflare configurado, mas com problema: ${esc(st.turn.cloudflare.erro)}. Confira as chaves CLOUDFLARE_TURN_ID e CLOUDFLARE_TURN_TOKEN no Render.`
+            : st.turn?.proprio ? 'Usando o servidor da variável TURN_URL.' : 'Nenhum: quem estiver em rede que bloqueia a conexão direta (alguns 4G/5G) pode não conseguir ver as telas. Veja "Alguém não consegue ver a tela?" no LEIA-ME.'}</p></div>
       <div class="ap-section"><h4>Onde ficam os dados</h4>
         <p>${st.storage === 'upstash' ? 'No Upstash (banco na nuvem): canais, mensagens, banimentos e configurações sobrevivem a reinícios.' : 'No arquivo <b>data.json</b>, na pasta do servidor. Numa hospedagem grátis, esse arquivo some quando o serviço reinicia: configure o Upstash (veja o LEIA-ME).'}</p></div>
       ${secaoAparelhos(d)}
