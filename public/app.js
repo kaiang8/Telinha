@@ -482,6 +482,7 @@
       case 'presence': return onPresence(m.users);
       case 'msg': return onMsg(m.msg);
       case 'perfil': return onPerfil(m);
+      case 'visto': if (S.perfis?.[m.id]) S.perfis[m.id].visto = m.visto; return;
       case 'typing': return onTyping(m);
       case 'channels': return onChannels(m.channels);
       case 'signal': return onSignal(m.from, m.data);
@@ -1170,15 +1171,265 @@
     return chan(id)?.name || '';
   }
 
+  // ----- Lista de membros: online em cima; embaixo, quem já entrou alguma vez e está offline,
+  // com há quanto tempo saiu. Clicar (ou botão direito) num nome abre o menu da pessoa. -----
+  function offlineHa(t) {
+    if (!t) return 'offline';
+    const min = Math.floor((Date.now() - t) / 60e3);
+    if (min < 1) return 'saiu agora há pouco';
+    if (min < 60) return `offline há ${min} min`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `offline há ${h} h`;
+    const d = Math.floor(h / 24);
+    if (d < 30) return `offline há ${d} ${d === 1 ? 'dia' : 'dias'}`;
+    const ms = Math.floor(d / 30);
+    if (ms < 12) return `offline há ${ms} ${ms === 1 ? 'mês' : 'meses'}`;
+    return 'offline há mais de um ano';
+  }
+  function pessoasOffline() {
+    const online = new Set(S.users.map((u) => u.pid).filter(Boolean));
+    return Object.entries(S.perfis || {})
+      .filter(([id, p]) => !online.has(id) && !p.fora)
+      .map(([id, p]) => ({ ...p, pid: id }))
+      .sort((a, b) => (b.visto || 0) - (a.visto || 0) || a.nome.localeCompare(b.nome, 'pt-BR'));
+  }
   function renderMembros() {
+    const box = $('#members');
+    const focado = document.activeElement?.closest?.('#members .member')?.dataset.chave;
     const us = [...S.users].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-    $('#members').innerHTML = `<h3>${us.length} online</h3>` + us.map((u) => {
+    const off = pessoasOffline();
+    const linha = (chave, attrs, av, nome, sub, extra = '') => `<div class="member${extra}" role="button" tabindex="0" aria-haspopup="menu" data-chave="${esc(chave)}" ${attrs}>${av}<div class="mn"><div class="ellipsis name-line">${nome}</div>${sub ? `<div class="small muted">${sub}</div>` : ''}</div></div>`;
+    box.innerHTML = `<h3>${us.length} online</h3>` + us.map((u) => {
       let st = '';
       if (u.live) st = `<span class="live-badge">ao vivo</span><span class="ellipsis">${esc(nomeSala(u.sala))}</span>`;
       else if (u.sala) st = `<span class="ellipsis">Em ${esc(nomeSala(u.sala))}</span>`;
-      const clic = S.isAdmin && u.id !== S.myId ? ` clickable" data-uid="${esc(u.id)}" title="Moderar ${esc(u.name)}` : '';
-      return `<div class="member${clic}">${avatar(u, 'dotted')}<div class="mn"><div class="ellipsis name-line"><span style="color:${esc(u.color)}">${esc(u.name)}</span>${coroa(u)}${u.id === S.myId ? ' <span class="muted small">(você)</span>' : ''}</div>${st ? `<div class="small muted">${st}</div>` : ''}</div></div>`;
-    }).join('');
+      const eu = u.id === S.myId ? ' <span class="muted small">(você)</span>' : '';
+      return linha(`u${u.id}`, `data-uid="${esc(u.id)}"${u.pid ? ` data-pid="${esc(u.pid)}"` : ''}`, avatar(u, 'dotted'),
+        `<span style="color:${esc(u.color)}">${esc(u.name)}</span>${coroa(u)}${eu}`, st);
+    }).join('') + (off.length ? `<h3 class="mb-off">${off.length} offline</h3>` + off.map((p) => linha(`p${p.pid}`,
+      `data-pid="${esc(p.pid)}"${p.visto ? ` title="Visto por último ${esc(quandoCurto(p.visto))}"` : ''}`, avatar({ name: p.nome, color: p.cor }),
+      `<span style="color:${esc(p.cor)}">${esc(p.nome)}</span>`, `<span class="mb-visto">${esc(offlineHa(p.visto))}</span>`, ' offline')).join('') : '');
+    if (focado) box.querySelector(`[data-chave="${CSS.escape(focado)}"]`)?.focus({ preventScroll: true });
+    if (MM.el && !MM.form) desenharMenuMembro(true); // a pessoa pode ter entrado ou saído com o menu aberto
+  }
+
+  // ----- Menu de uma pessoa da lista: mencionar, volume e, para admins, moderar -----
+  const MM = { el: null };
+  function pessoaDoMenu() {
+    const u = MM.pid ? S.users.find((x) => x.pid === MM.pid) : userById(MM.uid);
+    const p = MM.pid ? S.perfis?.[MM.pid] : null;
+    return { u, p, nome: u?.name || p?.nome || '?', cor: u?.color || p?.cor || '#8a94a6', eu: (u && u.id === S.myId) || (!!MM.pid && MM.pid === S.myPid) };
+  }
+  function fecharMenuMembro(devolverFoco) {
+    if (!MM.el) return;
+    MM.el.remove();
+    MM.el = null;
+    if (devolverFoco) $(`#members [data-chave="${CSS.escape(MM.chave)}"]`)?.focus();
+  }
+  function abrirMenuMembro(row, ponto) {
+    fecharMenuMembro();
+    const el = document.createElement('div');
+    el.className = 'menu-membro';
+    el.id = 'menuMembro';
+    el.setAttribute('role', 'menu');
+    Object.assign(MM, { el, chave: row.dataset.chave, uid: row.dataset.uid || null, pid: row.dataset.pid || null, ponto, info: null, form: null, codigo: null });
+    el.setAttribute('aria-label', `Opções de ${pessoaDoMenu().nome}`);
+    document.body.appendChild(el);
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const b = e.target.closest('[data-mm]');
+      if (b && !b.disabled) acaoDoMenu(b.dataset.mm, b);
+    });
+    el.addEventListener('keydown', teclaNoMenu);
+    desenharMenuMembro();
+    el.querySelector('button, input')?.focus();
+    const { eu } = pessoaDoMenu();
+    if (S.isAdmin && MM.pid && !eu) {
+      adm('perfil-info', { pid: MM.pid }).then((x) => { if (MM.el === el) { MM.info = x; if (!MM.form) desenharMenuMembro(true); } }).catch(() => {});
+    }
+  }
+  function posicionarMenuMembro() {
+    const el = MM.el;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    let x;
+    let y;
+    if (MM.ponto) {
+      x = MM.ponto.x;
+      y = MM.ponto.y;
+    } else {
+      const row = $(`#members [data-chave="${CSS.escape(MM.chave)}"]`);
+      const r = (row || $('#members')).getBoundingClientRect();
+      // ao lado da lista (que fica na direita); se não couber, embaixo do nome
+      x = r.left - w - 8;
+      y = r.top;
+      if (x < 8) { x = r.left; y = r.bottom + 4; }
+    }
+    el.style.left = `${Math.max(8, Math.min(innerWidth - w - 8, x))}px`;
+    el.style.top = `${Math.max(8, Math.min(innerHeight - h - 8, y))}px`;
+  }
+  function desenharMenuMembro(manterFoco) {
+    const el = MM.el;
+    if (!el) return;
+    const focoAntes = manterFoco ? document.activeElement?.closest?.('#menuMembro [data-mm]')?.dataset.mm : null;
+    const { u, p, nome, cor, eu } = pessoaDoMenu();
+    if (!u && !p) return fecharMenuMembro();
+    const item = (act, txt, cls = '') => `<button type="button" role="menuitem" class="mm-item${cls}" data-mm="${act}">${txt}</button>`;
+    const status = u ? (u.live ? `Transmitindo em ${esc(nomeSala(u.sala))}` : u.sala ? `Em ${esc(nomeSala(u.sala))}` : 'Online') : esc(offlineHa(p.visto));
+    let corpo;
+    if (MM.form) corpo = formDoMenu(MM.form, { u, nome });
+    else {
+      const itens = [];
+      if (eu) itens.push(item('perfil', 'Mudar meu nome ou cor'));
+      else itens.push(item('mencionar', 'Mencionar no chat'));
+      if (u && !eu && S.sala && u.sala === S.sala) itens.push(item('volume', 'Volume da voz e dos sons'));
+      if (S.isAdmin && !eu) {
+        const silenciado = u ? u.silenciado : MM.info?.silenciado > Date.now();
+        itens.push('<div class="mm-sep" role="separator">Moderar</div>');
+        itens.push(silenciado ? item('tirar-silencio', 'Tirar silêncio') : item('form:silenciar', 'Silenciar…'));
+        if (u?.live) itens.push(item('parar', 'Parar transmissão'));
+        if (u?.sala) itens.push(item('tirar-sala', 'Tirar da sala'));
+        itens.push(item('form:renomear', 'Renomear…'));
+        if (MM.pid) itens.push(item('codigo', 'Gerar código de acesso'));
+        if (u) itens.push(item('admin', u.admin ? 'Tirar admin' : 'Dar admin'));
+        if (!u && MM.info?.aparelhos) itens.push(item('form:esquecer', 'Esquecer aparelhos…', ' aviso'));
+        if (!u) itens.push(item('form:ocultar', 'Tirar da lista…', ' aviso'));
+        if (u) itens.push(item('form:expulsar', 'Expulsar…', ' aviso'));
+        itens.push(item('form:banir', 'Banir…', ' perigo'));
+      }
+      corpo = itens.join('');
+    }
+    el.innerHTML = `<div class="mm-topo">${avatar({ name: nome, color: cor }, u ? 'dotted' : 'mm-off')}<div class="mm-quem"><strong class="ellipsis" style="color:${esc(cor)}">${esc(nome)}</strong><span class="ellipsis">${status}</span></div></div>${corpo}`;
+    posicionarMenuMembro();
+    if (focoAntes) (el.querySelector(`[data-mm="${CSS.escape(focoAntes)}"]`) || el.querySelector('button'))?.focus();
+  }
+  function formDoMenu(tipo, { u, nome }) {
+    const n = `<b>${esc(nome)}</b>`;
+    const voltar = '<button type="button" class="btn sm ghost" data-mm="voltar">Voltar</button>';
+    const motivo = '<input class="mm-input" id="mmMotivo" maxlength="200" placeholder="Motivo (opcional)" aria-label="Motivo">';
+    switch (tipo) {
+      case 'silenciar':
+        return `<div class="mm-form"><p>Silenciar ${n} no chat e na voz${u ? '' : ' (vale quando entrar)'}:</p><div class="mm-tempos">
+          ${[[5, '5 min'], [15, '15 min'], [60, '1 hora'], [1440, '1 dia'], [0, 'Até eu tirar']].map(([m, t]) => `<button type="button" class="btn sm" data-mm="silenciar:${m}">${t}</button>`).join('')}
+          </div><div class="mm-botoes">${voltar}</div></div>`;
+      case 'renomear':
+        return `<div class="mm-form"><p>Novo nome para ${n}:</p><input class="mm-input" id="mmNome" maxlength="32" value="${esc(nome)}" aria-label="Novo nome">
+          <div class="mm-botoes">${voltar}<button type="button" class="btn sm primary" data-mm="renomear" data-principal>Salvar</button></div></div>`;
+      case 'expulsar':
+        return `<div class="mm-form"><p>Expulsar ${n}? Sai na hora, mas pode entrar de novo.</p>${motivo}
+          <div class="mm-botoes">${voltar}<button type="button" class="btn sm warn" data-mm="expulsar" data-principal>Expulsar</button></div></div>`;
+      case 'banir':
+        return `<div class="mm-form"><p>Banir ${n}? ${u ? 'Bloqueia o IP e este navegador' : 'Bloqueia o nome e os aparelhos que ele já usou'} até você desbanir (aba Banidos).</p>${motivo}
+          <div class="mm-botoes">${voltar}<button type="button" class="btn sm danger" data-mm="banir" data-principal>Banir</button></div></div>`;
+      case 'esquecer':
+        return `<div class="mm-form"><p>Esquecer os aparelhos de ${n}? Para entrar de novo, vai precisar de um código de acesso.</p>
+          <div class="mm-botoes">${voltar}<button type="button" class="btn sm warn" data-mm="esquecer" data-principal>Esquecer</button></div></div>`;
+      case 'ocultar':
+        return `<div class="mm-form"><p>Tirar ${n} da lista de offline? O nome continua guardado e volta para a lista quando a pessoa entrar de novo.</p>
+          <div class="mm-botoes">${voltar}<button type="button" class="btn sm warn" data-mm="ocultar" data-principal>Tirar da lista</button></div></div>`;
+      case 'codigo':
+        return `<div class="mm-form"><p>Código de acesso de ${n}:</p><div class="mm-codigo">${esc(MM.codigo.codigo)}</div>
+          <p class="mm-dica">Vale até ${hhmm(new Date(MM.codigo.ate))}. Na tela de entrada, a pessoa clica em "Já tenho um nome".</p>
+          <div class="mm-botoes"><button type="button" class="btn sm ghost" data-mm="fechar">Fechar</button><button type="button" class="btn sm primary" data-mm="copiar" data-principal>Copiar</button></div></div>`;
+      default:
+        return '';
+    }
+  }
+  function mencionarNoChat(nome) {
+    const input = $('#msgInput');
+    if (!input || input.disabled || input.closest('[hidden]')) return;
+    const v = input.value;
+    const pos = input.selectionEnd ?? v.length;
+    const antes = v.slice(0, pos);
+    const texto = `${antes && !/\s$/.test(antes) ? ' ' : ''}@${nome} `;
+    input.value = antes + texto + v.slice(pos);
+    input.focus();
+    input.setSelectionRange(pos + texto.length, pos + texto.length);
+    autoAltura();
+  }
+  async function acaoDoMenu(act, botao) {
+    const { u, nome } = pessoaDoMenu();
+    const pid = MM.pid;
+    if (act.startsWith('form:')) {
+      MM.form = act.slice(5);
+      desenharMenuMembro();
+      const campo = MM.el.querySelector('.mm-input');
+      if (campo) { campo.focus(); campo.select?.(); } else MM.el.querySelector('.mm-form button:not([data-mm="voltar"])')?.focus();
+      return;
+    }
+    if (act === 'voltar') { MM.form = null; desenharMenuMembro(); MM.el.querySelector('button')?.focus(); return; }
+    if (act === 'fechar') return fecharMenuMembro(true);
+    if (act === 'mencionar') { fecharMenuMembro(); return mencionarNoChat(nome); }
+    if (act === 'perfil') { fecharMenuMembro(); return $('#meInfo').click(); }
+    if (act === 'volume') {
+      const row = $(`#members [data-chave="${CSS.escape(MM.chave)}"]`);
+      fecharMenuMembro();
+      return u && row && abrirVolumeDaVoz(u.id, row);
+    }
+    if (act === 'copiar') {
+      try { await navigator.clipboard.writeText(MM.codigo.codigo); toast('Código copiado.'); } catch { toast('Não deu para copiar. Selecione o código e copie.'); }
+      return;
+    }
+    const valor = (id) => MM.el.querySelector(`#${id}`)?.value.trim() || '';
+    botao.disabled = true;
+    try {
+      let msg = '';
+      if (act.startsWith('silenciar:')) {
+        const minutes = Number(act.split(':')[1]);
+        if (u) await adm('mute', { uid: u.id, minutes }); else await adm('perfil-silenciar', { pid, minutes });
+        msg = `${nome} foi silenciado${minutes ? ` por ${minutes >= 1440 ? '1 dia' : minutes >= 60 ? '1 hora' : `${minutes} min`}` : ''}.`;
+      } else if (act === 'tirar-silencio') {
+        if (u) await adm('unmute', { uid: u.id }); else await adm('perfil-tirar-silencio', { pid });
+        msg = `${nome} não está mais silenciado.`;
+      } else if (act === 'parar') {
+        await adm('stop-stream', { uid: u.id });
+        msg = `A transmissão de ${nome} foi parada.`;
+      } else if (act === 'tirar-sala') {
+        await adm('remove-sala', { uid: u.id });
+        msg = `${nome} saiu da sala.`;
+      } else if (act === 'admin') {
+        const r = await adm('toggle-admin', { uid: u.id });
+        msg = r.admin ? `${nome} agora é admin.` : `${nome} não é mais admin.`;
+      } else if (act === 'renomear') {
+        const novo = valor('mmNome');
+        if (!novo) throw new Error('Escreva o nome novo.');
+        if (pid) await adm('perfil-renomear', { pid, nome: novo }); else await adm('rename-user', { uid: u.id, name: novo });
+        msg = `Agora é ${novo}.`;
+      } else if (act === 'codigo') {
+        MM.codigo = await adm('perfil-codigo', { pid });
+        MM.form = 'codigo';
+        desenharMenuMembro();
+        MM.el.querySelector('[data-principal]')?.focus();
+        return;
+      } else if (act === 'expulsar') {
+        await adm('kick', { uid: u.id, reason: valor('mmMotivo') });
+        msg = `${nome} foi expulso.`;
+      } else if (act === 'banir') {
+        if (u) await adm('ban', { uid: u.id, reason: valor('mmMotivo') }); else await adm('perfil-banir', { pid, reason: valor('mmMotivo') });
+        msg = `${nome} foi banido.`;
+      } else if (act === 'esquecer') {
+        await adm('perfil-esquecer-aparelhos', { pid });
+        msg = `Os aparelhos de ${nome} foram esquecidos.`;
+      } else if (act === 'ocultar') {
+        await adm('perfil-ocultar', { pid });
+        msg = `${nome} saiu da lista.`;
+      }
+      fecharMenuMembro(true);
+      if (msg) toast(msg);
+    } catch (e) {
+      toast(e.message);
+      if (botao.isConnected) botao.disabled = false;
+    }
+  }
+  function teclaNoMenu(e) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return fecharMenuMembro(true); }
+    if (e.key === 'Enter' && e.target.matches('.mm-input')) { e.preventDefault(); return MM.el.querySelector('[data-principal]')?.click(); }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const itens = [...MM.el.querySelectorAll('button:not(:disabled), .mm-input')];
+    if (!itens.length) return;
+    e.preventDefault();
+    const i = itens.indexOf(document.activeElement);
+    itens[(i + (e.key === 'ArrowDown' ? 1 : -1) + itens.length) % itens.length].focus();
   }
 
   function renderPaineis() {
@@ -5012,10 +5263,39 @@
 
     $('#adminBtn').innerHTML = icon('shield');
     $('#adminBtn').addEventListener('click', () => abrirPainelAdmin());
+    // lista de membros: clique ou botão direito abre o menu da pessoa
     $('#members').addEventListener('click', (e) => {
-      const m = e.target.closest('.member[data-uid]');
-      if (m && S.isAdmin) abrirPainelAdmin('pessoas', m.dataset.uid);
+      const row = e.target.closest('.member[data-chave]');
+      if (!row) return;
+      e.stopPropagation();
+      if (MM.el && MM.chave === row.dataset.chave && !MM.ponto) return fecharMenuMembro();
+      abrirMenuMembro(row, null);
     });
+    $('#members').addEventListener('contextmenu', (e) => {
+      const row = e.target.closest('.member[data-chave]');
+      if (!row) return;
+      e.preventDefault();
+      abrirMenuMembro(row, e.clientX || e.clientY ? { x: e.clientX, y: e.clientY } : null);
+    });
+    $('#members').addEventListener('keydown', (e) => {
+      const row = e.target.closest('.member[data-chave]');
+      if (!row) return;
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+        e.preventDefault();
+        abrirMenuMembro(row, null);
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const todas = [...$('#members').querySelectorAll('.member[data-chave]')];
+        const i = todas.indexOf(row) + (e.key === 'ArrowDown' ? 1 : -1);
+        if (todas[i]) { e.preventDefault(); todas[i].focus(); }
+      }
+    });
+    $('#members').addEventListener('scroll', () => { if (MM.el && !MM.ponto) posicionarMenuMembro(); }, { passive: true });
+    document.addEventListener('pointerdown', (e) => {
+      if (MM.el && !e.target.closest('#menuMembro, #members .member[data-chave]')) fecharMenuMembro();
+    });
+    window.addEventListener('resize', () => fecharMenuMembro());
+    // "offline há X" vai andando sozinho
+    setInterval(() => { if (!$('#members').hidden && $('#members .member.offline')) renderMembros(); }, 60e3);
 
     $('#channels').addEventListener('click', (e) => {
       const ren = e.target.closest('[data-rename]');
@@ -5223,7 +5503,7 @@
 
   function onPerfil(m) {
     if (typeof m.id !== 'string' || typeof m.nome !== 'string') return;
-    (S.perfis ||= {})[m.id] = { nome: m.nome, cor: m.cor };
+    (S.perfis ||= {})[m.id] = { ...S.perfis[m.id], nome: m.nome, cor: m.cor, ...(m.visto !== undefined ? { visto: m.visto } : {}), fora: !!m.fora };
     // o volume da voz e dos sons de cada pessoa fica guardado pelo nome: acompanha a troca
     if (m.antes && m.antes !== m.nome) {
       for (const [obj, chave] of [[VOLUMES_VOZ, 'volVoz'], [VOLUMES_EFEITOS, 'volEfeitos']]) {
@@ -5653,7 +5933,7 @@
 
   function abaPessoas(d) {
     const us = [...d.users].sort((a, b) => (a.id === S.myId ? -1 : b.id === S.myId ? 1 : a.name.localeCompare(b.name, 'pt-BR')));
-    return `<p class="ap-hint">Dica: clicar em alguém na lista de membros abre direto aqui. No chat, digite <b>/</b> para ver os comandos rápidos.</p>` + us.map((u) => {
+    return `<p class="ap-hint">Dica: clique (ou clique com o botão direito) em alguém na lista de membros, online ou offline, para moderar direto de lá. No chat, digite <b>/</b> para ver os comandos rápidos.</p>` + us.map((u) => {
       const eu = u.id === S.myId;
       const tags = [
         u.admin && '<span class="ap-tag gold">admin</span>',

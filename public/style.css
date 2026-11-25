@@ -1223,3 +1223,49 @@ html[data-tema="escuro"] .m-text .ment.eu, html[data-tema="escuro"] .m-text .men
 html[data-tema="escuro"] .msg.mention { background: rgba(255, 200, 61, .1); }
 html[data-tema="escuro"] .cs-todos { color: #3b2700; }
 @media (max-width: 720px) { .m-resp::before { left: -35px; width: 27px; } .msg.boas-vindas { padding: 8px 12px 8px 14px; } .msg.boas-vindas .sticker { width: 72px; height: 72px; } }
+/* ===== Lista de membros: offline embaixo, e o menu de cada pessoa ===== */
+.member[role="button"] { cursor: pointer; }
+.member:focus-visible { outline: 2px solid var(--p2); outline-offset: -2px; }
+.members h3.mb-off { margin-top: 18px; }
+.member.offline .avatar { filter: grayscale(.85); opacity: .5; }
+.member.offline .name-line { opacity: .62; }
+.member.offline:hover .name-line, .member.offline:focus-visible .name-line { opacity: .95; }
+.member.offline:hover .avatar, .member.offline:focus-visible .avatar { opacity: .75; }
+.member .mb-visto { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu-membro {
+  position: fixed; z-index: 60; width: 236px; max-width: calc(100vw - 16px); padding: 6px; display: flex; flex-direction: column; gap: 1px; border-radius: 14px;
+  background: linear-gradient(180deg, var(--pop-1), var(--pop-2)); border: 1px solid var(--borda-vidro);
+  box-shadow: inset 0 1px 0 var(--realce), var(--sombra-flutuante);
+}
+.mm-topo { display: flex; align-items: center; gap: 10px; padding: 6px 8px 10px; margin-bottom: 4px; border-bottom: 1px solid rgba(127, 140, 160, .25); min-width: 0; }
+.mm-topo .avatar { width: 34px; height: 34px; font-size: 14px; flex: none; }
+.mm-topo .avatar.mm-off { filter: grayscale(.85); opacity: .6; }
+.mm-quem { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.mm-quem strong { font-size: 14px; }
+.mm-quem span { font-size: 12px; color: var(--fraco); }
+html:not([data-tema="escuro"]) .mm-quem strong { filter: brightness(.72) saturate(1.25); }
+.mm-item {
+  display: block; width: 100%; text-align: left; padding: 7px 10px; border: 0; border-radius: 8px; background: none; cursor: pointer;
+  font: inherit; font-size: 13.5px; font-weight: 600; color: var(--texto);
+}
+.mm-item:hover, .mm-item:focus-visible { background: var(--hover); outline: none; }
+.mm-item:focus-visible { box-shadow: inset 0 0 0 2px var(--p2); }
+.mm-item.aviso { color: #c25e00; }
+.mm-item.perigo { color: #d1242f; }
+html[data-tema="escuro"] .mm-item.aviso { color: #ffb066; }
+html[data-tema="escuro"] .mm-item.perigo { color: #ff7f86; }
+.mm-item:disabled { opacity: .5; cursor: default; }
+.mm-sep { margin: 6px 8px 2px; padding-top: 8px; border-top: 1px solid rgba(127, 140, 160, .25); font-size: 11.5px; font-weight: 700; color: var(--fraco); }
+.mm-form { display: flex; flex-direction: column; gap: 8px; padding: 4px 6px 6px; font-size: 13px; color: var(--texto); }
+.mm-form p { margin: 0; line-height: 1.4; }
+.mm-input {
+  width: 100%; height: 34px; padding: 0 10px; border-radius: 9px; font: inherit; font-size: 13.5px; color: var(--texto);
+  background: linear-gradient(180deg, var(--pop-1), var(--pop-2)); border: 1px solid var(--linha-forte); outline: none;
+}
+.mm-input:focus { border-color: var(--p2); box-shadow: 0 0 0 3px rgba(61, 179, 240, .2); }
+.mm-tempos { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.mm-tempos .btn:last-child { grid-column: 1 / -1; }
+.mm-botoes { display: flex; justify-content: flex-end; gap: 6px; }
+.mm-codigo { font-size: 22px; font-weight: 800; letter-spacing: .08em; text-align: center; padding: 6px 0; color: var(--texto-forte); user-select: all; }
+.mm-dica { font-size: 12px; color: var(--fraco); }
+html[data-tema="escuro"] .member.offline .name-line { opacity: .78; }

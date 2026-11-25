@@ -929,17 +929,29 @@ function removerUsuario(u) {
   }
   if (u.joined) {
     console.log(`- ${u.name} saiu`);
+    // a lista de offline mostra há quanto tempo a pessoa saiu
+    const p = u.pid && data.perfis[u.pid];
+    if (p && !desligando) {
+      p.visto = Date.now();
+      salvar();
+      broadcast({ type: 'visto', id: u.pid, visto: p.visto });
+    }
     broadcastPresenca();
   }
 }
 
 // ---------- Moderação ----------
+// a pessoa e as outras sessões dela (o mesmo nome aberto em outro aparelho)
+function mesmaPessoa(alvo) {
+  return [alvo, ...[...users.values()].filter((x) => x !== alvo && alvo.pid && x.pid === alvo.pid && x.joined && !x.kicked)];
+}
 function ipCompartilhado(alvo) {
   // Se outra pessoa online usa o mesmo IP (mesma casa, mesmo proxy...), não dá para punir pelo IP.
   return [...users.values()].some((x) => x !== alvo && x.joined && !x.kicked && x.ip === alvo.ip);
 }
 function banDe(ip, device, pid) {
-  return data.bans.find((b) => (b.ip && b.ip === ip) || (b.device && device && b.device === device) || (b.pid && pid && b.pid === pid));
+  return data.bans.find((b) => (b.ip && b.ip === ip) || (b.device && device && b.device === device) || (b.pid && pid && b.pid === pid)
+    || (device && Array.isArray(b.aparelhos) && b.aparelhos.includes(device)));
 }
 function silencioDe(u) {
   const agora = Date.now();
@@ -959,10 +971,20 @@ function donoDoNome(nome) {
   for (const [id, p] of Object.entries(data.perfis)) if (nomeNormal(p.nome) === k) return id;
   return null;
 }
+// O que todo mundo vê de cada nome: a cor, quando foi visto pela última vez (para a lista de quem
+// está offline) e se está fora da lista (banido, ou tirado por um admin). Nada de IP.
+function perfilPublico(id) {
+  const p = data.perfis[id];
+  const fora = p.oculto || data.bans.some((b) => b.pid === id);
+  return { nome: p.nome, cor: p.cor, visto: p.visto || p.criado || 0, ...(fora ? { fora: true } : {}) };
+}
 function perfisPublicos() {
   const o = {};
-  for (const [id, p] of Object.entries(data.perfis)) o[id] = { nome: p.nome, cor: p.cor };
+  for (const id of Object.keys(data.perfis)) o[id] = perfilPublico(id);
   return o;
+}
+function avisarPerfil(id, extra = {}) {
+  if (data.perfis[id]) broadcast({ type: 'perfil', id, ...perfilPublico(id), ...extra });
 }
 const CODIGOS = new Map(); // código -> { pid, ate }
 const LETRAS_CODIGO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem 0/O e 1/I, que confundem
@@ -1037,7 +1059,7 @@ function mudarPerfil(pid, { nome, cor }, por = '') {
   if (!mudou) return { ok: true };
   for (const x of users.values()) if (x.pid === pid) { x.name = p.nome; x.color = p.cor; }
   salvar();
-  broadcast({ type: 'perfil', id: pid, nome: p.nome, cor: p.cor, antes, ...(por ? { por } : {}) });
+  avisarPerfil(pid, { antes, ...(por ? { por } : {}) });
   broadcastPresenca();
   return { ok: true };
 }
@@ -1408,11 +1430,73 @@ async function acaoAdmin(u, body, res, req) {
       return json(res, 200, { ok: true });
     }
 
+    // ---- pelo nome: servem também para quem está offline (lista de membros) ----
+    case 'perfil-info': {
+      const id = String(body.pid);
+      const p = data.perfis[id];
+      if (!p) return json(res, 404, { error: 'Esse nome não existe mais' });
+      const mute = data.mutes.find((m) => m.pid === id && m.until > Date.now());
+      return json(res, 200, {
+        id, nome: p.nome, cor: p.cor, criado: p.criado, visto: p.visto, aparelhos: p.chaves.length,
+        online: [...users.values()].some((x) => x.pid === id && x.joined && !x.kicked),
+        banido: data.bans.find((b) => b.pid === id)?.id || null,
+        silenciado: mute ? mute.until : 0,
+      });
+    }
+    case 'perfil-silenciar':
+    case 'perfil-banir':
+    case 'perfil-tirar-silencio':
+    case 'perfil-ocultar': {
+      const id = String(body.pid);
+      const p = data.perfis[id];
+      if (!p) return json(res, 404, { error: 'Esse nome não existe mais' });
+      if (id === u.pid && body.action !== 'perfil-tirar-silencio') return json(res, 400, { error: 'Isso não dá para fazer com você mesmo' });
+      const sessoes = [...users.values()].filter((x) => x.pid === id && x.joined && !x.kicked);
+      if (body.action === 'perfil-silenciar') {
+        const minutos = Number(body.minutes);
+        const until = minutos > 0 ? Date.now() + Math.min(minutos, 60 * 24 * 365) * 60e3 : Date.now() + 10 * 365 * 864e5;
+        data.mutes = data.mutes.filter((m) => m.pid !== id);
+        data.mutes.push({ ip: null, device: null, pid: id, name: p.nome, until });
+        salvar();
+        for (const x of sessoes) enviar(x, { type: 'muted', until, by: u.name });
+        broadcastPresenca();
+        if (until - Date.now() < 2 ** 31 - 1) setTimeout(broadcastPresenca, until - Date.now() + 500).unref();
+        return json(res, 200, { ok: true, until });
+      }
+      if (body.action === 'perfil-tirar-silencio') {
+        data.mutes = data.mutes.filter((m) => !(m.pid === id || sessoes.some((x) => (m.device && m.device === x.device) || (m.ip && m.ip === x.ip))));
+        salvar();
+        for (const x of sessoes) enviar(x, { type: 'muted', until: 0, by: u.name });
+        broadcastPresenca();
+        return json(res, 200, { ok: true });
+      }
+      if (body.action === 'perfil-banir') {
+        if (!data.bans.some((b) => b.pid === id)) {
+          // offline não tem IP: bloqueia o nome e os aparelhos que ele já usou
+          data.bans.push({
+            id: crypto.randomBytes(6).toString('hex'), name: p.nome, ip: null, device: null,
+            aparelhos: [...(p.aparelhos || [])], pid: id, reason: motivo, by: u.name, ts: Date.now(),
+          });
+          salvar();
+          console.log(`! ${u.name} baniu ${p.nome} (pelo nome)`);
+        }
+        for (const x of sessoes) expulsar(x, { by: u.name, reason: motivo, banned: true });
+        avisarPerfil(id);
+        return json(res, 200, { ok: true });
+      }
+      // perfil-ocultar: tira da lista de offline até a pessoa entrar de novo
+      if (sessoes.length) return json(res, 400, { error: 'Essa pessoa está online agora' });
+      p.oculto = true;
+      salvar();
+      avisarPerfil(id);
+      return json(res, 200, { ok: true });
+    }
+
     case 'kick':
       if (!precisaAlvo()) return;
       if (alvo === u) return json(res, 400, { error: 'Você não pode expulsar a si mesmo' });
       console.log(`! ${u.name} expulsou ${alvo.name}`);
-      expulsar(alvo, { by: u.name, reason: motivo, banned: false });
+      for (const x of mesmaPessoa(alvo)) expulsar(x, { by: u.name, reason: motivo, banned: false });
       return json(res, 200, { ok: true });
 
     case 'ban': {
@@ -1431,15 +1515,17 @@ async function acaoAdmin(u, body, res, req) {
       });
       salvar();
       console.log(`! ${u.name} baniu ${alvo.name}`);
-      expulsar(alvo, { by: u.name, reason: motivo, banned: true });
+      for (const x of mesmaPessoa(alvo)) expulsar(x, { by: u.name, reason: motivo, banned: true });
+      if (alvo.pid) avisarPerfil(alvo.pid);
       return json(res, 200, { ok: true, soAparelho });
     }
 
     case 'unban': {
-      const antes = data.bans.length;
-      data.bans = data.bans.filter((b) => b.id !== body.id);
-      if (data.bans.length === antes) return json(res, 404, { error: 'Banimento não encontrado' });
+      const ban = data.bans.find((b) => b.id === body.id);
+      if (!ban) return json(res, 404, { error: 'Banimento não encontrado' });
+      data.bans = data.bans.filter((b) => b !== ban);
       salvar();
+      if (ban.pid) avisarPerfil(ban.pid); // volta para a lista de offline
       return json(res, 200, { ok: true });
     }
 
@@ -1460,7 +1546,7 @@ async function acaoAdmin(u, body, res, req) {
 
     case 'unmute': {
       if (!precisaAlvo()) return;
-      data.mutes = data.mutes.filter((m) => !((m.device && m.device === alvo.device) || (m.ip && m.ip === alvo.ip)));
+      data.mutes = data.mutes.filter((m) => !((m.device && m.device === alvo.device) || (m.ip && m.ip === alvo.ip) || (m.pid && m.pid === alvo.pid)));
       salvar();
       enviar(alvo, { type: 'muted', until: 0, by: u.name });
       broadcastPresenca();
@@ -1761,6 +1847,7 @@ async function api(req, res, url) {
     let mudouCor = false;
     if (/^#[0-9a-f]{6}$/i.test(body.color) && body.color !== perfil.cor) { perfil.cor = body.color; mudouCor = true; }
     perfil.visto = Date.now();
+    if (perfil.oculto) { delete perfil.oculto; avisarPerfil(pid); }
     salvar();
     const name = perfil.nome;
     const color = perfil.cor;
@@ -1797,9 +1884,9 @@ async function api(req, res, url) {
       lembreteUsado.aparelho = aparelhoDe(req);
       salvar();
     }
-    if (mudouCor) broadcast({ type: 'perfil', id: pid, nome: perfil.nome, cor: perfil.cor, antes: perfil.nome });
+    if (mudouCor) avisarPerfil(pid, { antes: perfil.nome });
     if (nomeNovo) {
-      broadcast({ type: 'perfil', id: pid, nome: perfil.nome, cor: perfil.cor }); // os outros já conhecem o nome novo
+      avisarPerfil(pid); // os outros já conhecem o nome novo
       boasVindas(pid);
     }
     return json(res, 200, {

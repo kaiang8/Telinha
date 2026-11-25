@@ -659,6 +659,19 @@ DICAS
     mundo passa a ver "(editada)" ao lado do horário. Só dá para
     editar as próprias mensagens. Se a mensagem respondida for
     editada ou apagada, as respostas acompanham.
+  - Lista de membros: embaixo de quem está online aparece todo mundo
+    que já entrou alguma vez, com "offline há 3 h", "há 2 dias"...
+    (sem IP de ninguém). Quando a pessoa entra, ela sobe para o
+    online. Clicar (ou clicar com o botão direito) num nome abre um
+    menu: todo mundo pode mencionar a pessoa e, se estiver na mesma
+    sala, ajustar o volume dela. Para admins, o mesmo menu tem os
+    comandos de moderação, que funcionam até com a pessoa offline:
+    silenciar (vale quando ela entrar), renomear, gerar código de
+    acesso, esquecer aparelhos, tirar da lista (ela volta quando
+    entrar de novo) e banir (sem IP, bloqueia o nome e os aparelhos
+    que ele já usou). Online, também dá para expulsar, dar admin,
+    parar transmissão e tirar da sala. Quem é banido some da lista
+    até ser desbanido.
 
 
 =====================================================================
