@@ -1,0 +1,42 @@
+name: Baixar imagens para revisar
+
+# Roda só na mão. Baixa imagens do SpriteCook para o ramo "previa" (não mexe no site), para
+# poderem ser revisadas e preparadas antes de entrar em public/. Recebe pares "nome URL"
+# separados por ";" (nome: letras minúsculas, números e hífen).
+on:
+  workflow_dispatch:
+    inputs:
+      imagens:
+        description: 'Pares "nome URL" separados por ";"'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  baixar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Baixar
+        env:
+          IMAGENS: ${{ inputs.imagens }}
+        run: |
+          set -e
+          mkdir -p previa
+          echo "$IMAGENS" | tr ';' '\n' | while read -r nome url; do
+            [ -z "$nome" ] && continue
+            case "$nome" in *[!a-z0-9-]*) echo "nome inválido: $nome"; exit 1;; esac
+            case "$url" in https://api.spritecook.ai/*) ;; *) echo "endereço fora do SpriteCook"; exit 1;; esac
+            curl -fsSL --max-time 60 -o "previa/$nome.png" "$url"
+            echo "$nome: $(stat -c %s "previa/$nome.png") bytes"
+          done
+      - name: Enviar para o ramo previa
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B previa
+          git add -f previa
+          git commit -q -m "Imagens para revisar"
+          git push -f origin previa
