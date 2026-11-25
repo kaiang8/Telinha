@@ -28,7 +28,7 @@ jobs:
           echo "$IMAGENS" | tr ';' '\n' | while read -r nome url; do
             [ -z "$nome" ] && continue
             case "$nome" in *[!a-z0-9-]*) echo "nome inválido: $nome"; exit 1;; esac
-            case "$url" in https://api.spritecook.ai/*) ;; *) echo "endereço fora do SpriteCook"; exit 1;; esac
+            case "$url" in https://api.spritecook.ai/*|https://cdn.creativeclaw.co/*) ;; *) echo "endereço fora do SpriteCook e do Creative Claw"; exit 1;; esac
             curl -fsSL --max-time 60 -o "previa/$nome.png" "$url"
             echo "$nome: $(stat -c %s "previa/$nome.png") bytes"
           done
