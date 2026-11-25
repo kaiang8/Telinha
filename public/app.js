@@ -39,6 +39,7 @@
     shield: '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>',
     crown: '<path d="M3.5 8.5 8 12l4-6.5 4 6.5 4.5-3.5-1.8 10H5.3z" fill="currentColor" stroke-width="1.5"/>',
     pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m14 6 4 4"/>',
+    responder: '<path d="M10 8.5 4.5 13 10 17.5"/><path d="M4.8 13H14a5.5 5.5 0 0 0 5.5-5.5V6"/>',
     megaphone: '<path d="M3 10v4h3l8 4.5v-13L6 10H3z"/><path d="M17.5 9a3.5 3.5 0 0 1 0 6"/>',
     close: '<path d="M6 6l12 12M18 6 6 18"/>',
     swap: '<path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/>',
@@ -86,6 +87,10 @@
     volEnvio: typeof salvo.volEnvio === 'number' ? Math.min(2, Math.max(0, salvo.volEnvio)) : 1,
     envio: null, sendStream: null,
     unread: new Set(), typing: new Map(), collapsed: {},
+    mencoes: new Set(), // canais onde mencionaram você (marquinha "@")
+    apagadas: new Set(), // mensagens apagadas (quem respondeu a elas mostra "mensagem apagada")
+    resposta: null, // { ch, id, pos, rotulo, texto }: respondendo a uma mensagem
+    editando: null, // { id, ch, pos, rascunho, original }: editando uma mensagem minha
     showMembers: salvo.showMembers !== false, showSalaChat: salvo.showSalaChat !== false,
     usarPolling: !!salvo.polling, sseWatch: null,
     isAdmin: false, adminPassword: salvo.adminPassword || '', mutedUntil: 0, locked: false, kicked: null,
@@ -481,6 +486,7 @@
       case 'channels': return onChannels(m.channels);
       case 'signal': return onSignal(m.from, m.data);
       case 'msg-delete': return onMsgDelete(m);
+      case 'msg-edit': return onMsgEdit(m);
       case 'clear': return onClear(m);
       case 'settings': return onSettings(m);
       case 'announce': return mostrarAviso(m);
@@ -646,7 +652,10 @@
         S.unseen++;
         document.title = `(${S.unseen}) ${MARCA}`;
       }
-      if (mencionaMe(msg.text)) blip('msg');
+      if (mencionaMe(msg)) {
+        blip('msg');
+        S.mencoes.add(msg.ch);
+      }
     }
     renderTyping();
     renderSidebar();
@@ -677,14 +686,57 @@
   }
   setInterval(renderTyping, 1000);
 
-  function mencionaMe(text) {
-    if (/@(todos|everyone|here|galera)\b/i.test(text)) return true;
+  // A mensagem é para mim? @meuNome, @everyone, resposta a uma mensagem minha, ou as minhas boas-vindas
+  const TODOS = /(^|[^\p{L}\p{N}_])@(everyone|todos|here|galera)(?![\p{L}\p{N}_])/iu;
+  function mencionaMe(m) {
+    if (!m) return false;
+    if (m.sistema === 'boasvindas') return !!S.myPid && m.alvo === S.myPid;
+    if (m.uid === S.myId || (m.pid && m.pid === S.myPid)) return false; // as minhas não
+    const t = String(m.text || '');
+    if (S.myPid && t.includes(`<@${S.myPid}>`)) return true;
+    if (TODOS.test(t)) return true;
+    if (m.resp && ((m.resp.pid && m.resp.pid === S.myPid) || (m.resp.sistema === 'boasvindas' && m.resp.alvo === S.myPid))) return true;
+    // mensagens de antes das menções (só o texto com o nome)
     const nome = S.myName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp('@' + nome + '(?![\\p{L}\\p{N}_])', 'iu').test(text);
+    return new RegExp('(^|[^\\p{L}\\p{N}_])@' + nome + '(?![\\p{L}\\p{N}_])', 'iu').test(t);
+  }
+  const nomeDoPerfil = (pid) => S.perfis?.[pid]?.nome || 'alguém';
+  // <@id> vira "@Nome atual" (para editar, ou um resuminho sem formatação)
+  const textoComNomes = (t) => String(t || '').replace(/<@([0-9a-f]{12})>/g, (_, id) => `@${nomeDoPerfil(id)}`);
+  // "@Nome" escrito à mão (mensagens de antes): acha o nome registrado mais comprido que combina
+  const tiraAcento = (x) => x.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  function mencaoSolta(resto) {
+    const nomes = Object.entries(S.perfis || {}).map(([id, p]) => [id, esc(p.nome)]).sort((a, b) => b[1].length - a[1].length);
+    for (const [id, nome] of nomes) {
+      const trecho = resto.slice(0, nome.length);
+      if (trecho.length === nome.length && tiraAcento(trecho) === tiraAcento(nome) && !/[\p{L}\p{N}_]/u.test(resto[nome.length] || ' ')) return [id, nome.length];
+    }
+    return null;
   }
 
   function formatar(texto) {
     let s = esc(texto);
+    // menções: <@id> e @everyone viram etiquetas (as minhas ficam mais fortes)
+    const mencoes = [];
+    const etiqueta = (html) => { mencoes.push(html); return `\u0001${mencoes.length - 1}\u0001`; };
+    s = s.replace(/&lt;@([0-9a-f]{12})&gt;/g, (_, id) => etiqueta(`<span class="ment${id === S.myPid ? ' eu' : ''}">@${esc(nomeDoPerfil(id))}</span>`));
+    s = s.replace(/(^|[^\p{L}\p{N}_])@(everyone|todos|here|galera)(?![\p{L}\p{N}_])/giu, (_, a, n) => a + etiqueta(`<span class="ment todos">@${n}</span>`));
+    // "@Nome" escrito à mão (mensagens de antes das menções): vira etiqueta se for um nome registrado
+    let comEtiquetas = '';
+    for (let i = 0; i < s.length;) {
+      const j = s.indexOf('@', i);
+      if (j < 0) { comEtiquetas += s.slice(i); break; }
+      comEtiquetas += s.slice(i, j);
+      const achou = /[\p{L}\p{N}_;]/u.test(s[j - 1] || ' ') ? null : mencaoSolta(s.slice(j + 1));
+      if (achou) {
+        comEtiquetas += etiqueta(`<span class="ment${achou[0] === S.myPid ? ' eu' : ''}">@${esc(nomeDoPerfil(achou[0]))}</span>`);
+        i = j + 1 + achou[1];
+      } else {
+        comEtiquetas += '@';
+        i = j + 1;
+      }
+    }
+    s = comEtiquetas;
     const codes = [];
     s = s.replace(/`([^`\n]+)`/g, (_, c) => { codes.push(c); return `\u0000${codes.length - 1}\u0000`; });
     const imgs = [];
@@ -695,9 +747,9 @@
     s = s
       .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
       .replace(/(^|[\s(])\*([^*\n]+)\*(?=$|[\s).,!?])/g, '$1<i>$2</i>')
-      .replace(/~~([^~\n]+)~~/g, '<s>$1</s>')
-      .replace(/(^|\s)(@[\p{L}\p{N}_.-]{1,32})/gu, '$1<span class="ment">$2</span>');
+      .replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
     s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[i]}</code>`);
+    s = s.replace(/\u0001(\d+)\u0001/g, (_, i) => mencoes[i]);
     // a imagem vem pelo servidor: o site de origem não vê o IP de quem está no chat
     const bruto = (u) => u.replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[e]);
     return s + imgs.map((u) => `<img class="embed" src="/api/img?u=${encodeURIComponent(bruto(u))}&amp;t=${encodeURIComponent(S.token || '')}" alt="" loading="lazy" referrerpolicy="no-referrer">`).join('');
@@ -726,16 +778,53 @@
     if (!prev || !mesmoDia(prev.ts, m.ts)) {
       h += `<div class="day-sep"><span>${d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}</span></div>`;
     }
-    const agrupada = prev && mesmoAutor(prev, m) && m.ts - prev.ts < 5 * 60e3 && mesmoDia(prev.ts, m.ts);
-    const cls = mencionaMe(m.text) ? ' mention' : '';
-    const podeApagar = (m.pid && m.pid === S.myPid) || m.uid === S.myId || S.isAdmin;
-    const acoes = podeApagar ? `<div class="m-actions"><button class="icon-btn small" data-delmsg="${esc(m.id)}" title="Apagar mensagem (Shift+clique apaga sem perguntar)">${icon('trash')}</button></div>` : '';
-    const attrs = `data-id="${esc(m.id)}"`;
-    if (agrupada) {
-      return h + `<div class="msg${cls}" ${attrs}><span class="m-stamp">${hhmm(d)}</span><div class="m-text">${formatar(m.text)}</div>${acoes}</div>`;
+    const cls = mencionaMe(m) ? ' mention' : '';
+    const minha = (m.pid && m.pid === S.myPid) || m.uid === S.myId;
+    const botao = (attr, ic, titulo) => `<button class="icon-btn small" ${attr} title="${titulo}" aria-label="${titulo}">${icon(ic)}</button>`;
+    const acoes = `<div class="m-actions">${botao(`data-responder="${esc(m.id)}"`, 'responder', 'Responder')}`
+      + (minha && !m.sistema ? botao(`data-editar="${esc(m.id)}"`, 'pencil', 'Editar') : '')
+      + (minha || S.isAdmin ? botao(`data-delmsg="${esc(m.id)}"`, 'trash', 'Apagar mensagem (Shift+clique apaga sem perguntar)') : '')
+      + '</div>';
+    const attrs = `data-id="${esc(m.id)}"${Number.isInteger(m.pos) ? ` data-pos="${m.pos}"` : ''}`;
+    if (m.sistema === 'boasvindas') {
+      const p = S.perfis?.[m.alvo];
+      const nome = `<span class="bv-nome" style="--cor:${esc(p?.cor || '#3db3f0')}">${esc(p?.nome || 'alguém')}</span>`;
+      return h + `<div class="msg boas-vindas${cls}" ${attrs}>${STICKERS[m.figura] || STICKERS[0]}
+        <div class="bv-texto"><div class="bv-frase">${(FRASES_BOAS_VINDAS[m.frase] || FRASES_BOAS_VINDAS[0])(nome)}</div>
+          <span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span></div>${acoes}</div>`;
     }
-    return h + `<div class="msg head${cls}" ${attrs}>${avatar(autor)}<div class="m-head"><span class="m-name" style="color:${esc(autor.color)}">${esc(autor.name)}</span>${coroa(m)}<span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span></div><div class="m-text">${formatar(m.text)}</div>${acoes}</div>`;
+    // respondendo: a resposta sempre mostra o cabeçalho, com a mensagem respondida em cima
+    const agrupada = !m.resp && prev && !prev.sistema && mesmoAutor(prev, m) && m.ts - prev.ts < 5 * 60e3 && mesmoDia(prev.ts, m.ts);
+    const editando = S.editando?.id === m.id;
+    const texto = editando
+      ? `<div class="m-text m-editor"><textarea class="m-edit" rows="1" maxlength="2000" aria-label="Editar mensagem">${esc(S.editando.rascunho)}</textarea>
+          <div class="m-edit-dica">Enter salva · Esc cancela · Shift+Enter pula linha</div></div>`
+      : `<div class="m-text">${formatar(m.text)}</div>`;
+    const editada = m.editada ? `<span class="m-editada" title="Editada ${esc(quando(new Date(m.editada)).toLowerCase())}">(editada)</span>` : '';
+    if (agrupada) {
+      return h + `<div class="msg${cls}" ${attrs}><span class="m-stamp">${hhmm(d)}</span>${editada ? `<div class="m-editada-linha">${editada}</div>` : ''}${texto}${acoes}</div>`;
+    }
+    return h + `<div class="msg head${cls}${m.resp ? ' com-resp' : ''}" ${attrs}>${m.resp ? citacaoHtml(m) : ''}${avatar(autor)}<div class="m-head"><span class="m-name" style="color:${esc(autor.color)}">${esc(autor.name)}</span>${coroa(m)}<span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span>${editada}</div>${texto}${acoes}</div>`;
   }
+  // A mensagem respondida, em cima da resposta (clicar leva até ela)
+  function citacaoHtml(m) {
+    const r = m.resp;
+    const original = (S.messages[m.ch] || []).find((x) => x.id === r.id);
+    const apagada = !original && (r.apagada || S.apagadas?.has(r.id));
+    let quem;
+    let resumo;
+    if (r.sistema === 'boasvindas') {
+      quem = { name: S.perfis?.[r.alvo]?.nome || 'alguém', color: S.perfis?.[r.alvo]?.cor || '#3db3f0' };
+      resumo = 'boas-vindas';
+    } else {
+      quem = r.pid && S.perfis?.[r.pid] ? { name: S.perfis[r.pid].nome, color: S.perfis[r.pid].cor } : { name: r.nome, color: '#8a94a6' };
+      resumo = textoComNomes(original ? original.text : r.texto).replace(/\s+/g, ' ').slice(0, 120);
+    }
+    return `<div class="m-resp${apagada ? ' apagada' : ''}" data-ir="${esc(r.id)}" data-ir-pos="${Number.isInteger(r.pos) ? r.pos : ''}" title="${apagada ? 'A mensagem respondida foi apagada' : 'Ir até a mensagem respondida'}">
+      ${icon('responder')}${avatar(quem, 'mini')}<b style="color:${esc(quem.color)}">${esc(quem.name)}</b>
+      <span class="mr-texto">${apagada ? '<i>mensagem apagada</i>' : esc(resumo)}</span></div>`;
+  }
+
 
   function renderMensagens(manterScroll = false) {
     const c = chan(S.view);
@@ -781,7 +870,8 @@
     S.stick = b.scrollHeight - b.scrollTop - b.clientHeight < 150;
     if (b.scrollTop < 60 && S.antigas?.[S.view] > 0) carregarAntigas(S.view); // chegou no topo: busca as anteriores
   });
-  async function carregarAntigas(ch) {
+  async function carregarAntigas(ch, forcar = false) {
+    if (forcar) while (S.carregandoAntigas) await esperar(80);
     if (S.carregandoAntigas || !(S.antigas[ch] > 0)) return;
     S.carregandoAntigas = true;
     const botao = $('#messages [data-antigas]');
@@ -803,7 +893,8 @@
       if (botao) botao.textContent = 'Carregar mensagens anteriores';
       toast(e.message);
     } finally {
-      setTimeout(() => { S.carregandoAntigas = false; }, 300);
+      if (forcar) S.carregandoAntigas = false;
+      else setTimeout(() => { S.carregandoAntigas = false; }, 300);
     }
   }
   // Imagens carregando depois empurram o chat: mantém colado no fim
@@ -814,6 +905,12 @@
     const del = e.target.closest('[data-delmsg]');
     if (del) return apagarMensagem(del.dataset.delmsg, e.shiftKey);
     if (e.target.closest('[data-antigas]')) return carregarAntigas(S.view);
+    const resp = e.target.closest('[data-responder]');
+    if (resp) return responderMensagem(resp.dataset.responder);
+    const ed = e.target.closest('[data-editar]');
+    if (ed) return editarMensagem(ed.dataset.editar);
+    const ir = e.target.closest('[data-ir]');
+    if (ir && !ir.classList.contains('apagada')) return irParaMensagem(ir.dataset.ir, ir.dataset.irPos === '' ? null : Number(ir.dataset.irPos));
     const img = e.target.closest('img.embed');
     if (!img) return;
     const v = document.createElement('div');
@@ -821,6 +918,105 @@
     v.innerHTML = `<img src="${esc(img.src)}" alt="">`;
     v.onclick = () => v.remove();
     document.body.appendChild(v);
+  });
+
+  // ----- Responder a uma mensagem -----
+  function responderMensagem(id) {
+    const m = (S.messages[S.view] || []).find((x) => x.id === id);
+    if (!m) return;
+    S.resposta = m.sistema === 'boasvindas'
+      ? { ch: S.view, id: m.id, pos: m.pos, rotulo: `Respondendo às boas-vindas de <b>${esc(nomeDoPerfil(m.alvo))}</b>`, texto: '' }
+      : { ch: S.view, id: m.id, pos: m.pos, rotulo: `Respondendo a <b>${esc(autorDe(m).name)}</b>`, texto: textoComNomes(m.text).replace(/\s+/g, ' ').slice(0, 90) };
+    renderRespBar();
+    $('#msgInput').focus();
+  }
+  function cancelarResposta() {
+    S.resposta = null;
+    renderRespBar();
+  }
+  function renderRespBar() {
+    const b = $('#respBar');
+    const r = S.resposta;
+    // a faixa ocupa espaço embaixo: segura a conversa no lugar para ela não cobrir a última mensagem
+    const box = $('#messages');
+    const doFim = box.scrollHeight - box.scrollTop - box.clientHeight;
+    b.hidden = !r;
+    if (r) {
+      b.innerHTML = `${icon('responder')}<span class="rb-txt">${r.rotulo}${r.texto ? `: <span class="rb-texto">${esc(r.texto)}</span>` : ''}</span>
+        <button type="button" class="icon-btn small" data-cancelar-resp title="Cancelar resposta (Esc)" aria-label="Cancelar resposta">${icon('close')}</button>`;
+    }
+    box.scrollTop = box.scrollHeight - box.clientHeight - doFim;
+  }
+  $('#respBar').addEventListener('click', (e) => { if (e.target.closest('[data-cancelar-resp]')) { cancelarResposta(); $('#msgInput').focus(); } });
+
+  // Vai até a mensagem respondida (buscando as mais antigas, se precisar) e dá uma piscada nela
+  async function irParaMensagem(id, pos) {
+    const ch = S.view;
+    const achar = () => $(`#messages .msg[data-id="${CSS.escape(id)}"]`);
+    let el = achar();
+    for (let n = 0; !el && n < 60 && S.antigas[ch] > 0 && (pos === null || pos < S.antigas[ch]); n++) {
+      await carregarAntigas(ch, true);
+      if (S.view !== ch) return;
+      el = achar();
+    }
+    if (!el) return toast('Essa mensagem foi apagada.');
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.remove('piscando');
+    void el.offsetWidth; // reinicia a animação
+    el.classList.add('piscando');
+    setTimeout(() => el.classList.remove('piscando'), 2400);
+  }
+
+  // ----- Editar as próprias mensagens (todo mundo vê "(editada)") -----
+  const minhaMensagem = (m) => (m.pid && m.pid === S.myPid) || m.uid === S.myId;
+  function autoAlturaDe(t) {
+    t.style.height = 'auto';
+    t.style.height = Math.min(t.scrollHeight, 320) + 'px';
+  }
+  function editarMensagem(id) {
+    const m = (S.messages[S.view] || []).find((x) => x.id === id);
+    if (!m || m.sistema || !minhaMensagem(m)) return;
+    const texto = textoComNomes(m.text);
+    S.editando = { id, ch: S.view, pos: m.pos, rascunho: texto, original: texto };
+    rerenderMantendoScroll();
+    const t = $('#messages .m-edit');
+    if (t) {
+      t.focus();
+      t.setSelectionRange(t.value.length, t.value.length);
+      autoAlturaDe(t);
+      t.closest('.msg')?.scrollIntoView({ block: 'nearest' });
+    }
+  }
+  function cancelarEdicao() {
+    if (!S.editando) return;
+    S.editando = null;
+    rerenderMantendoScroll();
+    $('#msgInput').focus();
+  }
+  async function salvarEdicao() {
+    const ed = S.editando;
+    if (!ed) return;
+    const texto = ed.rascunho.trim();
+    if (!texto) return toast('A mensagem não pode ficar vazia. Para tirar, apague.');
+    if (texto === ed.original.trim()) return cancelarEdicao();
+    try {
+      await api('msg-edit', { channel: ed.ch, id: ed.id, pos: ed.pos, text: texto });
+      S.editando = null;
+      rerenderMantendoScroll();
+      $('#msgInput').focus();
+    } catch (e) {
+      toast(e.message);
+    }
+  }
+  $('#messages').addEventListener('keydown', (e) => {
+    if (!e.target.classList?.contains('m-edit')) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelarEdicao(); }
+    else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); salvarEdicao(); }
+  });
+  $('#messages').addEventListener('input', (e) => {
+    if (!e.target.classList?.contains('m-edit') || !S.editando) return;
+    S.editando.rascunho = e.target.value;
+    autoAlturaDe(e.target);
   });
 
   async function enviarMensagem() {
@@ -840,8 +1036,10 @@
       }
       return;
     }
+    const resp = S.resposta && S.resposta.ch === S.view ? { id: S.resposta.id, pos: S.resposta.pos } : null;
     try {
-      await api('msg', { channel: S.view, text: text.startsWith('//') ? text.slice(1) : text });
+      await api('msg', { channel: S.view, text: text.startsWith('//') ? text.slice(1) : text, ...(resp ? { resp } : {}) });
+      if (resp && S.resposta?.id === resp.id) cancelarResposta();
     } catch (e) {
       if (e.data?.muted) { S.mutedUntil = e.data.muted; atualizarComposer(); }
       toast('Não foi possível enviar: ' + e.message);
@@ -854,6 +1052,21 @@
     t.style.height = Math.min(t.scrollHeight, window.innerHeight * 0.4) + 'px';
   }
   $('#msgInput').addEventListener('keydown', (e) => {
+    const sm = S.sugestaoMencao;
+    if (sm && !$('#cmdSuggest').hidden) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        sm.sel = (sm.sel + (e.key === 'ArrowDown' ? 1 : -1) + sm.itens.length) % sm.itens.length;
+        return desenharMencoes();
+      }
+      if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey && !e.isComposing) { e.preventDefault(); return inserirMencao(sm.sel); }
+      if (e.key === 'Escape') { e.preventDefault(); $('#cmdSuggest').hidden = true; S.sugestaoMencao = null; return; }
+    }
+    if (e.key === 'Escape' && S.resposta && $('#cmdSuggest').hidden) { e.preventDefault(); return cancelarResposta(); }
+    if (e.key === 'ArrowUp' && !$('#msgInput').value) {
+      const minhas = (S.messages[S.view] || []).filter((m) => !m.sistema && minhaMensagem(m));
+      if (minhas.length) { e.preventDefault(); return editarMensagem(minhas[minhas.length - 1].id); }
+    }
     if (e.key === 'Tab' && !$('#cmdSuggest').hidden) {
       const it = $('#cmdSuggest .cs-item.sel');
       if (it && !/\s/.test($('#msgInput').value)) {
@@ -907,7 +1120,8 @@
     for (const c of textChannels()) {
       if (S.collapsed.text && c.id !== S.view && !S.unread.has(c.id)) continue;
       const cls = [c.id === S.view && 'active', S.unread.has(c.id) && 'unread'].filter(Boolean).join(' ');
-      h += `<div class="channel ${cls}" data-ch="${esc(c.id)}">${icon('hash')}<span class="ch-name">${esc(c.name)}</span>${del(c)}</div>`;
+      const marca = S.mencoes.has(c.id) && c.id !== S.view ? '<span class="ch-mencao" title="Mencionaram você">@</span>' : '';
+      h += `<div class="channel ${cls}" data-ch="${esc(c.id)}">${icon('hash')}<span class="ch-name">${esc(c.name)}</span>${marca}${del(c)}</div>`;
     }
     h += cat('sala', 'Salas de tela');
     for (const c of salas()) {
@@ -2274,6 +2488,12 @@
       <linearGradient id="emoFogoFora" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff3d00"/><stop offset=".6" stop-color="#ff7a1a"/><stop offset="1" stop-color="#ffb347"/></linearGradient>
       <linearGradient id="emoFogoDentro" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ffb300"/><stop offset="1" stop-color="#ffe57a"/></linearGradient>
       <radialGradient id="emoBerinjela" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#c29bff"/><stop offset=".45" stop-color="#7e3bd6"/><stop offset="1" stop-color="#4a1890"/></radialGradient>
+      <linearGradient id="stVerde" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a6ec72"/><stop offset=".55" stop-color="#6fcd3e"/><stop offset="1" stop-color="#43a024"/></linearGradient>
+  <linearGradient id="stAzul" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fdcff"/><stop offset=".55" stop-color="#3db3f0"/><stop offset="1" stop-color="#1c86cf"/></linearGradient>
+  <linearGradient id="stRosa" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc0d6"/><stop offset=".5" stop-color="#ff86ac"/><stop offset="1" stop-color="#ef5a8d"/></linearGradient>
+  <linearGradient id="stFolha" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b6f07c"/><stop offset="1" stop-color="#3f9a22"/></linearGradient>
+  <radialGradient id="stBolha" cx=".35" cy=".3" r=".75"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".5" stop-color="#bfeaff" stop-opacity=".5"/><stop offset="1" stop-color="#6cc6f5" stop-opacity=".35"/></radialGradient>
+  <radialGradient id="stBola" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffe27a"/><stop offset="1" stop-color="#ff8a1c"/></radialGradient>
     </defs></svg>`;
     document.body.appendChild(d.firstElementChild);
   }
@@ -2298,6 +2518,73 @@
     if (!VER_EMOTES) for (const e of document.querySelectorAll('.t-emotes .emote-voa:not(.meu)')) e.remove();
     toast(VER_EMOTES ? 'Os emotes de todo mundo voltam a aparecer na sua tela.' : 'Os emotes dos outros não aparecem mais na sua tela. Os que você mandar continuam aparecendo para todo mundo.', 6000);
   }
+
+  // ================= Boas-vindas: adesivos das telinhas acenando =================
+  // Três personagens no estilo da logo (tela arredondada, brilho de vidro, contorno de adesivo),
+  // desenhados aqui mesmo (SVG animado, fundo transparente). Quem entra pela primeira vez ganha
+  // uma mensagem no #geral com um deles e uma das três frases.
+  const BRACO = (d, cor) => `<path d="${d}" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/><path d="${d}" fill="none" stroke="${cor}" stroke-width="7" stroke-linecap="round"/>`;
+  const MAO = (x, y, cor) => `<circle cx="${x}" cy="${y}" r="7.5" fill="#fff"/><circle cx="${x}" cy="${y}" r="5.4" fill="${cor}"/><circle cx="${x - 1.6}" cy="${y - 1.8}" r="1.7" fill="#fff" opacity=".7"/>`;
+  const PE = (x, cor) => `<ellipse cx="${x}" cy="101" rx="9" ry="6" fill="#fff"/><ellipse cx="${x}" cy="101" rx="6.6" ry="4" fill="${cor}"/>`;
+  const SOMBRA = '<ellipse class="st-sombra" cx="60" cy="109" rx="27" ry="4.5" fill="#0b2a43" opacity=".16"/>';
+  const BRILHO = (x, y, s = 1) => `<path transform="translate(${x} ${y}) scale(${s})" d="M0-7q1.2 5.8 7 7q-5.8 1.2-7 7q-1.2-5.8-7-7q5.8-1.2 7-7z" fill="#fff3a6" stroke="#f2b705" stroke-width="1" stroke-linejoin="round"/>`;
+  const STICKERS = [
+    // 1. Verdinha (a tela verde da logo): pisca o olho e acena, com brilhinhos
+    `<svg class="sticker st-verde" viewBox="0 0 120 120" aria-hidden="true">${SOMBRA}
+      <g class="st-corpo">
+        ${PE(48, '#3f9a22')}${PE(72, '#3f9a22')}
+        <g>${BRACO('M30 66q-9 6-8 17', '#4aa82a')}${MAO(22, 84, '#6fcd3e')}</g>
+        <rect x="26" y="32" width="68" height="60" rx="16" fill="url(#stVerde)" stroke="#fff" stroke-width="4.5"/>
+        <path d="M28.5 46a14 14 0 0 1 14-12h35a14 14 0 0 1 14 12v3q-31.5 9-63 0z" fill="#fff" opacity=".55"/>
+        <ellipse cx="38" cy="73" rx="5.5" ry="3.4" fill="#ffc2d6" opacity=".8"/><ellipse cx="82" cy="73" rx="5.5" ry="3.4" fill="#ffc2d6" opacity=".8"/>
+        <circle class="st-olho" cx="47" cy="62" r="4" fill="#0b2a43"/>
+        <g class="st-pisca"><circle class="st-aberto" cx="73" cy="62" r="4" fill="#0b2a43"/><path class="st-fechado" d="M68.5 63q4.5-4 9 0" fill="none" stroke="#0b2a43" stroke-width="3.6" stroke-linecap="round"/></g>
+        <path d="M48 74q12 10 24 0" fill="none" stroke="#0b2a43" stroke-width="3.6" stroke-linecap="round"/>
+        <g class="st-aceno" style="transform-origin: 90px 64px">${BRACO('M90 64q12-6 14-20', '#4aa82a')}${MAO(104, 43, '#6fcd3e')}</g>
+      </g>
+      <g class="st-brilho">${BRILHO(104, 22)}</g><g class="st-brilho d2">${BRILHO(16, 40, .7)}</g>
+    </svg>`,
+    // 2. Azulzinho com anteninha: sorriso de olhos fechados e bolhas subindo
+    `<svg class="sticker st-azul" viewBox="0 0 120 120" aria-hidden="true">${SOMBRA}
+      <circle class="st-bolha" cx="16" cy="88" r="5" fill="url(#stBolha)" stroke="#fff" stroke-width="1"/>
+      <circle class="st-bolha d2" cx="104" cy="92" r="4" fill="url(#stBolha)" stroke="#fff" stroke-width="1"/>
+      <circle class="st-bolha d3" cx="98" cy="70" r="3" fill="url(#stBolha)" stroke="#fff" stroke-width="1"/>
+      <g class="st-corpo">
+        ${PE(46, '#1a74b5')}${PE(74, '#1a74b5')}
+        <g class="st-antena" style="transform-origin: 62px 36px"><path d="M62 36q2-12 8-18" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round"/><path d="M62 36q2-12 8-18" fill="none" stroke="#2a85c9" stroke-width="3.5" stroke-linecap="round"/>
+          <circle cx="71" cy="16" r="7" fill="#fff"/><circle cx="71" cy="16" r="5.2" fill="url(#stBola)"/><circle cx="69.4" cy="14.2" r="1.6" fill="#fff"/></g>
+        <g>${BRACO('M92 68q9 5 9 16', '#2a85c9')}${MAO(101, 85, '#3db3f0')}</g>
+        <rect x="22" y="36" width="76" height="56" rx="16" fill="url(#stAzul)" stroke="#fff" stroke-width="4.5"/>
+        <path d="M24.5 50a14 14 0 0 1 14-12h43a14 14 0 0 1 14 12v3q-35.5 9-71 0z" fill="#fff" opacity=".55"/>
+        <ellipse cx="36" cy="76" rx="5.5" ry="3.4" fill="#ffc2d6" opacity=".8"/><ellipse cx="84" cy="76" rx="5.5" ry="3.4" fill="#ffc2d6" opacity=".8"/>
+        <path d="M41 66q5-6 10 0M69 66q5-6 10 0" fill="none" stroke="#0b2a43" stroke-width="3.6" stroke-linecap="round"/>
+        <path class="st-boca" d="M49 74h22q0 12-11 12t-11-12z" fill="#0b2a43"/><path d="M53.5 82q6.5 4 13 0q-1.5 4-6.5 4t-6.5-4z" fill="#ff7a8a"/>
+        <g class="st-aceno" style="transform-origin: 28px 68px">${BRACO('M28 68q-12-5-15-19', '#2a85c9')}${MAO(13, 48, '#3db3f0')}</g>
+      </g>
+    </svg>`,
+    // 3. Rosinha com brotinho: dá pulinhos, acena e solta coraçõezinhos
+    `<svg class="sticker st-rosa" viewBox="0 0 120 120" aria-hidden="true">${SOMBRA}
+      <g transform="translate(18 64)"><path class="st-coracao" d="M0 4.5C-2.2 2.7 -6 .4 -6 -2.3C-6 -4.5 -4.2 -5.7 -2.6 -5.7C-1.3 -5.7 -.4 -4.9 0 -4C.4 -4.9 1.3 -5.7 2.6 -5.7C4.2 -5.7 6 -4.5 6 -2.3C6 .4 2.2 2.7 0 4.5z" fill="#ff5c8a" stroke="#fff" stroke-width="1.2"/></g>
+      <g transform="translate(101 42) scale(.8)"><path class="st-coracao d2" d="M0 4.5C-2.2 2.7 -6 .4 -6 -2.3C-6 -4.5 -4.2 -5.7 -2.6 -5.7C-1.3 -5.7 -.4 -4.9 0 -4C.4 -4.9 1.3 -5.7 2.6 -5.7C4.2 -5.7 6 -4.5 6 -2.3C6 .4 2.2 2.7 0 4.5z" fill="#ff5c8a" stroke="#fff" stroke-width="1.2"/></g>
+      <g class="st-pulo">
+        ${PE(50, '#e0457c')}${PE(70, '#e0457c')}
+        <g class="st-broto" style="transform-origin: 60px 25px"><path d="M60 26q0-8 0-10" stroke="#fff" stroke-width="6" stroke-linecap="round"/><path d="M60 26q0-8 0-10" stroke="#3f9a22" stroke-width="3" stroke-linecap="round"/>
+          <path d="M60 17q-4-9-14-8q1 9 14 8z" fill="url(#stFolha)" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M60 15q5-9 14-6q-2 9-14 6z" fill="url(#stFolha)" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></g>
+        <g>${BRACO('M34 66q-9 6-9 16', '#e0457c')}${MAO(25, 83, '#ff7fa6')}</g>
+        <rect x="32" y="24" width="56" height="70" rx="16" fill="url(#stRosa)" stroke="#fff" stroke-width="4.5"/>
+        <path d="M34.5 38a14 14 0 0 1 14-12h23a14 14 0 0 1 14 12v3q-25.5 8-51 0z" fill="#fff" opacity=".55"/>
+        <ellipse cx="42" cy="70" rx="5" ry="3.2" fill="#ff3d7f" opacity=".35"/><ellipse cx="78" cy="70" rx="5" ry="3.2" fill="#ff3d7f" opacity=".35"/>
+        <g class="st-olhos"><circle cx="49" cy="59" r="5.2" fill="#0b2a43"/><circle cx="71" cy="59" r="5.2" fill="#0b2a43"/><circle cx="50.8" cy="57.2" r="1.8" fill="#fff"/><circle cx="72.8" cy="57.2" r="1.8" fill="#fff"/></g>
+        <path d="M53 69q7 7 14 0" fill="none" stroke="#0b2a43" stroke-width="3.6" stroke-linecap="round"/>
+        <g class="st-aceno" style="transform-origin: 86px 64px">${BRACO('M86 64q12-4 15-18', '#e0457c')}${MAO(101, 45, '#ff7fa6')}</g>
+      </g>
+    </svg>`,
+  ];
+  const FRASES_BOAS_VINDAS = [
+    (n) => `Que bom te ver por aqui, ${n}!`,
+    (n) => `Olha só quem chegou: ${n}! Fica à vontade.`,
+    (n) => `${n} acabou de chegar. Puxa uma cadeira!`,
+  ];
 
   const REACAO = { cliques: [] };
   function soltarEmote(sid, e, x, meu = false) {
@@ -4620,6 +4907,9 @@
     if (!c) return;
     S.view = id;
     S.unread.delete(id);
+    S.mencoes.delete(id);
+    if (S.resposta && S.resposta.ch !== id) cancelarResposta();
+    S.editando = null;
     salvar({ view: id });
     $('#sidebar').classList.remove('open');
     if (c.type === 'sala' && S.sala !== id) entrarNaSala(id);
@@ -4809,11 +5099,30 @@
     const box = $('#messages');
     const topo = box.scrollTop;
     const colado = S.stick;
-    renderMensagens();
-    if (!colado) box.scrollTop = topo;
+    // editando uma mensagem: continua com o cursor no mesmo lugar
+    const ed = document.activeElement?.classList?.contains('m-edit') ? document.activeElement : null;
+    const cursor = ed ? [ed.selectionStart, ed.selectionEnd] : null;
+    renderMensagens(true);
+    box.scrollTop = colado ? box.scrollHeight : topo;
+    const t = cursor && $('#messages .m-edit');
+    if (t) { t.focus(); t.setSelectionRange(cursor[0], cursor[1]); autoAlturaDe(t); }
+  }
+
+  function onMsgEdit(m) {
+    const lista = S.messages[m.channel] || [];
+    const x = lista.find((y) => y.id === m.id);
+    if (x) { x.text = m.text; x.editada = m.editada; }
+    // as respostas a ela mostram o texto novo, mesmo se a original não estiver carregada
+    let citada = false;
+    for (const y of lista) if (y.resp?.id === m.id) { y.resp.texto = String(m.text).slice(0, 160); citada = true; }
+    if (S.resposta?.id === m.id && S.resposta.texto) { S.resposta.texto = textoComNomes(m.text).replace(/\s+/g, ' ').slice(0, 90); renderRespBar(); }
+    if ((x || citada) && m.channel === S.view) rerenderMantendoScroll();
   }
 
   function onMsgDelete(m) {
+    (S.apagadas ||= new Set()).add(m.id); // quem respondeu a ela passa a mostrar "mensagem apagada"
+    if (S.editando?.id === m.id) S.editando = null;
+    if (S.resposta?.id === m.id) cancelarResposta();
     const lista = S.messages[m.channel];
     if (!lista) return;
     const i = lista.findIndex((x) => x.id === m.id);
@@ -5167,12 +5476,67 @@
       const c = comandosVisiveis().find((x) => x.nome === m[1].toLowerCase());
       if (c && c.args) itens = [c];
     }
-    if (!itens.length) { box.hidden = true; return; }
+    S.sugestaoMencao = null;
+    if (!itens.length) {
+      // "@" antes do cursor: lista de nomes para mencionar
+      const q = consultaDeMencao();
+      const nomes = q ? itensDeMencao(q.q) : [];
+      if (nomes.length) {
+        S.sugestaoMencao = { ...q, itens: nomes, sel: 0 };
+        return desenharMencoes();
+      }
+      box.hidden = true;
+      return;
+    }
     box.innerHTML = `<div class="cs-title">Comandos</div>` + itens.map((c, i) =>
       `<div class="cs-item${i === 0 ? ' sel' : ''}" data-cmd="${c.nome}"><b>/${c.nome}</b><span class="args">${esc(c.args)}</span><span class="desc">${esc(c.desc)}</span></div>`).join('');
     box.hidden = false;
   }
+  // ----- Menções: a lista de nomes ao digitar "@" -----
+  function consultaDeMencao() {
+    const input = $('#msgInput');
+    const ate = input.selectionStart ?? input.value.length;
+    const m = input.value.slice(0, ate).match(/(^|[^\p{L}\p{N}_])@([^@\n]{0,32})$/u);
+    return m ? { q: m[2], ini: ate - m[2].length - 1, fim: ate } : null;
+  }
+  function itensDeMencao(q) {
+    const nq = tiraAcento(q);
+    const online = new Set(S.users.map((u) => u.pid).filter(Boolean));
+    const lista = Object.entries(S.perfis || {})
+      .filter(([id, p]) => id !== S.myPid && (tiraAcento(p.nome).startsWith(nq) || tiraAcento(p.nome).split(' ').some((w) => w.startsWith(nq))))
+      .sort((a, b) => (online.has(b[0]) - online.has(a[0])) || a[1].nome.localeCompare(b[1].nome, 'pt-BR'))
+      .slice(0, 7)
+      .map(([id, p]) => ({ id, nome: p.nome, cor: p.cor, online: online.has(id) }));
+    if (['everyone', 'todos'].some((x) => x.startsWith(nq))) lista.push({ id: 'everyone', nome: 'everyone' });
+    return lista;
+  }
+  function desenharMencoes() {
+    const sm = S.sugestaoMencao;
+    const box = $('#cmdSuggest');
+    box.innerHTML = '<div class="cs-title">Mencionar</div>' + sm.itens.map((x, i) => (x.id === 'everyone'
+      ? `<div class="cs-item cs-mencao${i === sm.sel ? ' sel' : ''}" data-mencao="${i}"><span class="cs-todos">@</span><b>@everyone</b><span class="desc">avisa todo mundo</span></div>`
+      : `<div class="cs-item cs-mencao${i === sm.sel ? ' sel' : ''}" data-mencao="${i}">${avatar({ name: x.nome, color: x.cor }, 'mini')}<b>${esc(x.nome)}</b><span class="desc">${x.online ? 'online' : ''}</span></div>`)).join('');
+    box.hidden = false;
+  }
+  function inserirMencao(i) {
+    const sm = S.sugestaoMencao;
+    const x = sm?.itens[i];
+    if (!x) return;
+    const input = $('#msgInput');
+    const v = input.value;
+    const texto = `@${x.nome} `;
+    input.value = v.slice(0, sm.ini) + texto + v.slice(sm.fim);
+    const cursor = sm.ini + texto.length;
+    input.focus();
+    input.setSelectionRange(cursor, cursor);
+    S.sugestaoMencao = null;
+    $('#cmdSuggest').hidden = true;
+    autoAltura();
+  }
+
   $('#cmdSuggest').addEventListener('mousedown', (e) => {
+    const mc = e.target.closest('[data-mencao]');
+    if (mc) { e.preventDefault(); return inserirMencao(Number(mc.dataset.mencao)); }
     const it = e.target.closest('[data-cmd]');
     if (!it) return;
     e.preventDefault();

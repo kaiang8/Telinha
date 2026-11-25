@@ -415,7 +415,7 @@ async function rodarFilaDeMensagens() {
           const n = Number(await upstash(['RPUSH', chaveMsgs(op.ch), JSON.stringify(semPos(op.m))]));
           if (n > 0) op.m.pos = n - 1; // a posição de verdade (se outro servidor gravou junto, corrige)
         } else if (op.tipo === 'trocar') {
-          await upstash(['LSET', chaveMsgs(op.ch), String(op.alvo.pos), JSON.stringify(op.lapide)]);
+          await upstash(['LSET', chaveMsgs(op.ch), String(op.alvo.pos), JSON.stringify(op.valor)]);
         } else if (op.tipo === 'del') {
           await upstash(['DEL', chaveMsgs(op.ch)]);
         }
@@ -442,28 +442,64 @@ function guardarMensagem(m) {
   else { (MSGS.arquivo[m.ch] ||= []).push(semPos(m)); salvarArquivoDeMensagens(); }
   return salva;
 }
-// Apaga uma mensagem: some da memória, e no banco vira uma "lápide" (a posição continua ocupada,
-// para as outras não mudarem de lugar). Mensagens mais antigas que as da memória vêm pela posição.
-async function apagarMensagemGuardada(ch, id, pos, pode) {
+// Acha uma mensagem: na memória pelo id, ou (mais antiga) no banco pela posição, conferindo o id
+async function acharMensagem(ch, id, pos) {
   const rec = MSGS.recentes[ch] || [];
-  let m = rec.find((x) => x.id === id);
-  if (!m) {
-    if (!Number.isInteger(pos) || pos < 0 || pos >= (MSGS.total[ch] || 0)) return { status: 404 };
-    if (USA_UPSTASH) {
-      const bruto = await upstash(['LINDEX', chaveMsgs(ch), String(pos)]);
-      try { m = bruto ? { ...JSON.parse(bruto), pos } : null; } catch { m = null; }
-    } else {
-      const x = MSGS.arquivo[ch]?.[pos];
-      m = x ? { ...x, pos } : null;
-    }
-    if (!m || m.id !== id || m.apagada) return { status: 404 };
+  const m = rec.find((x) => x.id === id);
+  if (m) return m;
+  if (!Number.isInteger(pos) || pos < 0 || pos >= (MSGS.total[ch] || 0)) return null;
+  let x = null;
+  if (USA_UPSTASH) {
+    const bruto = await upstash(['LINDEX', chaveMsgs(ch), String(pos)]);
+    try { x = bruto ? { ...JSON.parse(bruto), pos } : null; } catch { x = null; }
+  } else {
+    const y = MSGS.arquivo[ch]?.[pos];
+    x = y ? { ...y, pos } : null;
   }
+  return x && x.id === id && !x.apagada ? x : null;
+}
+// Grava de novo uma mensagem na mesma posição (editada, ou a "lápide" de uma apagada)
+function regravarMensagem(ch, alvo, valor) {
+  if (USA_UPSTASH) filaDeMensagens({ tipo: 'trocar', ch, alvo, valor });
+  else if (MSGS.arquivo[ch]) { MSGS.arquivo[ch][alvo.pos] = valor; salvarArquivoDeMensagens(); }
+}
+// Quem responde guarda um trechinho da mensagem respondida. Quando ela é editada ou apagada, o
+// trechinho guardado nas respostas acompanha (um texto apagado não pode continuar aparecendo citado).
+async function atualizarCitacoes(ch, orig, apagada) {
+  const mexer = (x) => {
+    if (!x || x.apagada || x.resp?.id !== orig.id) return false;
+    x.resp = { ...x.resp };
+    if (apagada) { x.resp.apagada = true; delete x.resp.texto; } else x.resp.texto = String(orig.text || '').slice(0, 160);
+    return true;
+  };
+  const rec = MSGS.recentes[ch] || [];
+  for (const x of rec) if (x.pos > orig.pos && mexer(x)) regravarMensagem(ch, x, semPos(x));
+  // respostas que já saíram da memória (só acontece quando a original também é antiga)
+  const ate = rec.length ? rec[0].pos : (MSGS.total[ch] || 0);
+  for (let ini = orig.pos + 1; ini < ate; ini += 500) {
+    const fim = Math.min(ate, ini + 500) - 1;
+    const itens = USA_UPSTASH ? await upstash(['LRANGE', chaveMsgs(ch), String(ini), String(fim)]) : (MSGS.arquivo[ch] || []).slice(ini, fim + 1);
+    (itens || []).forEach((bruto, i) => {
+      let x;
+      try { x = typeof bruto === 'string' ? JSON.parse(bruto) : { ...bruto }; } catch { return; }
+      if (mexer(x)) regravarMensagem(ch, { pos: ini + i }, x);
+    });
+  }
+}
+function citacoesDepois(ch, orig, apagada) {
+  atualizarCitacoes(ch, orig, apagada).catch((e) => console.warn('Não consegui atualizar as respostas:', e.message));
+}
+// Apaga uma mensagem: some da memória, e no banco vira uma "lápide" (a posição continua ocupada,
+// para as outras não mudarem de lugar)
+async function apagarMensagemGuardada(ch, id, pos, pode) {
+  const m = await acharMensagem(ch, id, pos);
+  if (!m) return { status: 404 };
   if (!pode(m)) return { status: 403 };
+  const rec = MSGS.recentes[ch] || [];
   const i = rec.indexOf(m);
   if (i >= 0) rec.splice(i, 1);
-  const lapide = { id, ch, apagada: true, ts: m.ts };
-  if (USA_UPSTASH) filaDeMensagens({ tipo: 'trocar', ch, alvo: m, lapide });
-  else if (MSGS.arquivo[ch]) { MSGS.arquivo[ch][m.pos] = lapide; salvarArquivoDeMensagens(); }
+  regravarMensagem(ch, m, { id, ch, apagada: true, ts: m.ts });
+  citacoesDepois(ch, m, true);
   return { ok: true };
 }
 function esvaziarCanal(ch, sumir = false) {
@@ -940,6 +976,51 @@ function novoCodigo(pid) {
   CODIGOS.set(c, { pid, ate });
   return { codigo: `${c.slice(0, 4)}-${c.slice(4)}`, ate };
 }
+// Menções: "@Nome" de alguém registrado vira <@id> (assim a menção acompanha se a pessoa trocar
+// de nome). Acha o nome mais comprido que combina, sem ligar para maiúsculas e acentos, e aceita
+// nomes com espaço ("@Ana Paula").
+const letraOuNumero = /[\p{L}\p{N}_]/u;
+function converterMencoes(texto) {
+  if (!texto.includes('@')) return texto;
+  const nomes = Object.entries(data.perfis).map(([id, p]) => [id, p.nome, nomeNormal(p.nome)]).sort((a, b) => b[1].length - a[1].length);
+  let out = '';
+  let i = 0;
+  while (i < texto.length) {
+    const j = texto.indexOf('@', i);
+    if (j < 0) { out += texto.slice(i); break; }
+    out += texto.slice(i, j);
+    let casou = null;
+    if (!letraOuNumero.test(texto[j - 1] || ' ')) { // não pega e-mails (fulano@site)
+      const resto = texto.slice(j + 1);
+      for (const [id, nome, normal] of nomes) {
+        const trecho = resto.slice(0, nome.length);
+        if (trecho.length === nome.length && nomeNormal(trecho) === normal && !letraOuNumero.test(resto[nome.length] || ' ')) { casou = [id, nome.length]; break; }
+      }
+    }
+    if (casou) { out += `<@${casou[0]}>`; i = j + 1 + casou[1]; } else { out += '@'; i = j + 1; }
+  }
+  return out;
+}
+
+// ---------- Boas-vindas: quem entra pela primeira vez é recebido no #geral ----------
+function boasVindas(pid) {
+  const c = canal('geral') || data.channels.find((x) => x.type === 'text');
+  if (!c || !data.perfis[pid]) return;
+  const m = guardarMensagem({
+    id: crypto.randomBytes(8).toString('hex'),
+    ch: c.id,
+    sistema: 'boasvindas',
+    alvo: pid,
+    frase: crypto.randomInt(3), // qual das 3 frases
+    figura: crypto.randomInt(3), // qual dos 3 personagens
+    name: nomeServidor(),
+    color: '#3db3f0',
+    text: `Que bom te ver por aqui, <@${pid}>!`, // para quem ainda está com a página antiga
+    ts: Date.now(),
+  });
+  broadcast({ type: 'msg', msg: m });
+}
+
 function mudarPerfil(pid, { nome, cor }, por = '') {
   const p = data.perfis[pid];
   if (!p) return { status: 404, erro: 'Perfil não encontrado' };
@@ -1623,6 +1704,7 @@ async function api(req, res, url) {
     let pid = null;
     let chaveNova = null;
     let chaveUsada = null;
+    let nomeNovo = false;
     const pedido = body.perfil && typeof body.perfil === 'object' ? body.perfil : null;
     if (pedido && typeof pedido.id === 'string' && typeof pedido.chave === 'string') {
       const p = data.perfis[pedido.id];
@@ -1659,6 +1741,7 @@ async function api(req, res, url) {
       } else {
         pid = crypto.randomBytes(6).toString('hex');
         chaveNova = crypto.randomBytes(24).toString('hex');
+        nomeNovo = true;
         data.perfis[pid] = { nome, cor: CORES[Math.floor(Math.random() * CORES.length)], criado: Date.now(), visto: 0, chaves: [], aparelhos: [] };
         // quem escolhe um nome que já aparecia nas mensagens de antes fica com elas
         const k = nomeNormal(nome);
@@ -1715,6 +1798,10 @@ async function api(req, res, url) {
       salvar();
     }
     if (mudouCor) broadcast({ type: 'perfil', id: pid, nome: perfil.nome, cor: perfil.cor, antes: perfil.nome });
+    if (nomeNovo) {
+      broadcast({ type: 'perfil', id: pid, nome: perfil.nome, cor: perfil.cor }); // os outros já conhecem o nome novo
+      boasVindas(pid);
+    }
     return json(res, 200, {
       id: u.id, token: u.token, admin,
       perfil: { id: pid, nome: perfil.nome, cor: perfil.cor, ...(chaveNova ? { chave: chaveNova } : {}) },
@@ -1740,6 +1827,15 @@ async function api(req, res, url) {
       if (!c || !text) return json(res, 400, { error: 'mensagem inválida' });
       const ate = silencioDe(u);
       if (ate) return json(res, 403, { error: 'Você está silenciado por um admin', muted: ate });
+      // respondendo a uma mensagem: guarda um resuminho dela (quem e o começo do texto)
+      let resp = null;
+      if (body.resp && typeof body.resp === 'object' && typeof body.resp.id === 'string') {
+        const o = await acharMensagem(c.id, body.resp.id, Number(body.resp.pos)).catch(() => null);
+        if (o) {
+          const x = msgParaEnviar(o);
+          resp = { id: x.id, pos: x.pos, ...(x.pid ? { pid: x.pid } : {}), ...(x.sistema ? { sistema: x.sistema, alvo: x.alvo } : {}), nome: x.name, texto: String(x.text || '').slice(0, 160) };
+        }
+      }
       const m = guardarMensagem({
         id: crypto.randomBytes(8).toString('hex'),
         ch: c.id,
@@ -1748,10 +1844,35 @@ async function api(req, res, url) {
         name: u.name,
         color: u.color,
         admin: !!u.admin,
-        text,
+        text: converterMencoes(text),
+        ...(resp ? { resp } : {}),
         ts: Date.now(),
       });
       broadcast({ type: 'msg', msg: m });
+      return json(res, 200, { ok: true });
+    }
+
+    case 'msg-edit': {
+      // editar a própria mensagem: todo mundo vê "(editada)"
+      const c = canal(body.channel);
+      const id = String(body.id || '');
+      const text = String(body.text || '').trim().slice(0, 2000);
+      if (!c || !id) return json(res, 404, { error: 'Mensagem não encontrada' });
+      if (!text) return json(res, 400, { error: 'A mensagem não pode ficar vazia (para tirar, apague)' });
+      if (silencioDe(u)) return json(res, 403, { error: 'Você está silenciado por um admin' });
+      if (limiteDe(u, 'limEdit', 10, 10e3)) return json(res, 429, { error: 'Calma com as edições' });
+      let m;
+      try { m = await acharMensagem(c.id, id, Number(body.pos)); } catch { return json(res, 503, { error: 'Não consegui editar agora. Tente de novo.' }); }
+      if (!m || m.sistema) return json(res, 404, { error: 'Mensagem não encontrada' });
+      const dono = (u.pid && msgParaEnviar(m).pid === u.pid) || m.uid === u.id;
+      if (!dono) return json(res, 403, { error: 'Você só pode editar as suas mensagens' });
+      const novo = converterMencoes(text);
+      if (novo === m.text) return json(res, 200, { ok: true });
+      m.text = novo;
+      m.editada = Date.now();
+      regravarMensagem(c.id, m, semPos(m));
+      citacoesDepois(c.id, m, false);
+      broadcast({ type: 'msg-edit', channel: c.id, id, text: m.text, editada: m.editada });
       return json(res, 200, { ok: true });
     }
 

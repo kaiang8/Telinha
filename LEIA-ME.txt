@@ -4,9 +4,11 @@
 
 O que tem:
 
-  - Canais de texto: histórico, menções (@nome, @todos), links,
-    imagens por link, **negrito**, *itálico*, `código` e o aviso de
-    "fulano está digitando...".
+  - Canais de texto: histórico, menções (@nome, @everyone), responder
+    e editar mensagens, links, imagens por link, **negrito**,
+    *itálico*, `código` e o aviso de "fulano está digitando...".
+  - Boas-vindas: quem entra pela primeira vez ganha uma mensagem no
+    #geral com uma telinha acenando.
   - Salas de tela: entre na sala e clique em "Compartilhar tela".
     Todo mundo na sala vê. Várias pessoas podem transmitir ao mesmo
     tempo.
@@ -634,6 +636,29 @@ DICAS
     até o topo (ou clicando em "Carregar mensagens anteriores"), as
     mais antigas vão aparecendo. O plano grátis do Upstash guarda 256
     MB, o que dá para centenas de milhares de mensagens de texto.
+  - Boas-vindas: a primeira vez que alguém entra (nome novo), aparece
+    no #geral uma mensagem como "Que bom te ver por aqui, Fulano!" com
+    uma telinha acenando. São 3 frases e 3 telinhas, sorteadas. Se o
+    canal #geral não existir, vai para o primeiro canal de texto.
+    Quem entra de novo com o mesmo nome não ganha outra.
+  - Menções: digite @ e o começo do nome; aparece a lista de pessoas
+    (setas para escolher, Enter ou Tab para colocar). Vale para nomes
+    com espaço e sem acento ("@joao" acha o João). A mensagem fica
+    destacada em amarelo para quem foi mencionado, com um "@" vermelho
+    no canal. Se a pessoa trocar de nome, a menção acompanha.
+    @everyone (ou @todos) menciona todo mundo e pode ser usado por
+    qualquer pessoa.
+  - Responder: passe o mouse na mensagem e clique na setinha. A
+    resposta mostra um pedacinho da mensagem original em cima;
+    clicando nele, o chat volta até a original (buscando as mais
+    antigas, se precisar) e ela pisca. Quem recebeu a resposta vê a
+    mensagem destacada, como numa menção. Esc cancela a resposta.
+  - Editar: passe o mouse na sua mensagem e clique no lápis (ou
+    aperte a seta para cima com a caixa de texto vazia para editar a
+    última). Enter salva, Esc cancela, Shift+Enter pula linha. Todo
+    mundo passa a ver "(editada)" ao lado do horário. Só dá para
+    editar as próprias mensagens. Se a mensagem respondida for
+    editada ou apagada, as respostas acompanham.
 
 
 =====================================================================

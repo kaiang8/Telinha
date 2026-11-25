@@ -365,6 +365,7 @@ html[data-tema="escuro"] .vp-rede.nivel-2 { --cor-rede: #f2b33d; }
 
 /* Nomes com a cor de cada um: no claro, escurecida para ler bem */
 html:not([data-tema="escuro"]) .msg .m-name,
+html:not([data-tema="escuro"]) .m-resp b,
 html:not([data-tema="escuro"]) .member .name-line > span:first-child,
 html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(.55) saturate(1.6); }
 
@@ -775,7 +776,7 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
 }
 @media (prefers-reduced-motion: reduce) {
   /* os emotes ficam de fora: são curtinhos, só aparecem quando alguém clica, e a graça é a animação */
-  :not(.emote-voa, .emote-voa *, .t-reacao *), ::before, ::after { animation: none !important; transition: none !important; }
+  :not(.emote-voa, .emote-voa *, .t-reacao *, .sticker, .sticker *), ::before, ::after { animation: none !important; transition: none !important; }
 }
 /* com vídeo na tela: sem desfoque. A placa de vídeo refazia o desfoque a cada quadro e o vídeo
    caía pela metade (inclusive a captura de quem transmite). Painéis mais opacos no lugar. */
@@ -1130,3 +1131,95 @@ body.com-video :is(.sidebar, .main) { background: linear-gradient(180deg, var(--
 /* mensagens antigas: carregam quando sobe o chat */
 .antigas { display: flex; justify-content: center; padding: 14px 0 6px; }
 .ap-mais { display: block; margin: 10px auto 0; }
+
+/* ===== Boas-vindas: a telinha acenando (adesivo animado, fundo transparente) ===== */
+/* animados mesmo com "reduzir movimento" do Windows ligado, como os emotes */
+.sticker { width: 88px; height: 88px; overflow: visible; flex: none; filter: drop-shadow(0 2px 3px rgba(11, 42, 67, .25)); }
+.sticker .st-corpo { transform-box: view-box; transform-origin: 60px 104px; animation: stBalanca 1.8s ease-in-out infinite; }
+.sticker .st-aceno { transform-box: view-box; animation: stAceno 2.6s ease-in-out infinite; }
+.st-azul .st-aceno { animation-name: stAcenoEsq; }
+.sticker .st-pisca .st-fechado { opacity: 0; animation: stPiscaFecha 3.4s infinite; }
+.sticker .st-pisca .st-aberto { animation: stPiscaAbre 3.4s infinite; }
+.sticker .st-olhos { transform-box: fill-box; transform-origin: center; animation: stPiscar 3.8s infinite; }
+.sticker .st-brilho { transform-box: fill-box; transform-origin: center; animation: stBrilho 1.6s ease-in-out infinite; }
+.sticker .st-brilho.d2 { animation-delay: -.8s; }
+.sticker .st-antena { transform-box: view-box; animation: stAntena 1.2s ease-in-out infinite alternate; }
+.sticker .st-bolha { transform-box: fill-box; transform-origin: center; animation: stBolha 3s ease-in infinite; }
+.sticker .st-bolha.d2 { animation-delay: -1s; }
+.sticker .st-bolha.d3 { animation-delay: -2s; }
+.sticker .st-boca { transform-box: fill-box; transform-origin: 50% 0; animation: stRiso 1.3s ease-in-out infinite; }
+.sticker .st-pulo { transform-box: view-box; transform-origin: 60px 106px; animation: stPulo 1.3s ease-in-out infinite; }
+.sticker .st-broto { transform-box: view-box; animation: stAntena 1.4s ease-in-out infinite alternate; }
+.sticker .st-coracao { transform-box: fill-box; transform-origin: center; animation: stCoracao 2.6s ease-out infinite; }
+.sticker .st-coracao.d2 { animation-delay: -1.3s; }
+.sticker .st-sombra { transform-box: fill-box; transform-origin: center; }
+.st-rosa .st-sombra { animation: stSombra 1.3s ease-in-out infinite; }
+@keyframes stBalanca { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-2.5px) rotate(2deg); } }
+@keyframes stAceno { 0%, 64%, 100% { transform: rotate(0); } 8%, 24%, 40% { transform: rotate(-28deg); } 16%, 32%, 48% { transform: rotate(12deg); } 56% { transform: rotate(-6deg); } }
+@keyframes stAcenoEsq { 0%, 64%, 100% { transform: rotate(0); } 8%, 24%, 40% { transform: rotate(28deg); } 16%, 32%, 48% { transform: rotate(-12deg); } 56% { transform: rotate(6deg); } }
+@keyframes stPiscaFecha { 0%, 70%, 86%, 100% { opacity: 0; } 72%, 84% { opacity: 1; } }
+@keyframes stPiscaAbre { 0%, 70%, 86%, 100% { opacity: 1; } 72%, 84% { opacity: 0; } }
+@keyframes stPiscar { 0%, 90%, 100% { transform: scaleY(1); } 94% { transform: scaleY(.12); } }
+@keyframes stBrilho { 0%, 100% { transform: scale(.5) rotate(0deg); opacity: .3; } 50% { transform: scale(1.1) rotate(45deg); opacity: 1; } }
+@keyframes stAntena { from { transform: rotate(-9deg); } to { transform: rotate(9deg); } }
+@keyframes stBolha { 0% { transform: translateY(6px) scale(.6); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(-34px) scale(1.1); opacity: 0; } }
+@keyframes stRiso { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.82); } }
+@keyframes stPulo { 0%, 100% { transform: translateY(0) scale(1); } 15% { transform: translateY(0) scale(1.05, .94); } 45% { transform: translateY(-9px) scale(.97, 1.03); } 70% { transform: translateY(0) scale(1.04, .96); } 85% { transform: translateY(0) scale(1); } }
+@keyframes stSombra { 0%, 15%, 70%, 100% { transform: scale(1); opacity: .16; } 45% { transform: scale(.75); opacity: .09; } }
+@keyframes stCoracao { 0% { transform: translateY(4px) scale(.5); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(-26px) scale(1.15); opacity: 0; } }
+.msg.boas-vindas { display: flex; align-items: center; gap: 12px; padding: 8px 48px 8px 22px; margin-top: 14px; min-height: 0; }
+.bv-texto { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.bv-frase { font-size: 16px; font-weight: 600; color: var(--texto-forte); line-height: 1.4; }
+.bv-nome {
+  display: inline-block; padding: 0 10px 1px; border-radius: 999px; color: #fff; font-weight: 800; text-shadow: 0 1px 1px rgba(0, 0, 0, .3);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--cor) 55%, #fff) 0%, var(--cor) 52%, color-mix(in srgb, var(--cor) 85%, #000) 100%);
+  border: 1px solid color-mix(in srgb, var(--cor) 70%, #000);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7), 0 3px 8px -3px color-mix(in srgb, var(--cor) 70%, transparent);
+}
+/* ===== Menções ===== */
+.m-text .ment.eu, .m-text .ment.todos { background: rgba(255, 200, 61, .5); color: #5c3d00; }
+.ch-mencao {
+  margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; flex: none; display: grid; place-items: center;
+  background: var(--gel-vermelho, #d61f2c); color: #fff; font-size: 11px; font-weight: 800; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45);
+}
+.avatar.mini { width: 18px; height: 18px; font-size: 10px; border-radius: 6px; box-shadow: none; }
+.cs-item.cs-mencao { align-items: center; }
+.cs-todos { width: 18px; height: 18px; border-radius: 6px; flex: none; display: grid; place-items: center; background: #ffc83d; color: #5c3d00; font-weight: 800; font-size: 12px; }
+/* ===== Responder ===== */
+.m-resp { position: relative; display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0 0 3px; font-size: 13px; color: var(--fraco); cursor: pointer; line-height: 20px; }
+.m-resp::before {
+  content: ""; position: absolute; left: -39px; top: 10px; width: 31px; height: 14px; pointer-events: none;
+  border-left: 2px solid var(--linha-forte); border-top: 2px solid var(--linha-forte); border-top-left-radius: 7px;
+}
+.m-resp > svg.i { display: none; }
+.m-resp b { flex: none; font-weight: 700; }
+.m-resp .mr-texto { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--suave); }
+.m-resp:hover .mr-texto { color: var(--texto-forte); }
+.m-resp.apagada { cursor: default; }
+.msg.com-resp .avatar:not(.mini) { top: 27px; }
+.msg.com-resp { min-height: 70px; }
+@keyframes piscaMsg { 0%, 100% { background-color: transparent; } 15%, 65% { background-color: rgba(61, 179, 240, .24); } }
+.msg.piscando { animation: piscaMsg 2.3s ease; }
+@media (prefers-reduced-motion: reduce) { .msg.piscando { background: rgba(61, 179, 240, .2); } }
+.resp-bar {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 -8px; padding: 6px 8px 14px 12px; font-size: 13px; color: var(--suave);
+  background: linear-gradient(180deg, var(--pop-1), var(--pop-2)); border: 1px solid var(--linha); border-bottom: 0; border-radius: 14px 14px 0 0;
+}
+.resp-bar > svg.i { width: 16px; height: 16px; flex: none; color: var(--p2, #3db3f0); }
+.resp-bar .rb-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resp-bar .rb-texto { color: var(--fraco); }
+/* ===== Editar ===== */
+.m-editada { font-size: 11px; color: var(--fraco); font-weight: 600; }
+.m-editada-linha { line-height: 1.2; margin-top: 1px; }
+.msg .m-editor { white-space: normal; }
+.m-editor textarea {
+  width: 100%; resize: none; font: inherit; line-height: 1.45; color: var(--texto); padding: 8px 10px; margin-top: 2px; border-radius: 10px;
+  background: linear-gradient(180deg, var(--pop-1), var(--pop-2)); border: 1px solid var(--linha-forte); outline: none;
+}
+.m-editor textarea:focus { border-color: var(--p2, #3db3f0); box-shadow: 0 0 0 3px rgba(61, 179, 240, .2); }
+.m-edit-dica { font-size: 11px; color: var(--fraco); margin-top: 3px; }
+.msg .m-resp .avatar { position: relative; left: auto; top: auto; }
+html[data-tema="escuro"] .m-text .ment.eu, html[data-tema="escuro"] .m-text .ment.todos { background: rgba(255, 200, 61, .26); color: #ffe08a; }
+html[data-tema="escuro"] .msg.mention { background: rgba(255, 200, 61, .1); }
+html[data-tema="escuro"] .cs-todos { color: #3b2700; }
+@media (max-width: 720px) { .m-resp::before { left: -35px; width: 27px; } .msg.boas-vindas { padding: 8px 12px 8px 14px; } .msg.boas-vindas .sticker { width: 72px; height: 72px; } }
