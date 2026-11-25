@@ -1,0 +1,74 @@
+name: Site no ar
+
+# O Render publica o site sozinho a cada envio para a main, mas não avisa o GitHub (só avisa
+# serviços criados por Blueprint). Aqui o GitHub pergunta ao próprio site qual versão está no
+# ar (/api/config → "build", que o Render preenche) até ser a deste envio, e registra o
+# resultado na aba "Deployments" do repositório (ambiente telas-e-bocas).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  deployments: write
+  contents: read
+
+# um envio novo substitui a conferência do anterior
+concurrency:
+  group: site-no-ar
+  cancel-in-progress: true
+
+env:
+  SITE: https://telas-e-bocas.onrender.com
+
+jobs:
+  conferir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Abrir o registro da publicação
+        id: registro
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const d = await github.rest.repos.createDeployment({
+              owner, repo, ref: context.sha, environment: 'telas-e-bocas', auto_merge: false,
+              required_contexts: [], production_environment: true, description: 'Render: Telas e Bocas',
+            });
+            await github.rest.repos.createDeploymentStatus({
+              owner, repo, deployment_id: d.data.id, state: 'in_progress', environment_url: process.env.SITE,
+              description: 'Esperando o Render publicar',
+            });
+            core.setOutput('id', String(d.data.id));
+
+      - name: Esperar o site ficar com esta versão
+        run: |
+          alvo="${GITHUB_SHA:0:7}"
+          for i in $(seq 1 150); do
+            # o plano grátis dorme: a primeira resposta pode demorar quase um minuto
+            no_ar=$(curl -s --max-time 60 "$SITE/api/config" | python3 -c 'import sys, json; print(json.load(sys.stdin).get("build", ""))' 2>/dev/null || true)
+            echo "$(date -u +%H:%M:%S) no ar: ${no_ar:-?} | esperando: $alvo"
+            if [ "$no_ar" = "$alvo" ]; then exit 0; fi
+            sleep 10
+          done
+          echo "O site não chegou nesta versão em 25 minutos."
+          exit 1
+
+      - name: Fechar o registro
+        if: always() && steps.registro.outputs.id
+        uses: actions/github-script@v7
+        env:
+          RESULTADO: ${{ job.status }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const r = process.env.RESULTADO;
+            const [state, description] = r === 'success' ? ['success', 'No ar']
+              : r === 'cancelled' ? ['inactive', 'Substituído por um envio mais novo']
+              : ['failure', 'Não chegou ao site em 25 minutos'];
+            await github.rest.repos.createDeploymentStatus({
+              owner, repo, deployment_id: Number('${{ steps.registro.outputs.id }}'), state, description,
+              environment_url: process.env.SITE,
+              log_url: `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+            });
