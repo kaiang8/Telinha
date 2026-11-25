@@ -950,6 +950,7 @@
   // aparecem quando o cursor chega perto deles; parado, eles se recolhem em uns segundos.
   // No toque, qualquer toque no vídeo mostra.
   function mexeuNoTile(t, e) {
+    t.ponteiro = e.pointerType === 'touch' ? null : { x: e.clientX, y: e.clientY };
     const r = t.el.getBoundingClientRect();
     const zona = Math.min(150, r.height * 0.5);
     if (e.pointerType !== 'touch' && e.clientY < r.bottom - zona) return; // longe deles: deixa recolher
@@ -960,9 +961,19 @@
     clearTimeout(t.ctrlTimer);
     t.ctrlTimer = setTimeout(() => {
       // com o cursor em cima de um botão ou emote (ou arrastando o volume), espera mais um pouco
-      if (t.focoTeclado || t.el.querySelector('.t-bottom :is(button, input):hover, .t-reacao:hover, input[type=range]:active')) return recolherControles(t, 1200);
+      if (t.focoTeclado || cursorEmCimaDeBotao(t) || t.el.querySelector('input[type=range]:active')) return recolherControles(t, 1200);
       t.el.classList.remove('show-ctrl');
     }, ms);
+  }
+  // pela posição do cursor (o :hover do navegador às vezes não percebe um botão que acabou de aparecer)
+  function cursorEmCimaDeBotao(t) {
+    const p = t.ponteiro;
+    if (!p) return false;
+    for (const b of t.el.querySelectorAll('.t-bottom button, .t-bottom input, .t-reacao')) {
+      const r = b.getBoundingClientRect();
+      if (r.width && p.x >= r.left - 3 && p.x <= r.right + 3 && p.y >= r.top - 3 && p.y <= r.bottom + 3) return true;
+    }
+    return false;
   }
 
   function criarTile(uid) {
@@ -992,7 +1003,7 @@
     // barra de baixo e emotes: aparecem com o cursor perto deles e se recolhem sozinhos
     el.addEventListener('pointermove', (e) => mexeuNoTile(t, e));
     el.addEventListener('pointerdown', (e) => mexeuNoTile(t, e));
-    el.addEventListener('pointerleave', () => recolherControles(t, 600));
+    el.addEventListener('pointerleave', () => { t.ponteiro = null; recolherControles(t, 600); });
     // pelo teclado: só quando chegou no botão com Tab (um botão clicado com o mouse continua
     // com foco, e qualquer tecla apertada depois, como a de falar, não pode prender a barra)
     el.addEventListener('focusin', (e) => {
