@@ -791,7 +791,7 @@
     if (m.sistema === 'boasvindas') {
       const p = S.perfis?.[m.alvo];
       const nome = `<span class="bv-nome" style="--cor:${esc(p?.cor || '#3db3f0')}">${esc(p?.nome || 'alguém')}</span>`;
-      return h + `<div class="msg boas-vindas${cls}" ${attrs}>${telinhaDeBoasVindas(m.figura)}
+      return h + `<div class="msg boas-vindas${cls}" ${attrs}>${STICKERS[m.figura] || STICKERS[0]}
         <div class="bv-texto"><div class="bv-frase">${(FRASES_BOAS_VINDAS[m.frase] || FRASES_BOAS_VINDAS[0])(nome)}</div>
           <span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span></div>${acoes}</div>`;
     }
