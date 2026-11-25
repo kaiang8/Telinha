@@ -39,41 +39,184 @@ if (process.env.TURN_URL) {
     credential: process.env.TURN_SENHA || '',
   });
 }
-// TURN da Cloudflare (para quem está em rede que bloqueia a conexão direta: 4G/5G, CGNAT...).
-// A Cloudflare só aceita senhas temporárias: o servidor gera umas que valem 48 h e renova a cada
-// 12 h, então quem entra sempre recebe uma válida por pelo menos 36 h. Sem as duas chaves no
-// Render (ou se a Cloudflare não responder), tudo funciona como antes, só sem o TURN.
-const CF_TURN = { id: (process.env.CLOUDFLARE_TURN_ID || '').trim(), token: (process.env.CLOUDFLARE_TURN_TOKEN || '').trim(), servidores: [], quando: 0, erro: '' };
-const CF_TURN_API = (process.env.CLOUDFLARE_TURN_API || 'https://rtc.live.cloudflare.com/v1').replace(/\/+$/, '');
-async function renovarTurnCloudflare() {
-  if (!CF_TURN.id || !CF_TURN.token) return;
-  let espera = 12 * 3600e3;
-  try {
-    const r = await fetch(`${CF_TURN_API}/turn/keys/${encodeURIComponent(CF_TURN.id)}/credentials/generate-ice-servers`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${CF_TURN.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ttl: 172800 }),
-      signal: AbortSignal.timeout(15000),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(`HTTP ${r.status}${j?.error ? `: ${j.error}` : ''}`);
-    // só os de TURN (os de STUN já estão na lista), e sem a porta 53, que alguns navegadores bloqueiam
-    const turn = (Array.isArray(j.iceServers) ? j.iceServers : []).filter((x) => x && x.username && x.credential).map((x) => ({
+// ---------- TURN da Cloudflare, com trava de uso ----------
+// Para quem está em rede que bloqueia a conexão direta (4G/5G, CGNAT...). A Cloudflare não tem como
+// travar o gasto do TURN, então a trava é aqui:
+//  1) a cada 5 min o servidor pergunta à Cloudflare quanto foi usado (por dia e por pessoa) e, se os
+//     últimos 31 dias passarem do limite (TURN_LIMITE_GB, padrão 700 GB; o grátis é 1.000 GB/mês),
+//     para de dar senhas e cancela as que estão valendo. Se não conseguir perguntar, também para;
+//  2) cada pessoa recebe a própria senha, marcada com o id dela, que vale só 40 min e é renovada
+//     enquanto ela está no site (a Cloudflare troca a senha sem derrubar a conexão). Quem sai, ou é
+//     banido/expulso (aí a senha é cancelada na hora), fica sem;
+//  3) um admin pode desligar tudo na hora pelo painel.
+// Sem as quatro variáveis no Render, o TURN da Cloudflare fica desligado e nada muda.
+const CF = {
+  turnId: (process.env.CLOUDFLARE_TURN_ID || '').trim(),
+  turnToken: (process.env.CLOUDFLARE_TURN_TOKEN || '').trim(),
+  conta: (process.env.CLOUDFLARE_CONTA_ID || '').trim(),
+  tokenUso: (process.env.CLOUDFLARE_TOKEN_USO || '').trim(),
+  apiTurn: (process.env.CLOUDFLARE_TURN_API || 'https://rtc.live.cloudflare.com/v1').replace(/\/+$/, ''),
+  api: (process.env.CLOUDFLARE_API || 'https://api.cloudflare.com/client/v4').replace(/\/+$/, ''),
+};
+const TURN_LIMITE_GB = Math.min(950, Math.max(1, Number(process.env.TURN_LIMITE_GB) || 700));
+const TURN_TTL_S = Math.max(5, Number(process.env.TURN_TTL_S) || 40 * 60); // (TURN_TTL_S e TURN_CONFERIR_MS: só para testes)
+const TURN_CONFERIR_MS = Math.max(1000, Number(process.env.TURN_CONFERIR_MS) || 5 * 60e3);
+const VARS_TURN = { CLOUDFLARE_TURN_ID: CF.turnId, CLOUDFLARE_TURN_TOKEN: CF.turnToken, CLOUDFLARE_CONTA_ID: CF.conta, CLOUDFLARE_TOKEN_USO: CF.tokenUso };
+const TURN = {
+  senhas: new Map(), // pid -> { servidores, username, ate } (a senha atual de cada pessoa)
+  emitidas: [], // { pid, username, ate }: todas que ainda valem (para poder cancelar)
+  gerando: new Map(),
+  conferido: 0,
+  erro: '',
+};
+const turnUsado = () => Object.values(VARS_TURN).some(Boolean);
+const turnFaltando = () => Object.entries(VARS_TURN).filter(([, v]) => !v).map(([k]) => k);
+const diaUTC = (atras) => new Date(Date.now() - atras * 864e5).toISOString().slice(0, 10);
+function usoTurn31() {
+  const desde = diaUTC(30);
+  let total = 0;
+  const porPessoa = {};
+  for (const [d, x] of Object.entries(USO_TURN.dados.dias || {})) {
+    if (d < desde) continue;
+    total += x.total || 0;
+    for (const [pid, b] of Object.entries(x.porPessoa || {})) porPessoa[pid] = (porPessoa[pid] || 0) + b;
+  }
+  return { total, porPessoa };
+}
+function motivoTurnParado() {
+  if (!turnUsado()) return 'não configurado';
+  if (turnFaltando().length) return `faltam no Render: ${turnFaltando().join(', ')}`;
+  if (!/^[0-9a-f]{32}$/i.test(CF.conta)) return 'CLOUDFLARE_CONTA_ID não parece um ID de conta (32 letras e números)';
+  if (USO_TURN.dados.desligado) return 'desligado por um admin';
+  if (!USO_TURN.ok) return 'não consegui ler o histórico de uso guardado';
+  if (Date.now() - TURN.conferido > 15 * 60e3) return TURN.erro || 'conferindo o uso na Cloudflare…';
+  if (usoTurn31().total >= TURN_LIMITE_GB * 1e9) return `chegou no limite de ${TURN_LIMITE_GB} GB nos últimos 31 dias`;
+  return '';
+}
+const turnLiberado = () => !motivoTurnParado();
+function iceDe(u) {
+  const s = u?.pid && TURN.senhas.get(u.pid);
+  return [...iceServers, ...(s && s.ate > Date.now() && turnLiberado() ? s.servidores : [])];
+}
+async function chamarCloudflare(url, token, corpo) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: corpo === undefined ? undefined : JSON.stringify(corpo),
+    signal: AbortSignal.timeout(15000),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`HTTP ${r.status}${j?.errors?.[0]?.message ? `: ${j.errors[0].message}` : j?.error ? `: ${j.error}` : ''}`);
+  return j;
+}
+// senha da pessoa, válida por pelo menos metade do tempo (gera uma nova se precisar)
+function senhaTurnDe(pid) {
+  const atual = TURN.senhas.get(pid);
+  if (atual && atual.ate - Date.now() > (TURN_TTL_S * 1000) / 2) return Promise.resolve(atual);
+  if (TURN.gerando.has(pid)) return TURN.gerando.get(pid);
+  const p = (async () => {
+    const j = await chamarCloudflare(`${CF.apiTurn}/turn/keys/${encodeURIComponent(CF.turnId)}/credentials/generate`, CF.turnToken, { ttl: TURN_TTL_S, customIdentifier: pid });
+    // só os de TURN (os de STUN já estão na lista), e sem a porta 53, que os navegadores bloqueiam
+    const servidores = [].concat(j.iceServers || []).filter((x) => x && x.username && x.credential).map((x) => ({
       urls: [].concat(x.urls).filter((u) => typeof u === 'string' && /^turns?:/.test(u) && !/:53(\?|$)/.test(u)),
       username: String(x.username), credential: String(x.credential),
     })).filter((x) => x.urls.length);
-    if (!turn.length) throw new Error('a resposta não trouxe servidores TURN');
-    CF_TURN.servidores = turn;
-    CF_TURN.quando = Date.now();
-    CF_TURN.erro = '';
-  } catch (e) {
-    CF_TURN.erro = e.message;
-    console.warn('  TURN da Cloudflare: não consegui gerar as senhas:', e.message);
-    espera = 5 * 60e3; // tenta de novo daqui a pouco
-  }
-  setTimeout(renovarTurnCloudflare, espera).unref();
+    if (!servidores.length) throw new Error('a resposta não trouxe servidores TURN');
+    const nova = { servidores, username: servidores[0].username, ate: Date.now() + TURN_TTL_S * 1000 };
+    if (!turnLiberado()) { revogarTurn(nova.username); throw new Error('TURN parado'); }
+    TURN.senhas.set(pid, nova);
+    TURN.emitidas.push({ pid, username: nova.username, ate: nova.ate });
+    return nova;
+  })().finally(() => TURN.gerando.delete(pid));
+  TURN.gerando.set(pid, p);
+  return p;
 }
-const iceParaEnviar = () => [...iceServers, ...CF_TURN.servidores];
+function revogarTurn(username) {
+  const url = `${CF.apiTurn}/turn/keys/${encodeURIComponent(CF.turnId)}/credentials/${encodeURIComponent(username)}/revoke`;
+  chamarCloudflare(url, CF.turnToken).catch((e) => console.warn('  TURN: não consegui cancelar uma senha:', e.message));
+}
+const sessoesDe = (pid) => [...users.values()].filter((x) => x.pid === pid && x.joined && !x.kicked);
+// cancela as senhas (de uma pessoa, ou de todo mundo) e avisa os navegadores
+function cortarTurn(pid = null) {
+  const agora = Date.now();
+  TURN.emitidas = TURN.emitidas.filter((e) => e.ate > agora);
+  for (const e of TURN.emitidas.filter((x) => !pid || x.pid === pid)) revogarTurn(e.username);
+  TURN.emitidas = TURN.emitidas.filter((x) => pid && x.pid !== pid);
+  for (const id of pid ? [pid] : [...TURN.senhas.keys()]) {
+    TURN.senhas.delete(id);
+    for (const x of sessoesDe(id)) enviar(x, { type: 'ice', iceServers: iceDe(x) });
+  }
+}
+// dá (ou renova) a senha de quem está online
+async function distribuirTurn(pids) {
+  if (!turnLiberado()) return;
+  for (const pid of new Set(pids)) {
+    const antes = TURN.senhas.get(pid)?.username;
+    try {
+      const s = await senhaTurnDe(pid);
+      if (s.username !== antes) for (const x of sessoesDe(pid)) enviar(x, { type: 'ice', iceServers: iceDe(x) });
+    } catch (e) {
+      if (e.message !== 'TURN parado') console.warn('  TURN: não consegui gerar a senha:', e.message);
+    }
+  }
+}
+async function usoTurnDoDia(dia) {
+  const q = `query { viewer { accounts(filter: { accountTag: "${CF.conta}" }) { callsTurnUsageAdaptiveGroups(filter: { date_geq: "${dia}", date_leq: "${dia}" }, limit: 1000) { dimensions { customIdentifier } sum { egressBytes } } } } }`;
+  const j = await chamarCloudflare(`${CF.api}/graphql`, CF.tokenUso, { query: q });
+  if (j.errors?.length) throw new Error(j.errors[0].message || 'erro na consulta');
+  const grupos = j.data?.viewer?.accounts?.[0]?.callsTurnUsageAdaptiveGroups;
+  if (!Array.isArray(grupos)) throw new Error('a Cloudflare não devolveu o uso (confira o ID da conta e a permissão "Account Analytics" do token)');
+  let total = 0;
+  const porPessoa = {};
+  for (const g of grupos) {
+    const b = Number(g?.sum?.egressBytes) || 0;
+    total += b;
+    const quem = g?.dimensions?.customIdentifier || '?';
+    porPessoa[quem] = (porPessoa[quem] || 0) + b;
+  }
+  return { total, porPessoa };
+}
+async function conferirTurn() {
+  if (turnUsado() && !turnFaltando().length && /^[0-9a-f]{32}$/i.test(CF.conta)) {
+    // hoje e ontem sempre (ontem ainda pode mudar logo depois da meia-noite); na primeira vez, a semana
+    const dias = [diaUTC(0), diaUTC(1)];
+    for (let i = 2; i < 8; i++) if (!USO_TURN.dados.dias[diaUTC(i)]) dias.push(diaUTC(i));
+    try {
+      for (const d of dias) USO_TURN.dados.dias[d] = await usoTurnDoDia(d);
+      for (const d of Object.keys(USO_TURN.dados.dias)) if (d < diaUTC(40)) delete USO_TURN.dados.dias[d];
+      USO_TURN.salvar(1000);
+      TURN.conferido = Date.now();
+      TURN.erro = '';
+    } catch (e) {
+      TURN.erro = `não consegui consultar o uso na Cloudflare (${e.message})`;
+      console.warn('  TURN:', TURN.erro);
+    }
+  }
+  if (!turnLiberado()) {
+    if (TURN.senhas.size || TURN.emitidas.some((e) => e.ate > Date.now())) {
+      console.warn(`  TURN parado: ${motivoTurnParado()}. Cancelando as senhas.`);
+      cortarTurn();
+    }
+  } else {
+    await distribuirTurn([...users.values()].filter((x) => x.joined && !x.kicked && x.pid).map((x) => x.pid));
+  }
+}
+function iniciarTurn() {
+  const rodada = () => conferirTurn().catch((e) => console.warn('  TURN:', e.message)).finally(() => setTimeout(rodada, TURN_CONFERIR_MS).unref());
+  rodada();
+}
+function visaoTurn() {
+  const { total, porPessoa } = usoTurn31();
+  return {
+    proprio: !!process.env.TURN_URL,
+    cloudflare: turnUsado() ? {
+      ligado: turnLiberado(), motivo: motivoTurnParado(), desligadoPeloAdmin: !!USO_TURN.dados.desligado,
+      conferido: TURN.conferido, usadoGB: total / 1e9, limiteGB: TURN_LIMITE_GB,
+      porPessoa: Object.entries(porPessoa).sort((a, b) => b[1] - a[1]).slice(0, 10)
+        .map(([pid, b]) => ({ nome: data.perfis[pid]?.nome || (pid === '?' ? 'sem identificação' : 'nome apagado'), gb: b / 1e9 })),
+    } : null,
+  };
+}
 
 // ---------- Senhas (guardadas só como hash) ----------
 function hashSenha(s) {
@@ -618,6 +761,8 @@ const LIMITE_TRAFEGO_GB = Number(process.env.LIMITE_TRAFEGO_GB) > 0 ? Number(pro
 const mesAtual = () => new Date().toISOString().slice(0, 7);
 const inicioDoMes = () => { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1); };
 const TRAFEGO = guardadoSeparado('trafego', () => ({ mes: mesAtual(), desde: Date.now(), bytes: {}, avisos: [] }), { semContar: true });
+// uso do TURN da Cloudflare por dia (e por pessoa), e se um admin desligou
+const USO_TURN = guardadoSeparado('turn', () => ({ desligado: false, dias: {} }));
 function contarTrafego(tipo, n) {
   if (!(n > 0)) return;
   let d = TRAFEGO.dados;
@@ -937,7 +1082,7 @@ function enviarInit(u) {
     antigas,
     perfis: perfisPublicos(),
     users: listaUsuarios(),
-    iceServers: iceParaEnviar(),
+    iceServers: iceDe(u),
   });
 }
 function broadcast(obj) {
@@ -1105,6 +1250,7 @@ function limparSilenciosVencidos() {
   if (data.mutes.length !== antes) salvar();
 }
 function expulsar(alvo, info) {
+  if (alvo.pid && TURN.senhas.has(alvo.pid)) cortarTurn(alvo.pid);
   alvo.kicked = info;
   alvo.sala = null;
   alvo.live = false;
@@ -1126,10 +1272,7 @@ function visaoAdmin() {
       ...configPublica(),
       adminFromEnv: !!ADMIN_ENV_HASH,
       storage: USA_UPSTASH ? 'upstash' : 'arquivo',
-      turn: {
-        proprio: !!process.env.TURN_URL,
-        cloudflare: CF_TURN.id && CF_TURN.token ? (CF_TURN.servidores.length ? { ok: true, quando: CF_TURN.quando } : { ok: false, erro: CF_TURN.erro || 'gerando as senhas…' }) : null,
-      },
+      turn: visaoTurn(),
     },
   };
 }
@@ -1520,6 +1663,7 @@ async function acaoAdmin(u, body, res, req) {
           console.log(`! ${u.name} baniu ${p.nome} (pelo nome)`);
         }
         for (const x of sessoes) expulsar(x, { by: u.name, reason: motivo, banned: true });
+        cortarTurn(id); // a senha do TURN que ela ainda tinha (de quando estava online) deixa de valer
         avisarPerfil(id);
         return json(res, 200, { ok: true });
       }
@@ -1530,6 +1674,18 @@ async function acaoAdmin(u, body, res, req) {
       avisarPerfil(id);
       return json(res, 200, { ok: true });
     }
+
+    case 'turn-desligar':
+      USO_TURN.dados.desligado = true;
+      USO_TURN.salvar(500);
+      cortarTurn();
+      console.log(`! ${u.name} desligou o TURN da Cloudflare`);
+      return json(res, 200, { ok: true });
+    case 'turn-ligar':
+      USO_TURN.dados.desligado = false;
+      USO_TURN.salvar(500);
+      await conferirTurn().catch(() => {});
+      return json(res, 200, { ok: true, ligado: turnLiberado(), motivo: motivoTurnParado() });
 
     case 'kick':
       if (!precisaAlvo()) return;
@@ -1928,6 +2084,8 @@ async function api(req, res, url) {
       avisarPerfil(pid); // os outros já conhecem o nome novo
       boasVindas(pid);
     }
+    // a senha do TURN já vai pronta na primeira mensagem (no máximo 3 s esperando a Cloudflare)
+    if (turnLiberado()) await Promise.race([senhaTurnDe(pid).catch(() => {}), new Promise((ok) => setTimeout(ok, 3000))]);
     return json(res, 200, {
       id: u.id, token: u.token, admin,
       perfil: { id: pid, nome: perfil.nome, cor: perfil.cor, ...(chaveNova ? { chave: chaveNova } : {}) },
@@ -2349,7 +2507,7 @@ server.on('error', (err) => {
 
 async function iniciar() {
   console.log('');
-  renovarTurnCloudflare();
+
   const faltando = ARQUIVOS_DA_PAGINA.filter((n) => !acharArquivoDaPagina(n));
   if (faltando.length) {
     console.warn(`  ATENÇÃO: não encontrei ${faltando.join(', ')} (nem em public/, nem ao lado do server.js).`);
@@ -2359,6 +2517,8 @@ async function iniciar() {
   await carregarMensagens();
   await carregarRegistro();
   await TRAFEGO.carregar();
+  await USO_TURN.carregar();
+  iniciarTurn();
   await carregarProblemas();
   garantirSenhaAdmin();
   server.listen(PORT, () => {
@@ -2390,6 +2550,7 @@ async function desligar() {
     ERROS.terminar(),
     QUALIDADE.terminar(),
     TRAFEGO.terminar(),
+    USO_TURN.terminar(),
     // mensagens que ainda não foram para o banco
     (async () => {
       if (MSGS.timerArquivo) { clearTimeout(MSGS.timerArquivo); await gravarArquivoDeMensagens(); }

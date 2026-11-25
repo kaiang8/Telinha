@@ -482,6 +482,7 @@
       case 'presence': return onPresence(m.users);
       case 'msg': return onMsg(m.msg);
       case 'perfil': return onPerfil(m);
+      case 'ice': return onIce(m.iceServers);
       case 'visto': if (S.perfis?.[m.id]) S.perfis[m.id].visto = m.visto; return;
       case 'typing': return onTyping(m);
       case 'channels': return onChannels(m.channels);
@@ -5512,6 +5513,17 @@
     rerenderMantendoScroll();
   }
 
+  // senhas novas do TURN (renovadas a cada ~20 min, ou cortadas): as conexões abertas passam a usar
+  // as novas sem cair (a Cloudflare aceita a troca pelo setConfiguration)
+  function onIce(lista) {
+    if (!Array.isArray(lista)) return;
+    S.iceServers = lista;
+    for (const c of [...S.inc.values(), ...S.out.values(), ...VOZ.pcs.values()]) {
+      try {
+        if (c?.pc && c.pc.signalingState !== 'closed') c.pc.setConfiguration({ ...c.pc.getConfiguration(), iceServers: lista });
+      } catch { /* fica com as anteriores */ }
+    }
+  }
   function onPerfil(m) {
     if (typeof m.id !== 'string' || typeof m.nome !== 'string') return;
     (S.perfis ||= {})[m.id] = { ...S.perfis[m.id], nome: m.nome, cor: m.cor, ...(m.visto !== undefined ? { visto: m.visto } : {}), fora: !!m.fora };
@@ -6022,10 +6034,7 @@
           ? '<p>Ela está definida na variável <b>ADMIN_SENHA</b> da hospedagem. Para trocar, mude lá e reinicie o serviço.</p>'
           : `<p>Mínimo de 6 caracteres. Você vai precisar dela para entrar como admin de novo.</p>
         <div class="ap-row"><input id="apAdminSenha" data-keep type="password" maxlength="100" placeholder="Nova senha de admin" autocomplete="new-password"><button class="btn sm primary" data-act="admin-senha">Trocar</button></div>`}</div>
-      <div class="ap-section"><h4>Servidor TURN</h4>
-        <p>${st.turn?.cloudflare?.ok ? `Cloudflare ligado (senhas renovadas ${esc(quandoCurto(st.turn.cloudflare.quando))}). Quem está em 4G/5G ou rede que bloqueia a conexão direta consegue ver as telas.`
-          : st.turn?.cloudflare ? `Cloudflare configurado, mas com problema: ${esc(st.turn.cloudflare.erro)}. Confira as chaves CLOUDFLARE_TURN_ID e CLOUDFLARE_TURN_TOKEN no Render.`
-            : st.turn?.proprio ? 'Usando o servidor da variável TURN_URL.' : 'Nenhum: quem estiver em rede que bloqueia a conexão direta (alguns 4G/5G) pode não conseguir ver as telas. Veja "Alguém não consegue ver a tela?" no LEIA-ME.'}</p></div>
+      ${secaoTurn(st.turn)}
       <div class="ap-section"><h4>Onde ficam os dados</h4>
         <p>${st.storage === 'upstash' ? 'No Upstash (banco na nuvem): canais, mensagens, banimentos e configurações sobrevivem a reinícios.' : 'No arquivo <b>data.json</b>, na pasta do servidor. Numa hospedagem grátis, esse arquivo some quando o serviço reinicia: configure o Upstash (veja o LEIA-ME).'}</p></div>
       ${secaoAparelhos(d)}
@@ -6035,6 +6044,25 @@
   }
 
   // Registro de conexões: quem entrou, de qual IP e aparelho, e as tentativas recusadas
+  function secaoTurn(t) {
+    const cf = t?.cloudflare;
+    let corpo;
+    if (!cf) {
+      corpo = t?.proprio ? '<p>Usando o servidor da variável TURN_URL.</p>'
+        : '<p>Desligado. Quem estiver em rede que bloqueia a conexão direta (alguns 4G/5G) pode não conseguir ver as telas. Veja "Alguém não consegue ver a tela?" no LEIA-ME.</p>';
+    } else {
+      const pct = Math.min(100, (cf.usadoGB / cf.limiteGB) * 100);
+      const gb = (x) => (x < 10 ? x.toFixed(2) : Math.round(x)).toString().replace('.', ',');
+      corpo = `<p>${cf.ligado ? '<b>Ligado.</b> Quem está em rede que bloqueia a conexão direta consegue ver as telas.' : `<b>Parado:</b> ${esc(cf.motivo)}.`}</p>
+        <div class="trafego-barra${pct >= 90 ? ' perigo' : pct >= 70 ? ' alerta' : ''}"><div style="width:${pct}%"></div></div>
+        <p class="muted small">Últimos 31 dias: ${gb(cf.usadoGB)} GB de ${cf.limiteGB} GB (a trava; o grátis da Cloudflare é 1.000 GB por mês).${cf.conferido ? ` Conferido ${esc(quandoCurto(cf.conferido))}.` : ''}</p>
+        ${cf.porPessoa.length ? `<p class="muted small">Quem mais usou: ${cf.porPessoa.map((x) => `${esc(x.nome)} (${gb(x.gb)} GB)`).join(', ')}.</p>` : ''}
+        <div class="ap-row">${cf.desligadoPeloAdmin
+          ? '<button class="btn sm primary" data-act="turn-ligar">Ligar o TURN</button>'
+          : '<button class="btn sm danger" data-act="turn-desligar">Desligar o TURN agora</button>'}</div>`;
+    }
+    return `<div class="ap-section"><h4>Servidor TURN</h4>${corpo}</div>`;
+  }
   function quandoCurto(t) {
     const d = new Date(t);
     const hoje = new Date();
@@ -6180,6 +6208,11 @@
           return feito(`${n} foi banido.${r.soAparelho ? ' (Só o navegador: o IP é o mesmo de outra pessoa online.)' : ''}`);
         }
         case 'unban': await adm('unban', { id: b.closest('[data-ban]').dataset.ban }); return feito('Banimento removido.');
+        case 'turn-desligar': await adm('turn-desligar'); return feito('TURN desligado: as senhas foram canceladas.');
+        case 'turn-ligar': {
+          const r = await adm('turn-ligar');
+          return feito(r.ligado ? 'TURN ligado.' : `TURN liberado pelo admin, mas ainda parado: ${r.motivo}.`);
+        }
         case 'esquecer-aparelho': {
           const id = b.dataset.id;
           const este = id === lembreteAdmin()?.id;

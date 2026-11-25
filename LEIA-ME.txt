@@ -417,8 +417,9 @@ CONFIGURAÇÕES (variáveis de ambiente)
   DATA_FILE         Arquivo de dados quando não usa o Upstash.
   TURN_URL, TURN_USUARIO, TURN_SENHA
                     Servidor TURN (veja abaixo).
-  CLOUDFLARE_TURN_ID, CLOUDFLARE_TURN_TOKEN
-                    TURN da Cloudflare (veja abaixo).
+  CLOUDFLARE_TURN_ID, CLOUDFLARE_TURN_TOKEN, CLOUDFLARE_CONTA_ID,
+  CLOUDFLARE_TOKEN_USO
+                    TURN da Cloudflare com trava de uso (veja abaixo).
   LINK_PROGRAMA     Para onde o /baixar leva (o padrão é o instalador
                     mais novo no GitHub).
 
@@ -433,17 +434,39 @@ repassa o vídeo (só para quem precisa; os outros continuam com a
 conexão direta).
 
 Opção recomendada: o TURN da Cloudflare, com 1.000 GB grátis por mês
-(depois disso, US$ 0,05 por GB).
+(depois disso, US$ 0,05 por GB). A Cloudflare não tem como travar o
+gasto do TURN, então o site trava sozinho:
+  - a cada 5 minutos ele pergunta à Cloudflare quanto foi usado; se os
+    últimos 31 dias passarem de 700 GB, ele desliga o TURN e cancela as
+    senhas na hora. Se não conseguir perguntar, também desliga;
+  - cada pessoa recebe a própria senha, que vale só 40 minutos e é
+    renovada enquanto ela está no site. Banir ou expulsar cancela a
+    senha da pessoa na hora;
+  - em Painel de admin → Servidor → Servidor TURN aparece o uso, quem
+    mais usou e um botão "Desligar o TURN agora".
+
+Para ligar (são 4 chaves no Render; sem as 4, ele fica desligado):
   1) No painel da Cloudflare (dash.cloudflare.com), abra Realtime →
      TURN Server e crie uma chave (Create). Ela mostra um ID ("Turn
      Token ID") e um token ("API Token"). Copie os dois.
-  2) No Render, em Telas e Bocas → Environment, adicione:
-         CLOUDFLARE_TURN_ID=o ID copiado
-         CLOUDFLARE_TURN_TOKEN=o token copiado
-     e clique em "Save and deploy".
-  3) Confira em Painel de admin → Servidor → Servidor TURN: tem que
-     aparecer "Cloudflare ligado". O site gera senhas temporárias
-     sozinho e renova a cada 12 horas.
+  2) O ID da sua conta: são as 32 letras e números que aparecem logo
+     depois de dash.cloudflare.com/ no endereço do navegador.
+  3) Um token só para ler o uso: clique no seu perfil (canto de cima)
+     → API Tokens → Create Token → Create Custom Token. Em
+     Permissions escolha Account → Account Analytics → Read; em
+     Account Resources, a sua conta. Crie e copie o token.
+  4) No Render, em Telas e Bocas → Environment, adicione:
+         CLOUDFLARE_TURN_ID=o ID do passo 1
+         CLOUDFLARE_TURN_TOKEN=o token do passo 1
+         CLOUDFLARE_CONTA_ID=o ID da conta (passo 2)
+         CLOUDFLARE_TOKEN_USO=o token do passo 3
+     e clique em "Save and deploy". (Opcional: TURN_LIMITE_GB muda a
+     trava de 700 GB; o máximo aceito é 950.)
+  5) Confira em Painel de admin → Servidor → Servidor TURN: tem que
+     aparecer "Ligado". Se algo estiver errado, ali aparece o motivo.
+  6) Recomendado: na Cloudflare, em Manage Account → Billing →
+     Billable Usage, crie um alerta de orçamento de US$ 1. Ele só
+     manda e-mail (não trava), mas avisa se algo escapar.
 
 Outra opção: o Open Relay da Metered (metered.ca), com 20 GB por mês.
 Crie a conta, copie as credenciais e adicione no Render (Environment):
