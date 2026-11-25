@@ -135,7 +135,8 @@
     try {
       actx ||= new (window.AudioContext || window.webkitAudioContext)();
       if (actx.state === 'suspended') actx.resume();
-      const notas = { join: [523, 784], leave: [784, 523], live: [659, 880, 1047], msg: [988, 1319] }[kind];
+      if (kind === 'join' || kind === 'leave') return entradaSaida(kind === 'join');
+      const notas = { live: [659, 880, 1047], msg: [988, 1319] }[kind];
       const t0 = actx.currentTime + 0.01;
       notas.forEach((f, i) => {
         const o = actx.createOscillator();
@@ -151,6 +152,29 @@
         o.stop(t + 0.2);
       });
     } catch { /* sem áudio, sem problema */ }
+  }
+
+  // alguém entrou ou saiu da sala: três notas claras, subindo ao entrar e descendo ao sair
+  // (timbre brilhante com uma oitava em cima, e a última nota soa mais, para dar para perceber)
+  function entradaSaida(entrou) {
+    const notas = entrou ? [659.3, 880, 1318.5] : [1318.5, 880, 587.3];
+    const t0 = actx.currentTime + 0.01;
+    notas.forEach((f, i) => {
+      const t = t0 + i * 0.11;
+      const fim = i === notas.length - 1 ? 0.6 : 0.28;
+      for (const [tipo, mult, vol] of [['triangle', 1, 0.22], ['sine', 2, 0.06]]) {
+        const o = actx.createOscillator();
+        const g = actx.createGain();
+        o.type = tipo;
+        o.frequency.value = f * mult;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + fim);
+        o.connect(g).connect(actx.destination);
+        o.start(t);
+        o.stop(t + fim + 0.05);
+      }
+    });
   }
 
   // ================= API =================
