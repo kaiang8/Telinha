@@ -154,6 +154,19 @@
     } catch { /* sem áudio, sem problema */ }
   }
 
+  // som de quem entrou na sala: o que a pessoa escolheu (até 5 s) ou o padrão. Quem desligou os sons
+  // do soundboard, ou está com a sala mutada, ouve o padrão.
+  let somDeEntradaTocando = null;
+  function somDeEntrada(pid) {
+    const v = pid && S.perfis?.[pid]?.som;
+    if (!v || !SB.ouvir || VOZ.surdo) return blip('join');
+    try { somDeEntradaTocando?.pause(); } catch { /* já parou */ }
+    const a = new Audio(`/som-entrada/${encodeURIComponent(pid)}?v=${v}`);
+    a.volume = Math.max(0, Math.min(1, SB.volume));
+    somDeEntradaTocando = a;
+    const corte = setTimeout(() => a.pause(), 5200);
+    a.play().catch(() => { clearTimeout(corte); blip('join'); });
+  }
   // alguém entrou ou saiu da sala: três notas claras, subindo ao entrar e descendo ao sair
   // (timbre brilhante com uma oitava em cima, e a última nota soa mais, para dar para perceber)
   function entradaSaida(entrou) {
@@ -627,7 +640,8 @@
     if (me && me.admin !== S.isAdmin) S.isAdmin = me.admin;
     const depois = vizinhosDeSala();
     if (S.sala) {
-      if ([...depois].some((id) => !antes.has(id))) blip('join');
+      const chegou = [...depois].find((id) => !antes.has(id));
+      if (chegou) somDeEntrada(userById(chegou)?.pid);
       else if ([...antes].some((id) => !depois.has(id))) blip('leave');
     }
     sincronizarStreams();
@@ -1320,6 +1334,7 @@
         if (u?.sala) itens.push(item('tirar-sala', 'Tirar da sala'));
         itens.push(item('form:renomear', 'Renomear…'));
         if (MM.pid) itens.push(item('codigo', 'Gerar código de acesso'));
+        if (MM.pid && S.perfis?.[MM.pid]?.som) itens.push(item('tirar-som', 'Tirar som de entrada', ' aviso'));
         if (u) itens.push(item('admin', u.admin ? 'Tirar admin' : 'Dar admin'));
         if (!u && MM.info?.aparelhos) itens.push(item('form:esquecer', 'Esquecer aparelhos…', ' aviso'));
         if (!u) itens.push(item('form:ocultar', 'Tirar da lista…', ' aviso'));
@@ -1436,6 +1451,9 @@
       } else if (act === 'banir') {
         if (u) await adm('ban', { uid: u.id, reason: valor('mmMotivo') }); else await adm('perfil-banir', { pid, reason: valor('mmMotivo') });
         msg = `${nome} foi banido.`;
+      } else if (act === 'tirar-som') {
+        await adm('perfil-tirar-som', { pid });
+        msg = `${nome} voltou para o som de entrada padrão.`;
       } else if (act === 'esquecer') {
         await adm('perfil-esquecer-aparelhos', { pid });
         msg = `Os aparelhos de ${nome} foram esquecidos.`;
@@ -1970,7 +1988,7 @@
     S.sala = id;
     S.focus = null;
     patchMe();
-    blip('join');
+    somDeEntrada(S.myPid);
     renderTudo();
     try {
       await api('state', { sala: id, live: false, ...estadoVoz() });
@@ -5557,7 +5575,7 @@
   }
   function onPerfil(m) {
     if (typeof m.id !== 'string' || typeof m.nome !== 'string') return;
-    (S.perfis ||= {})[m.id] = { ...S.perfis[m.id], nome: m.nome, cor: m.cor, ...(m.visto !== undefined ? { visto: m.visto } : {}), fora: !!m.fora };
+    (S.perfis ||= {})[m.id] = { ...S.perfis[m.id], nome: m.nome, cor: m.cor, ...(m.visto !== undefined ? { visto: m.visto } : {}), fora: !!m.fora, som: m.som || 0 };
     // o volume da voz e dos sons de cada pessoa fica guardado pelo nome: acompanha a troca
     if (m.antes && m.antes !== m.nome) {
       for (const [obj, chave] of [[VOLUMES_VOZ, 'volVoz'], [VOLUMES_EFEITOS, 'volEfeitos']]) {
@@ -5582,6 +5600,20 @@
       corpo: `<label class="field"><span>Apelido</span><input type="text" name="nome" maxlength="32" required value="${esc(S.myName)}" autocomplete="off"></label>
         <p class="muted small">É o nome que todo mundo vê. Trocando, as suas mensagens antigas passam a mostrar o nome novo.</p>
         <div class="field"><span>Sua cor</span><div class="color-picker pf-cores">${CORES.map((c) => `<label class="pf-cor"><input type="radio" name="cor" value="${c}"${c === S.myColor ? ' checked' : ''}><span style="background:${c}" aria-label="Cor ${c}"></span></label>`).join('')}</div></div>
+        <div class="pf-secao" id="pfSom"><b>Som ao entrar na sala</b>
+          <p class="muted small" id="seEstado"></p>
+          <div class="se-botoes"><button type="button" class="btn sm" id="seEscolher">Escolher um .mp3</button>
+            <button type="button" class="btn sm ghost" id="seOuvirAtual" hidden>Ouvir</button>
+            <button type="button" class="link-btn" id="sePadrao" hidden>Voltar ao padrão</button></div>
+          <input type="file" id="seArquivo" accept="audio/mpeg,.mp3" hidden>
+          <div class="se-editor" id="seEditor" hidden>
+            <p class="small"><b id="seNome"></b> <span class="muted" id="seDur"></span></p>
+            <label class="se-trecho" id="seTrechoBox"><span>Trecho de 5 s: <b id="seTrecho"></b></span>
+              <input type="range" id="seInicio" min="0" max="0" step="0.1" value="0" aria-label="Começo do trecho"></label>
+            <div class="se-botoes"><button type="button" class="btn sm ghost" id="seOuvir">Ouvir trecho</button>
+              <button type="button" class="btn sm primary" id="seUsar">Usar este som</button></div>
+            <p class="muted small" id="seStatus" aria-live="polite"></p>
+          </div></div>
         <div class="pf-secao"><b>Entrar em outro aparelho</b>
           <p class="muted small">Gere um código e, no outro aparelho, clique em "Já tenho um nome" na tela de entrada. O código vale 15 minutos.</p>
           <button type="button" class="btn sm" id="pfCodigo">Gerar código</button><div class="pf-codigo" id="pfCodigoVer" hidden></div></div>
@@ -5592,6 +5624,7 @@
         toast(r.nome !== S.myName ? `Pronto: agora você é "${r.nome}".` : 'Salvo.');
       },
     });
+    ligarSomDeEntrada();
     $('#pfCodigo').onclick = async () => {
       try {
         const r = await api('perfil-codigo');
@@ -5615,6 +5648,131 @@
         },
       });
     };
+  }
+  // ----- Escolher o som de entrada: lê o mp3, a pessoa escolhe 5 s e o navegador grava só esse trecho -----
+  const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  function ligarSomDeEntrada() {
+    const E = { buf: null, ctx: null, tocando: null };
+    const estado = () => {
+      const tem = !!S.perfis?.[S.myPid]?.som;
+      $('#seEstado').textContent = tem ? 'Você está usando um som seu. Ele toca para todo mundo da sala quando você entra.'
+        : 'Hoje toca o som padrão. Escolha um .mp3 para tocar um som seu (até 5 segundos) quando você entrar.';
+      $('#seOuvirAtual').hidden = !tem;
+      $('#sePadrao').hidden = !tem;
+    };
+    const parar = () => { try { E.tocando?.stop(); } catch { /* já parou */ } E.tocando = null; };
+    const trecho = () => {
+      const ini = Number($('#seInicio').value) || 0;
+      const dur = Math.min(5, E.buf.duration - ini);
+      $('#seTrecho').textContent = `${mmss(ini)} até ${mmss(ini + dur)}`;
+      return { ini, dur };
+    };
+    estado();
+    $('#seEscolher').onclick = () => $('#seArquivo').click();
+    $('#seOuvirAtual').onclick = () => {
+      const v = S.perfis?.[S.myPid]?.som;
+      if (!v) return;
+      const a = new Audio(`/som-entrada/${encodeURIComponent(S.myPid)}?v=${v}`);
+      a.volume = Math.max(0, Math.min(1, SB.volume));
+      a.play().catch(() => toast('Não consegui tocar o som.'));
+    };
+    $('#sePadrao').onclick = async () => {
+      try { await api('som-entrada', { remover: true }); S.perfis[S.myPid].som = 0; estado(); toast('Voltou para o som padrão.'); } catch (e) { toast(e.message); }
+    };
+    $('#seArquivo').onchange = async () => {
+      const f = $('#seArquivo').files[0];
+      $('#seArquivo').value = '';
+      if (!f) return;
+      if (f.size > 30 * 1024 * 1024) return toast('Esse arquivo é grande demais (máximo de 30 MB).');
+      parar();
+      $('#seEditor').hidden = false;
+      $('#seNome').textContent = f.name;
+      $('#seDur').textContent = '';
+      $('#seStatus').textContent = 'Lendo o arquivo…';
+      $('#seUsar').disabled = $('#seOuvir').disabled = true;
+      try {
+        E.ctx ||= new (window.AudioContext || window.webkitAudioContext)();
+        E.buf = await E.ctx.decodeAudioData(await f.arrayBuffer());
+      } catch {
+        E.buf = null;
+        $('#seStatus').textContent = 'Não consegui ler esse arquivo. Escolha um .mp3.';
+        return;
+      }
+      const sobra = Math.max(0, E.buf.duration - 5);
+      $('#seDur').textContent = `(${mmss(E.buf.duration)})`;
+      $('#seInicio').max = String(Math.floor(sobra * 10) / 10);
+      $('#seInicio').value = '0';
+      $('#seTrechoBox').hidden = sobra <= 0;
+      trecho();
+      $('#seStatus').textContent = sobra > 0 ? 'Arraste para escolher a parte do áudio que vai tocar.' : '';
+      $('#seUsar').disabled = $('#seOuvir').disabled = false;
+    };
+    $('#seInicio').oninput = () => { parar(); trecho(); };
+    $('#seOuvir').onclick = () => {
+      if (!E.buf) return;
+      parar();
+      const { ini, dur } = trecho();
+      if (E.ctx.state === 'suspended') E.ctx.resume();
+      const src = E.ctx.createBufferSource();
+      const g = E.ctx.createGain();
+      g.gain.value = Math.max(0, Math.min(1, SB.volume));
+      src.buffer = E.buf;
+      src.connect(g).connect(E.ctx.destination);
+      src.start(0, ini, dur);
+      E.tocando = src;
+    };
+    $('#seUsar').onclick = async () => {
+      if (!E.buf) return;
+      parar();
+      const { ini, dur } = trecho();
+      $('#seUsar').disabled = $('#seOuvir').disabled = true;
+      $('#seStatus').textContent = 'Preparando o som… (leva uns 5 segundos)';
+      try {
+        const audio = await gravarTrechoDeSom(E.buf, ini, dur);
+        const r = await api('som-entrada', { audio });
+        S.perfis[S.myPid].som = r.som;
+        $('#seEditor').hidden = true;
+        estado();
+        toast('Pronto! Esse é o seu som ao entrar na sala.');
+      } catch (e) {
+        $('#seStatus').textContent = e.message || 'Não consegui preparar o som.';
+        $('#seUsar').disabled = $('#seOuvir').disabled = false;
+      }
+    };
+  }
+  // grava o trecho em Opus (uns 30 KB para 5 s), sem tocar alto: o som só vai para o gravador
+  async function gravarTrechoDeSom(buf, ini, dur) {
+    const tipo = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm'].find((t) => window.MediaRecorder?.isTypeSupported?.(t));
+    if (!tipo) throw new Error('Este navegador não consegue preparar o som. Use o programa ou o Chrome.');
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    try {
+      const dest = ctx.createMediaStreamDestination();
+      const src = ctx.createBufferSource();
+      const g = ctx.createGain();
+      src.buffer = buf;
+      src.connect(g).connect(dest);
+      const rec = new MediaRecorder(dest.stream, { mimeType: tipo, audioBitsPerSecond: 48000 });
+      const partes = [];
+      rec.ondataavailable = (e) => { if (e.data.size) partes.push(e.data); };
+      const parou = new Promise((ok) => { rec.onstop = ok; });
+      if (ctx.state === 'suspended') await ctx.resume();
+      rec.start();
+      // entra e sai suave, para não estalar
+      const t = ctx.currentTime + 0.05;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(1, t + 0.02);
+      g.gain.setValueAtTime(1, Math.max(t + 0.02, t + dur - 0.06));
+      g.gain.linearRampToValueAtTime(0, t + dur);
+      src.start(t, ini, dur);
+      await new Promise((ok) => setTimeout(ok, (dur + 0.3) * 1000));
+      rec.stop();
+      await parou;
+      const blob = new Blob(partes, { type: tipo.split(';')[0] });
+      if (blob.size > 100 * 1024) throw new Error('O som ficou grande demais. Escolha um trecho mais curto.');
+      return await new Promise((ok, erro) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = erro; r.readAsDataURL(blob); });
+    } finally {
+      ctx.close().catch(() => {});
+    }
   }
   $('#meInfo')?.addEventListener('click', abrirPerfil);
   $('#meInfo')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirPerfil(); } });

@@ -16,3 +16,5 @@ data.json.tmp
 *-dias-*.json
 *-dias-*.json.tmp
 *.migrado
+*-sons-entrada.json
+*-sons-entrada.json.tmp

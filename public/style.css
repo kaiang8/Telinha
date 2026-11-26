@@ -1324,3 +1324,9 @@ img.tl-rosa { animation-name: tlPuloRosa; animation-duration: 2.6s; animation-de
   50% { transform: translateY(0) rotate(0) scale(1.03, .97); }
   70% { transform: translateY(-3px) rotate(-4deg); }
 }
+/* ===== Som ao entrar na sala (janela do perfil) ===== */
+.se-botoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.se-editor { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: linear-gradient(180deg, var(--pop-1), var(--pop-2)); border: 1px solid var(--linha); }
+.se-editor p { margin: 0 0 6px; }
+.se-trecho { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.se-trecho input[type="range"] { width: 100%; accent-color: var(--p2, #3db3f0); }

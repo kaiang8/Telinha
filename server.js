@@ -838,6 +838,70 @@ function limiteDe(u, campo, max, janela) {
   return ++u[campo].n > max;
 }
 
+// ---------- Som de entrada na sala (um por pessoa, até 5 s) ----------
+// O navegador recorta o trecho e manda já pronto (Opus, uns 30 KB). Cada som fica numa chave própria,
+// fora do bloco principal: no Upstash em `${CHAVE_UPSTASH}:som:<pid>`, no modo arquivo num JSON ao
+// lado do DATA_FILE. O perfil guarda só a versão (data), que vai no endereço do som: trocar o som
+// troca o endereço, e o navegador pode guardar cada versão para sempre.
+const SOM_MAX_B64 = 150 * 1024;
+const ARQUIVO_SONS = DATA_FILE.replace(/\.json$/i, '') + '-sons-entrada.json';
+const SONS_CACHE = new Map(); // pid -> { tipo, buf, v }
+let sonsArquivo = null;
+async function arquivoDeSons() {
+  if (!sonsArquivo) {
+    const raw = await fs.promises.readFile(ARQUIVO_SONS, 'utf8').catch((e) => (e.code === 'ENOENT' ? '{}' : Promise.reject(e)));
+    sonsArquivo = JSON.parse(raw);
+  }
+  return sonsArquivo;
+}
+async function lerSomEntrada(pid) {
+  const p = data.perfis[pid];
+  if (!p?.som) return null;
+  const c = SONS_CACHE.get(pid);
+  if (c && c.v === p.som) return c;
+  const raw = USA_UPSTASH ? await upstash(['GET', `${CHAVE_UPSTASH}:som:${pid}`]) : (await arquivoDeSons())[pid];
+  const x = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  if (!x?.b64 || x.v !== p.som) return null;
+  const s = { tipo: x.tipo, buf: Buffer.from(x.b64, 'base64'), v: x.v };
+  SONS_CACHE.set(pid, s);
+  return s;
+}
+async function gravarSomEntrada(pid, valor) {
+  SONS_CACHE.delete(pid);
+  if (USA_UPSTASH) {
+    await upstash(valor ? ['SET', `${CHAVE_UPSTASH}:som:${pid}`, JSON.stringify(valor)] : ['DEL', `${CHAVE_UPSTASH}:som:${pid}`]);
+    return;
+  }
+  const a = await arquivoDeSons();
+  if (valor) a[pid] = valor;
+  else delete a[pid];
+  await fs.promises.writeFile(ARQUIVO_SONS + '.tmp', JSON.stringify(a));
+  await fs.promises.rename(ARQUIVO_SONS + '.tmp', ARQUIVO_SONS);
+}
+// audio: data URL do trecho pronto, ou null para voltar ao som padrão
+async function definirSomEntrada(pid, audio) {
+  const p = data.perfis[pid];
+  if (!p) return { status: 404, erro: 'Esse nome não existe mais' };
+  if (!audio) {
+    if (p.som) {
+      await gravarSomEntrada(pid, null);
+      delete p.som;
+      salvar();
+      avisarPerfil(pid);
+    }
+    return { ok: true };
+  }
+  const m = /^data:(audio\/(?:webm|ogg))(?:;codecs=[\w.]+)?;base64,([A-Za-z0-9+/]+={0,2})$/.exec(String(audio));
+  if (!m) return { status: 400, erro: 'Formato de áudio não aceito' };
+  if (m[2].length > SOM_MAX_B64) return { status: 413, erro: 'O som ficou grande demais' };
+  const v = Date.now();
+  await gravarSomEntrada(pid, { tipo: m[1], b64: m[2], v });
+  p.som = v;
+  salvar();
+  avisarPerfil(pid);
+  return { ok: true, som: v };
+}
+
 // ---------- Registro de conexões (só admins veem) ----------
 // Quem entrou, de qual IP e com qual navegador, e as tentativas recusadas. Fica num pedaço por
 // dia (veja "diario"), por pelo menos 30 dias, sem limite de quantidade.
@@ -1174,7 +1238,7 @@ function donoDoNome(nome) {
 function perfilPublico(id) {
   const p = data.perfis[id];
   const fora = p.oculto || data.bans.some((b) => b.pid === id);
-  return { nome: p.nome, cor: p.cor, visto: p.visto || p.criado || 0, ...(fora ? { fora: true } : {}) };
+  return { nome: p.nome, cor: p.cor, visto: p.visto || p.criado || 0, ...(fora ? { fora: true } : {}), ...(p.som ? { som: p.som } : {}) };
 }
 function perfisPublicos() {
   const o = {};
@@ -1301,13 +1365,13 @@ function json(res, status, obj) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(body);
 }
-function lerCorpo(req) {
+function lerCorpo(req, limite = MAX_BODY) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > MAX_BODY) {
+      if (size > limite) {
         reject(new Error('corpo grande demais'));
         req.destroy();
       } else chunks.push(c);
@@ -1693,6 +1757,13 @@ async function acaoAdmin(u, body, res, req) {
       return json(res, 200, { ok: true });
     }
 
+    case 'perfil-tirar-som': {
+      const id = String(body.pid);
+      if (!data.perfis[id]) return json(res, 404, { error: 'Esse nome não existe mais' });
+      await definirSomEntrada(id, null);
+      console.log(`! ${u.name} tirou o som de entrada de ${data.perfis[id].nome}`);
+      return json(res, 200, { ok: true });
+    }
     case 'turn-desligar':
       USO_TURN.dados.desligado = true;
       USO_TURN.salvar(500);
@@ -1953,7 +2024,7 @@ async function api(req, res, url) {
 
   let body;
   try {
-    body = await lerCorpo(req);
+    body = await lerCorpo(req, rota === 'som-entrada' ? 200 * 1024 : MAX_BODY); // o som vai inteiro no corpo
   } catch (e) {
     return json(res, 400, { error: e.message });
   }
@@ -2200,6 +2271,20 @@ async function api(req, res, url) {
       if (r.erro) return json(res, r.status, { error: r.erro });
       const p = data.perfis[u.pid];
       return json(res, 200, { ok: true, nome: p.nome, cor: p.cor });
+    }
+
+    case 'som-entrada': {
+      // o som que toca quando a pessoa entra numa sala (ou { remover: true } para voltar ao padrão)
+      if (!u.pid || !data.perfis[u.pid]) return json(res, 400, { error: 'Entre de novo para ter um nome guardado' });
+      if (limiteDe(u, 'limSom', 6, 10 * 60e3)) return json(res, 429, { error: 'Muitas trocas seguidas. Espere uns minutos.' });
+      try {
+        const r = await definirSomEntrada(u.pid, body.remover ? null : body.audio);
+        if (r.erro) return json(res, r.status, { error: r.erro });
+        return json(res, 200, r);
+      } catch (e) {
+        console.warn('Não consegui guardar o som de entrada:', e.message);
+        return json(res, 500, { error: 'Não consegui guardar o som agora. Tente de novo.' });
+      }
     }
 
     case 'perfil-codigo':
@@ -2481,6 +2566,15 @@ const server = http.createServer((req, res) => {
   }
   const p = url.pathname;
   medirResposta(res, p === '/api/img' ? 'imagens' : p === '/api/events' || p === '/api/poll' ? 'tempoReal' : p.startsWith('/api/') ? 'api' : 'pagina');
+  const somPedido = /^\/som-entrada\/([A-Za-z0-9_-]{4,64})$/.exec(url.pathname);
+  if (somPedido && (req.method === 'GET' || req.method === 'HEAD')) {
+    lerSomEntrada(somPedido[1]).then((s) => {
+      if (!s) { res.writeHead(404, { 'Cache-Control': 'no-store' }); return res.end(); }
+      res.writeHead(200, { 'Content-Type': s.tipo, 'Content-Length': s.buf.length, 'Cache-Control': 'public, max-age=31536000, immutable' });
+      res.end(req.method === 'HEAD' ? undefined : s.buf);
+    }).catch(() => { if (!res.headersSent) { res.writeHead(500); res.end(); } });
+    return;
+  }
   if (url.pathname.startsWith('/api/')) {
     api(req, res, url).catch((e) => {
       console.error(e);
