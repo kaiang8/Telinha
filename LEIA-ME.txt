@@ -709,15 +709,16 @@ DICAS
     passa a usar a largura toda, e duas transmissões ficam uma embaixo
     da outra. Muda sozinho ao virar o monitor ou arrastar a janela para
     ele. Em monitor deitado, nada muda.
-  - Som ao entrar na sala: em "Seu nome e cor" (clique no seu nome,
-    embaixo à esquerda), cada pessoa pode escolher um .mp3 para tocar
-    para todo mundo da sala quando ela entra. Se o áudio tiver mais de
-    5 segundos, uma barra deixa escolher qual trecho de 5 s usar
-    ("Ouvir trecho" para conferir). O próprio navegador recorta e
-    guarda só esse trecho (uns 30 KB). Sem som escolhido, toca o
-    padrão; o som de sair é o padrão para todos. Quem desligou os sons
-    do soundboard ou está com a sala mutada ouve o padrão. Um admin
-    pode tirar o som de alguém pelo menu da lista de membros.
+  - Som ao entrar na sala: quando alguém entra, toca sempre o aviso
+    padrão (três notas subindo) e, logo depois, o som que a pessoa
+    escolheu, se tiver um. Para escolher: clique no seu nome (embaixo à
+    esquerda) → "Som ao entrar na sala" → escolha um .mp3. Uma barra
+    escolhe quantos segundos tocam (de 1 a 10) e outra, se o áudio for
+    maior, qual parte ("Ouvir trecho" para conferir). O próprio
+    navegador recorta e guarda só esse trecho (uns 6 KB por segundo). O
+    som de sair é o padrão para todos. Quem desligou os sons do
+    soundboard ou está com a sala mutada ouve só o aviso. Um admin pode
+    tirar o som de alguém pelo menu da lista de membros.
   - Lista de membros: embaixo de quem está online aparece todo mundo
     que já entrou alguma vez, com "offline há 3 h", "há 2 dias"...
     (sem IP de ninguém). Quando a pessoa entra, ela sobe para o

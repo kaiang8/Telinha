@@ -838,12 +838,12 @@ function limiteDe(u, campo, max, janela) {
   return ++u[campo].n > max;
 }
 
-// ---------- Som de entrada na sala (um por pessoa, até 5 s) ----------
+// ---------- Som de entrada na sala (um por pessoa, de 1 a 10 s) ----------
 // O navegador recorta o trecho e manda já pronto (Opus, uns 30 KB). Cada som fica numa chave própria,
 // fora do bloco principal: no Upstash em `${CHAVE_UPSTASH}:som:<pid>`, no modo arquivo num JSON ao
 // lado do DATA_FILE. O perfil guarda só a versão (data), que vai no endereço do som: trocar o som
 // troca o endereço, e o navegador pode guardar cada versão para sempre.
-const SOM_MAX_B64 = 150 * 1024;
+const SOM_MAX_B64 = 210 * 1024; // até 10 s
 const ARQUIVO_SONS = DATA_FILE.replace(/\.json$/i, '') + '-sons-entrada.json';
 const SONS_CACHE = new Map(); // pid -> { tipo, buf, v }
 let sonsArquivo = null;
@@ -2024,7 +2024,7 @@ async function api(req, res, url) {
 
   let body;
   try {
-    body = await lerCorpo(req, rota === 'som-entrada' ? 200 * 1024 : MAX_BODY); // o som vai inteiro no corpo
+    body = await lerCorpo(req, rota === 'som-entrada' ? 260 * 1024 : MAX_BODY); // o som vai inteiro no corpo
   } catch (e) {
     return json(res, 400, { error: e.message });
   }

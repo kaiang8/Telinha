@@ -154,18 +154,24 @@
     } catch { /* sem áudio, sem problema */ }
   }
 
-  // som de quem entrou na sala: o que a pessoa escolheu (até 5 s) ou o padrão. Quem desligou os sons
-  // do soundboard, ou está com a sala mutada, ouve o padrão.
+  // alguém entrou na sala: primeiro sempre o aviso padrão (para ninguém achar que o som é do próprio
+  // computador) e, logo depois que ele acaba, o som que a pessoa escolheu (de 1 a 10 s), se tiver.
+  // Quem desligou os sons do soundboard, ou está com a sala mutada, ouve só o aviso.
   let somDeEntradaTocando = null;
   function somDeEntrada(pid) {
+    blip('join');
     const v = pid && S.perfis?.[pid]?.som;
-    if (!v || !SB.ouvir || VOZ.surdo) return blip('join');
+    if (!v || !SB.ouvir || VOZ.surdo) return;
     try { somDeEntradaTocando?.pause(); } catch { /* já parou */ }
     const a = new Audio(`/som-entrada/${encodeURIComponent(pid)}?v=${v}`);
+    a.preload = 'auto';
     a.volume = Math.max(0, Math.min(1, SB.volume));
     somDeEntradaTocando = a;
-    const corte = setTimeout(() => a.pause(), 5200);
-    a.play().catch(() => { clearTimeout(corte); blip('join'); });
+    setTimeout(() => {
+      if (somDeEntradaTocando !== a) return; // outra pessoa entrou logo em seguida
+      const corte = setTimeout(() => a.pause(), 10200);
+      a.play().catch(() => clearTimeout(corte));
+    }, 900);
   }
   // alguém entrou ou saiu da sala: três notas claras, subindo ao entrar e descendo ao sair
   // (timbre brilhante com uma oitava em cima, e a última nota soa mais, para dar para perceber)
@@ -5608,7 +5614,9 @@
           <input type="file" id="seArquivo" accept="audio/mpeg,.mp3" hidden>
           <div class="se-editor" id="seEditor" hidden>
             <p class="small"><b id="seNome"></b> <span class="muted" id="seDur"></span></p>
-            <label class="se-trecho" id="seTrechoBox"><span>Trecho de 5 s: <b id="seTrecho"></b></span>
+            <label class="se-trecho"><span>Duração do toque: <b id="seDuracaoTxt"></b></span>
+              <input type="range" id="seDuracao" min="1" max="10" step="0.5" value="5" aria-label="Duração do toque, em segundos"></label>
+            <label class="se-trecho" id="seTrechoBox"><span>Trecho: <b id="seTrecho"></b></span>
               <input type="range" id="seInicio" min="0" max="0" step="0.1" value="0" aria-label="Começo do trecho"></label>
             <div class="se-botoes"><button type="button" class="btn sm ghost" id="seOuvir">Ouvir trecho</button>
               <button type="button" class="btn sm primary" id="seUsar">Usar este som</button></div>
@@ -5655,15 +5663,21 @@
     const E = { buf: null, ctx: null, tocando: null };
     const estado = () => {
       const tem = !!S.perfis?.[S.myPid]?.som;
-      $('#seEstado').textContent = tem ? 'Você está usando um som seu. Ele toca para todo mundo da sala quando você entra.'
-        : 'Hoje toca o som padrão. Escolha um .mp3 para tocar um som seu (até 5 segundos) quando você entrar.';
+      $('#seEstado').textContent = tem ? 'Você está usando um som seu. Ele toca para todo mundo da sala logo depois do aviso de entrada.'
+        : 'Hoje toca só o aviso padrão. Escolha um .mp3 para tocar também um som seu (de 1 a 10 segundos) logo depois do aviso, quando você entrar.';
       $('#seOuvirAtual').hidden = !tem;
       $('#sePadrao').hidden = !tem;
     };
     const parar = () => { try { E.tocando?.stop(); } catch { /* já parou */ } E.tocando = null; };
+    // duração escolhida (1 a 10 s, ou o áudio todo se for menor) e o começo do trecho
     const trecho = () => {
-      const ini = Number($('#seInicio').value) || 0;
-      const dur = Math.min(5, E.buf.duration - ini);
+      const total = E.buf.duration;
+      const dur = Math.min(Number($('#seDuracao').value) || 5, total);
+      const maxIni = Math.max(0, total - dur);
+      const ini = Math.min(Number($('#seInicio').value) || 0, maxIni);
+      $('#seInicio').max = String(Math.floor(maxIni * 10) / 10);
+      $('#seTrechoBox').hidden = maxIni <= 0;
+      $('#seDuracaoTxt').textContent = `${String(Math.round(dur * 10) / 10).replace('.', ',')} s`;
       $('#seTrecho').textContent = `${mmss(ini)} até ${mmss(ini + dur)}`;
       return { ini, dur };
     };
@@ -5698,16 +5712,18 @@
         $('#seStatus').textContent = 'Não consegui ler esse arquivo. Escolha um .mp3.';
         return;
       }
-      const sobra = Math.max(0, E.buf.duration - 5);
+      const maxDur = Math.min(10, E.buf.duration);
       $('#seDur').textContent = `(${mmss(E.buf.duration)})`;
-      $('#seInicio').max = String(Math.floor(sobra * 10) / 10);
+      $('#seDuracao').min = String(Math.min(1, maxDur));
+      $('#seDuracao').max = String(maxDur);
+      $('#seDuracao').value = String(Math.min(5, maxDur));
       $('#seInicio').value = '0';
-      $('#seTrechoBox').hidden = sobra <= 0;
       trecho();
-      $('#seStatus').textContent = sobra > 0 ? 'Arraste para escolher a parte do áudio que vai tocar.' : '';
+      $('#seStatus').textContent = E.buf.duration > 1 ? 'Escolha quantos segundos tocam e, se o áudio for maior, qual parte.' : '';
       $('#seUsar').disabled = $('#seOuvir').disabled = false;
     };
     $('#seInicio').oninput = () => { parar(); trecho(); };
+    $('#seDuracao').oninput = () => { parar(); trecho(); };
     $('#seOuvir').onclick = () => {
       if (!E.buf) return;
       parar();
@@ -5726,7 +5742,7 @@
       parar();
       const { ini, dur } = trecho();
       $('#seUsar').disabled = $('#seOuvir').disabled = true;
-      $('#seStatus').textContent = 'Preparando o som… (leva uns 5 segundos)';
+      $('#seStatus').textContent = `Preparando o som… (leva uns ${Math.ceil(dur)} segundos)`;
       try {
         const audio = await gravarTrechoDeSom(E.buf, ini, dur);
         const r = await api('som-entrada', { audio });
@@ -5740,7 +5756,7 @@
       }
     };
   }
-  // grava o trecho em Opus (uns 30 KB para 5 s), sem tocar alto: o som só vai para o gravador
+  // grava o trecho em Opus (uns 6 KB por segundo), sem tocar alto: o som só vai para o gravador
   async function gravarTrechoDeSom(buf, ini, dur) {
     const tipo = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm'].find((t) => window.MediaRecorder?.isTypeSupported?.(t));
     if (!tipo) throw new Error('Este navegador não consegue preparar o som. Use o programa ou o Chrome.');
@@ -5768,7 +5784,7 @@
       rec.stop();
       await parou;
       const blob = new Blob(partes, { type: tipo.split(';')[0] });
-      if (blob.size > 100 * 1024) throw new Error('O som ficou grande demais. Escolha um trecho mais curto.');
+      if (blob.size > 150 * 1024) throw new Error('O som ficou grande demais. Escolha um trecho mais curto.');
       return await new Promise((ok, erro) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = erro; r.readAsDataURL(blob); });
     } finally {
       ctx.close().catch(() => {});
