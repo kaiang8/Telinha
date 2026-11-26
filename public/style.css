@@ -1330,3 +1330,4 @@ img.tl-rosa { animation-name: tlPuloRosa; animation-duration: 2.6s; animation-de
 .se-editor p { margin: 0 0 6px; }
 .se-trecho { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .se-trecho input[type="range"] { width: 100%; accent-color: var(--p2, #3db3f0); }
+.se-vols { margin: 12px 0 4px; display: grid; gap: 6px; }

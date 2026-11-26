@@ -162,10 +162,17 @@
     blip('join');
     const v = pid && S.perfis?.[pid]?.som;
     if (!v || !SB.ouvir || VOZ.surdo) return;
+    // volume: o que o dono escolheu × o geral dos sons × (para os outros) o seu ajuste dos sons de
+    // entrada × o volume dos sons daquela pessoa ("Volume da voz e dos sons")
+    const eu = pid === S.myPid;
+    const uid = S.users.find((x) => x.pid === pid)?.id;
+    const pessoa = uid && !eu ? volumeDosEfeitos(uid) : { v: 1, mudo: false };
+    const vol = SB.volume * (S.perfis[pid].somVol || 1) * (eu ? 1 : VOL_ENTRADA) * pessoa.v;
+    if (pessoa.mudo || vol <= 0) return;
     try { somDeEntradaTocando?.pause(); } catch { /* já parou */ }
     const a = new Audio(`/som-entrada/${encodeURIComponent(pid)}?v=${v}`);
     a.preload = 'auto';
-    a.volume = Math.max(0, Math.min(1, SB.volume));
+    a.volume = Math.max(0, Math.min(1, vol));
     somDeEntradaTocando = a;
     setTimeout(() => {
       if (somDeEntradaTocando !== a) return; // outra pessoa entrou logo em seguida
@@ -3879,6 +3886,8 @@
     };
   }
   const VOLUMES_EFEITOS = salvo.volEfeitos && typeof salvo.volEfeitos === 'object' ? { ...salvo.volEfeitos } : {};
+  // volume dos sons de entrada dos outros (só para você; 0 = não tocar)
+  let VOL_ENTRADA = typeof salvo.volEntrada === 'number' ? Math.min(1, Math.max(0, salvo.volEntrada)) : 1;
   function volumeDosEfeitos(id) {
     const x = VOLUMES_EFEITOS[userById(id)?.name];
     return {
@@ -5581,7 +5590,7 @@
   }
   function onPerfil(m) {
     if (typeof m.id !== 'string' || typeof m.nome !== 'string') return;
-    (S.perfis ||= {})[m.id] = { ...S.perfis[m.id], nome: m.nome, cor: m.cor, ...(m.visto !== undefined ? { visto: m.visto } : {}), fora: !!m.fora, som: m.som || 0 };
+    (S.perfis ||= {})[m.id] = { ...S.perfis[m.id], nome: m.nome, cor: m.cor, ...(m.visto !== undefined ? { visto: m.visto } : {}), fora: !!m.fora, som: m.som || 0, somVol: m.somVol || 1 };
     // o volume da voz e dos sons de cada pessoa fica guardado pelo nome: acompanha a troca
     if (m.antes && m.antes !== m.nome) {
       for (const [obj, chave] of [[VOLUMES_VOZ, 'volVoz'], [VOLUMES_EFEITOS, 'volEfeitos']]) {
@@ -5611,6 +5620,11 @@
           <div class="se-botoes"><button type="button" class="btn sm" id="seEscolher">Escolher um .mp3</button>
             <button type="button" class="btn sm ghost" id="seOuvirAtual" hidden>Ouvir</button>
             <button type="button" class="link-btn" id="sePadrao" hidden>Voltar ao padrão</button></div>
+          <div class="se-vols"><label class="se-trecho" id="seVolDonoBox" hidden><span>Volume do seu som (para todos): <b id="seVolDonoTxt"></b></span>
+            <input type="range" id="seVolDono" min="10" max="100" step="5" aria-label="Volume do seu som de entrada"></label>
+          <label class="se-trecho"><span>Sons de entrada dos outros (só para você): <b id="seVolOutrosTxt"></b></span>
+            <input type="range" id="seVolOutros" min="0" max="100" step="5" aria-label="Volume dos sons de entrada dos outros"></label>
+          <p class="muted small">Para uma pessoa só, use "Volume da voz e dos sons" no nome dela, dentro da sala.</p></div>
           <input type="file" id="seArquivo" accept="audio/mpeg,.mp3" hidden>
           <div class="se-editor" id="seEditor" hidden>
             <p class="small"><b id="seNome"></b> <span class="muted" id="seDur"></span></p>
@@ -5667,6 +5681,28 @@
         : 'Hoje toca só o aviso padrão. Escolha um .mp3 para tocar também um som seu (de 1 a 10 segundos) logo depois do aviso, quando você entrar.';
       $('#seOuvirAtual').hidden = !tem;
       $('#sePadrao').hidden = !tem;
+      $('#seVolDonoBox').hidden = !tem && $('#seEditor').hidden;
+    };
+    const volDono = () => Number($('#seVolDono').value) / 100;
+    const pct = (x) => `${Math.round(x * 100)}%`;
+    $('#seVolDono').value = String(Math.round((S.perfis?.[S.myPid]?.somVol || 1) * 100));
+    $('#seVolDonoTxt').textContent = pct(volDono());
+    $('#seVolOutros').value = String(Math.round(VOL_ENTRADA * 100));
+    $('#seVolOutrosTxt').textContent = VOL_ENTRADA ? pct(VOL_ENTRADA) : 'desligados';
+    let timerVol = null;
+    $('#seVolDono').oninput = () => {
+      $('#seVolDonoTxt').textContent = pct(volDono());
+      if (E.ganho) E.ganho.gain.value = Math.max(0, Math.min(1, SB.volume * volDono()));
+      if (!S.perfis?.[S.myPid]?.som) return; // som novo: o volume vai junto quando salvar
+      clearTimeout(timerVol);
+      timerVol = setTimeout(async () => {
+        try { const r = await api('som-entrada', { volume: volDono() }); S.perfis[S.myPid].somVol = r.somVol; } catch (e) { toast(e.message); }
+      }, 500);
+    };
+    $('#seVolOutros').oninput = () => {
+      VOL_ENTRADA = Number($('#seVolOutros').value) / 100;
+      $('#seVolOutrosTxt').textContent = VOL_ENTRADA ? pct(VOL_ENTRADA) : 'desligados';
+      salvar({ volEntrada: VOL_ENTRADA });
     };
     const parar = () => { try { E.tocando?.stop(); } catch { /* já parou */ } E.tocando = null; };
     // duração escolhida (1 a 10 s, ou o áudio todo se for menor) e o começo do trecho
@@ -5687,7 +5723,7 @@
       const v = S.perfis?.[S.myPid]?.som;
       if (!v) return;
       const a = new Audio(`/som-entrada/${encodeURIComponent(S.myPid)}?v=${v}`);
-      a.volume = Math.max(0, Math.min(1, SB.volume));
+      a.volume = Math.max(0, Math.min(1, SB.volume * volDono()));
       a.play().catch(() => toast('Não consegui tocar o som.'));
     };
     $('#sePadrao').onclick = async () => {
@@ -5700,6 +5736,7 @@
       if (f.size > 30 * 1024 * 1024) return toast('Esse arquivo é grande demais (máximo de 30 MB).');
       parar();
       $('#seEditor').hidden = false;
+      $('#seVolDonoBox').hidden = false;
       $('#seNome').textContent = f.name;
       $('#seDur').textContent = '';
       $('#seStatus').textContent = 'Lendo o arquivo…';
@@ -5731,7 +5768,8 @@
       if (E.ctx.state === 'suspended') E.ctx.resume();
       const src = E.ctx.createBufferSource();
       const g = E.ctx.createGain();
-      g.gain.value = Math.max(0, Math.min(1, SB.volume));
+      g.gain.value = Math.max(0, Math.min(1, SB.volume * volDono()));
+      E.ganho = g;
       src.buffer = E.buf;
       src.connect(g).connect(E.ctx.destination);
       src.start(0, ini, dur);
@@ -5745,8 +5783,9 @@
       $('#seStatus').textContent = `Preparando o som… (leva uns ${Math.ceil(dur)} segundos)`;
       try {
         const audio = await gravarTrechoDeSom(E.buf, ini, dur);
-        const r = await api('som-entrada', { audio });
+        const r = await api('som-entrada', { audio, volume: volDono() });
         S.perfis[S.myPid].som = r.som;
+        S.perfis[S.myPid].somVol = r.somVol;
         $('#seEditor').hidden = true;
         estado();
         toast('Pronto! Esse é o seu som ao entrar na sala.');

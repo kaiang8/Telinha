@@ -886,6 +886,7 @@ async function definirSomEntrada(pid, audio) {
     if (p.som) {
       await gravarSomEntrada(pid, null);
       delete p.som;
+      delete p.somVol;
       salvar();
       avisarPerfil(pid);
     }
@@ -1238,7 +1239,7 @@ function donoDoNome(nome) {
 function perfilPublico(id) {
   const p = data.perfis[id];
   const fora = p.oculto || data.bans.some((b) => b.pid === id);
-  return { nome: p.nome, cor: p.cor, visto: p.visto || p.criado || 0, ...(fora ? { fora: true } : {}), ...(p.som ? { som: p.som } : {}) };
+  return { nome: p.nome, cor: p.cor, visto: p.visto || p.criado || 0, ...(fora ? { fora: true } : {}), ...(p.som ? { som: p.som, ...(p.somVol && p.somVol !== 1 ? { somVol: p.somVol } : {}) } : {}) };
 }
 function perfisPublicos() {
   const o = {};
@@ -2278,9 +2279,22 @@ async function api(req, res, url) {
       if (!u.pid || !data.perfis[u.pid]) return json(res, 400, { error: 'Entre de novo para ter um nome guardado' });
       if (limiteDe(u, 'limSom', 6, 10 * 60e3)) return json(res, 429, { error: 'Muitas trocas seguidas. Espere uns minutos.' });
       try {
+        const p = data.perfis[u.pid];
+        // volume do próprio som (10% a 100%), que vale para todo mundo que ouve
+        const vol = Number(body.volume);
+        const novoVol = Number.isFinite(vol) ? Math.round(Math.min(1, Math.max(0.1, vol)) * 100) / 100 : null;
+        if (!body.audio && !body.remover) {
+          if (novoVol == null) return json(res, 400, { error: 'Nada para mudar' });
+          if (!p.som) return json(res, 400, { error: 'Escolha um som primeiro' });
+          p.somVol = novoVol;
+          salvar();
+          avisarPerfil(u.pid);
+          return json(res, 200, { ok: true, somVol: novoVol });
+        }
         const r = await definirSomEntrada(u.pid, body.remover ? null : body.audio);
         if (r.erro) return json(res, r.status, { error: r.erro });
-        return json(res, 200, r);
+        if (!body.remover && novoVol != null) { p.somVol = novoVol; salvar(); avisarPerfil(u.pid); }
+        return json(res, 200, { ...r, somVol: p.somVol || 1 });
       } catch (e) {
         console.warn('Não consegui guardar o som de entrada:', e.message);
         return json(res, 500, { error: 'Não consegui guardar o som agora. Tente de novo.' });
