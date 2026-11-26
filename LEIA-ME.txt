@@ -719,6 +719,11 @@ DICAS
     som de sair é o padrão para todos. Quem desligou os sons do
     soundboard ou está com a sala mutada ouve só o aviso. Um admin pode
     tirar o som de alguém pelo menu da lista de membros.
+    Volume: "Volume do seu som" define o quão alto o seu toca para
+    todos (10% a 100%). "Sons de entrada dos outros" muda só o que
+    você ouve (0% desliga). Para uma pessoa só, use "Volume da voz e
+    dos sons" no nome dela, dentro da sala: vale também para o som de
+    entrada dela.
   - Lista de membros: embaixo de quem está online aparece todo mundo
     que já entrou alguma vez, com "offline há 3 h", "há 2 dias"...
     (sem IP de ninguém). Quando a pessoa entra, ela sobe para o
@@ -732,11 +737,6 @@ DICAS
     que ele já usou). Online, também dá para expulsar, dar admin,
     parar transmissão e tirar da sala. Quem é banido some da lista
     até ser desbanido.
-    Volume: "Volume do seu som" define o quão alto o seu toca para
-    todos (10% a 100%). "Sons de entrada dos outros" muda só o que
-    você ouve (0% desliga). Para uma pessoa só, use "Volume da voz e
-    dos sons" no nome dela, dentro da sala: vale também para o som de
-    entrada dela.
 
 
 =====================================================================
