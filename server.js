@@ -627,6 +627,37 @@ async function rodarFilaDeMensagens() {
     MSGS.rodando = false;
   }
 }
+// Busca: no modo Upstash, a lista inteira de cada canal fica na memória depois da primeira busca
+// (e acompanha as mensagens novas, editadas e apagadas). No modo arquivo, já está tudo na memória.
+const BUSCA = new Map(); // canal -> itens crus (posição = índice)
+async function itensParaBusca(ch) {
+  if (!USA_UPSTASH) return MSGS.arquivo[ch] || [];
+  let l = BUSCA.get(ch);
+  if (!l) {
+    await esperarGravacoes(5000);
+    l = await todasAsMensagens(ch);
+    if (l.length === (MSGS.total[ch] || 0)) BUSCA.set(ch, l); // chegou mensagem no meio: usa só desta vez
+  }
+  return l;
+}
+const semAcento = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+async function buscarMensagens(q, canais, max = 50) {
+  const termos = semAcento(q).split(/\s+/).filter(Boolean).slice(0, 8);
+  if (!termos.length) return [];
+  const achadas = [];
+  for (const c of canais) {
+    const l = await itensParaBusca(c.id);
+    for (let pos = l.length - 1; pos >= 0; pos--) {
+      const m = l[pos];
+      if (!m || !m.id || m.apagada || m.sistema) continue;
+      const alvo = semAcento(`${m.text} ${m.enquete ? m.enquete.opcoes.map((o) => o.t).join(' ') : ''}`);
+      if (termos.every((t) => alvo.includes(t))) achadas.push({ ...msgParaEnviar(m), pos, ch: c.id });
+    }
+  }
+  return achadas.sort((a, b) => b.ts - a.ts).slice(0, max)
+    .map((m) => ({ id: m.id, ch: m.ch, pos: m.pos, ts: m.ts, pid: m.pid || null, name: m.name, color: m.color, text: String(m.text || '').slice(0, 400), enquete: !!m.enquete }));
+}
+
 function guardarMensagem(m) {
   const pos = MSGS.total[m.ch] || 0;
   MSGS.total[m.ch] = pos + 1;
@@ -634,7 +665,7 @@ function guardarMensagem(m) {
   const rec = (MSGS.recentes[m.ch] ||= []);
   rec.push(salva);
   if (rec.length > MSG_MEMORIA) rec.splice(0, rec.length - MSG_MEMORIA);
-  if (USA_UPSTASH) filaDeMensagens({ tipo: 'push', ch: m.ch, m: salva });
+  if (USA_UPSTASH) { filaDeMensagens({ tipo: 'push', ch: m.ch, m: salva }); BUSCA.get(m.ch)?.push(semPos(m)); }
   else { (MSGS.arquivo[m.ch] ||= []).push(semPos(m)); salvarArquivoDeMensagens(); }
   return salva;
 }
@@ -656,6 +687,8 @@ async function acharMensagem(ch, id, pos) {
 }
 // Grava de novo uma mensagem na mesma posição (editada, ou a "lápide" de uma apagada)
 function regravarMensagem(ch, alvo, valor) {
+  const b = BUSCA.get(ch);
+  if (b && alvo.pos < b.length) b[alvo.pos] = valor;
   if (USA_UPSTASH) filaDeMensagens({ tipo: 'trocar', ch, alvo, valor });
   else if (MSGS.arquivo[ch]) { MSGS.arquivo[ch][alvo.pos] = valor; salvarArquivoDeMensagens(); }
 }
@@ -716,6 +749,7 @@ function mexerNaFixada(ch, id, texto) {
 }
 
 function esvaziarCanal(ch, sumir = false) {
+  BUSCA.delete(ch);
   if (data.fixadas[ch]) { delete data.fixadas[ch]; salvar(); avisarFixadas(ch); }
   MSGS.recentes[ch] = [];
   MSGS.total[ch] = 0;
@@ -2120,6 +2154,7 @@ async function restaurarBackup(b) {
   if (!USA_UPSTASH) { clearTimeout(MSGS.timerArquivo); await gravarArquivoDeMensagens(); }
   MSGS.recentes = {};
   MSGS.total = {};
+  BUSCA.clear();
   await carregarMensagens();
   const n = Object.values(b.mensagens).reduce((t, l) => t + (Array.isArray(l) ? l.filter((m) => m && m.id && !m.apagada).length : 0), 0);
   return { canais: canais.length, perfis: Object.keys(perfis).length, mensagens: n };
@@ -2385,6 +2420,21 @@ async function api(req, res, url) {
       });
       broadcast({ type: 'msg', msg: m });
       return json(res, 200, { ok: true });
+    }
+
+    case 'buscar': {
+      // procura nos canais de texto (todos, ou só um)
+      const q = String(body.q || '').trim().slice(0, 100);
+      if (q.length < 2) return json(res, 400, { error: 'Digite pelo menos 2 letras' });
+      if (limiteDe(u, 'limBusca', 20, 30e3)) return json(res, 429, { error: 'Calma, espere um pouco.' });
+      const textos = data.channels.filter((c) => c.type === 'text');
+      const canais = body.channel ? textos.filter((c) => c.id === body.channel) : textos;
+      try {
+        return json(res, 200, { resultados: await buscarMensagens(q, canais) });
+      } catch (e) {
+        console.warn('Busca falhou:', e.message);
+        return json(res, 503, { error: 'Não consegui buscar agora. Tente de novo.' });
+      }
     }
 
     case 'votar': {

@@ -38,6 +38,7 @@
     retry: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
     shield: '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>',
     crown: '<path d="M3.5 8.5 8 12l4-6.5 4 6.5 4.5-3.5-1.8 10H5.3z" fill="currentColor" stroke-width="1.5"/>',
+    lupa: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>',
     enquete: '<path d="M5 20v-8M12 20V4M19 20v-12"/><path d="M3 20.5h18"/>',
     pin: '<path d="M9 3.5h6l-.8 6.2 3.3 3.3H6.5l3.3-3.3z"/><path d="M12 13v7.5"/>',
     pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m14 6 4 4"/>',
@@ -1086,6 +1087,78 @@
     });
   }
   $('#enqueteBtn').addEventListener('click', criarEnquete);
+
+  // ----- Buscar mensagens (nos canais de texto; Ctrl+F abre) -----
+  const BU = { timer: null, ultimo: '', pedido: 0 };
+  function abrirBusca(abrir = $('#buscaPanel').hidden) {
+    const p = $('#buscaPanel');
+    p.hidden = !abrir;
+    $('#buscaBtn').classList.toggle('active', abrir);
+    if (!abrir) return;
+    if (!p.innerHTML) {
+      p.innerHTML = `<div class="fx-topo"><b>Buscar mensagens</b>
+          <button class="icon-btn small" data-bu-fechar title="Fechar (Esc)" aria-label="Fechar">${icon('close')}</button></div>
+        <div class="bu-campos"><input type="search" id="buscaInput" maxlength="100" placeholder="Palavras da mensagem" aria-label="Buscar mensagens" autocomplete="off">
+          <select id="buscaOnde" aria-label="Onde buscar"><option value="">Em todos os canais</option><option value="aqui">Neste canal</option></select></div>
+        <div id="buscaRes" aria-live="polite"></div>`;
+      $('#buscaInput').addEventListener('input', () => { clearTimeout(BU.timer); BU.timer = setTimeout(buscar, 350); });
+      $('#buscaInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(BU.timer); buscar(true); } });
+      $('#buscaOnde').addEventListener('change', () => buscar(true));
+    }
+    const r = $('#buscaBtn').getBoundingClientRect();
+    p.style.top = `${Math.round(r.bottom + 6)}px`;
+    p.style.right = `${Math.max(8, Math.round(innerWidth - r.right))}px`;
+    $('#buscaOnde option[value=aqui]').disabled = chan(S.view)?.type !== 'text';
+    if ($('#buscaOnde').value === 'aqui' && chan(S.view)?.type !== 'text') $('#buscaOnde').value = '';
+    $('#buscaInput').focus();
+    $('#buscaInput').select();
+  }
+  async function buscar(forcar = false) {
+    const q = $('#buscaInput').value.trim();
+    const onde = $('#buscaOnde').value === 'aqui' ? S.view : '';
+    const chave = `${onde}|${q}`;
+    if (!forcar && chave === BU.ultimo) return;
+    BU.ultimo = chave;
+    const res = $('#buscaRes');
+    if (q.length < 2) { res.innerHTML = q ? '<p class="muted fx-vazio">Digite pelo menos 2 letras.</p>' : ''; return; }
+    const n = ++BU.pedido;
+    res.innerHTML = '<p class="muted fx-vazio">Buscando…</p>';
+    try {
+      const r = await api('buscar', { q, channel: onde || undefined });
+      if (n !== BU.pedido) return;
+      const termos = q.split(/\s+/).filter(Boolean).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      const marca = new RegExp(`(${termos.join('|')})`, 'gi');
+      res.innerHTML = r.resultados.length ? r.resultados.map((m) => {
+        const autor = m.pid && S.perfis?.[m.pid] ? { name: S.perfis[m.pid].nome, color: S.perfis[m.pid].cor } : { name: m.name, color: m.color };
+        const texto = esc(textoComNomes(m.text).replace(/\s+/g, ' ').slice(0, 220)).replace(marca, '<mark>$1</mark>');
+        return `<button type="button" class="fx-item bu-item" data-bu-ch="${esc(m.ch)}" data-bu-id="${esc(m.id)}" data-bu-pos="${m.pos}">
+          <span class="fx-cab"><span class="m-name" style="color:${esc(autor.color || '#8a94a6')}">${esc(autor.name || 'alguém')}</span>
+            <span class="m-time">${onde ? '' : `${esc(nomeCanal(m.ch))} · `}${esc(new Date(m.ts).toLocaleDateString('pt-BR'))}</span></span>
+          <span class="fx-texto">${m.enquete ? `${icon('enquete')} ` : ''}${texto}</span></button>`;
+      }).join('') + (r.resultados.length >= 50 ? '<p class="muted small fx-vazio">Mostrando as 50 mais recentes. Use mais palavras para achar outras.</p>' : '')
+        : '<p class="muted fx-vazio">Nenhuma mensagem com essas palavras.</p>';
+    } catch (e) {
+      if (n === BU.pedido) res.innerHTML = `<p class="muted fx-vazio">${esc(e.message)}</p>`;
+    }
+  }
+  $('#buscaBtn').addEventListener('click', () => abrirBusca());
+  $('#buscaPanel').addEventListener('click', async (e) => {
+    if (e.target.closest('[data-bu-fechar]')) return abrirBusca(false);
+    const item = e.target.closest('[data-bu-id]');
+    if (!item) return;
+    abrirBusca(false);
+    if (item.dataset.buCh !== S.view) selecionarCanal(item.dataset.buCh);
+    irParaMensagem(item.dataset.buId, Number(item.dataset.buPos));
+  });
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'f' && !$('#app').hidden && $('#modal').hidden) {
+      e.preventDefault();
+      abrirBusca(true);
+    } else if (e.key === 'Escape' && !$('#buscaPanel').hidden) abrirBusca(false);
+  });
+  document.addEventListener('mousedown', (e) => {
+    if (!$('#buscaPanel').hidden && !e.target.closest('#buscaPanel, #buscaBtn')) abrirBusca(false);
+  });
 
   // ----- Mensagens fixadas: qualquer um fixa; desafixa quem fixou, quem escreveu ou um admin -----
   const podeDesafixar = (f) => S.isAdmin || (S.myPid && (f.porPid === S.myPid || f.pid === S.myPid));
@@ -5419,6 +5492,7 @@
     $('#vpLeave').innerHTML = icon('logout');
     $('#sendBtn').innerHTML = icon('send');
     $('#enqueteBtn').innerHTML = icon('enquete');
+    $('#buscaBtn').innerHTML = icon('lupa');
 
     $('#sendVol').addEventListener('input', (e) => {
       S.volEnvio = Number(e.target.value);
