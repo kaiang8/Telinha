@@ -185,4 +185,18 @@ t('transmissão que caiu: só pega de volta a mesma tela ou janela', () => {
   assert.deepEqual(R.formatosDosPerfis(null), []);
 });
 
+t('aviso por cima do jogo: só o que a página pode mandar', () => {
+  assert.deepEqual(R.validarAviso({ tipo: 'entrada', nome: 'Beto', cor: '#ff6b81', texto: 'entrou na Sala 1' }),
+    { tipo: 'entrada', nome: 'Beto', cor: '#ff6b81', texto: 'entrou na Sala 1', piscar: false });
+  assert.equal(R.validarAviso({ tipo: 'outro', nome: 'Beto' }), null);
+  assert.equal(R.validarAviso({ tipo: 'entrada', nome: '   ' }), null);
+  assert.equal(R.validarAviso(null), null);
+  assert.equal(R.validarAviso('entrada'), null);
+  const x = R.validarAviso({ tipo: 'mencao', nome: 'A\u0000na'.repeat(20), cor: 'red; background:url(x)', texto: 'oi\n\n'.repeat(100), piscar: true });
+  assert.equal(x.nome.length, 32);
+  assert.equal(x.cor, '#3db3f0');
+  assert.ok(x.texto.length <= 140 && !x.texto.includes('\n'));
+  assert.equal(x.piscar, true);
+});
+
 console.log(`\n${n} grupos de testes passaram.`);

@@ -665,7 +665,11 @@
     const depois = vizinhosDeSala();
     if (S.sala) {
       const chegou = [...depois].find((id) => !antes.has(id));
-      if (chegou) somDeEntrada(userById(chegou)?.pid);
+      if (chegou) {
+        const u = userById(chegou);
+        somDeEntrada(u?.pid);
+        if (u) avisar('entrada', { nome: u.name, cor: u.color, texto: `entrou na ${nomeCanal(S.sala)}` });
+      }
       else if ([...antes].some((id) => !depois.has(id))) blip('leave');
     }
     sincronizarStreams();
@@ -720,6 +724,11 @@
         blip('msg');
         S.mencoes.add(msg.ch);
       }
+    }
+    if (deOutro && msg.sistema !== 'boasvindas' && mencionaMe(msg) && (PROGRAMA?.aviso || document.hidden || !document.hasFocus())) {
+      const a = autorDe(msg);
+      const como = msg.resp && !String(msg.text || '').includes(`<@${S.myPid}>`) && !TODOS.test(String(msg.text || '')) ? 'respondeu você' : 'mencionou você';
+      avisar('mencao', { nome: a.name, cor: a.color, texto: `${como} em ${nomeCanal(msg.ch)}: ${textoComNomes(msg.text).replace(/\s+/g, ' ').slice(0, 100)}`, ch: msg.ch });
     }
     renderTyping();
     renderSidebar();
@@ -1087,6 +1096,69 @@
     });
   }
   $('#enqueteBtn').addEventListener('click', criarEnquete);
+
+  // ----- Avisos: alguém entrou na sua sala, alguém te mencionou -----
+  // No programa (1.4.4+): um cartão no canto da tela, por cima do jogo. No navegador: notificação
+  // do sistema, se a pessoa deixou. Só quando você não está olhando para o Caras E Telas.
+  const AVISOS = {
+    entrada: salvo.avisoEntrada !== false,
+    mencao: salvo.avisoMencao !== false,
+    naoPerturbe: salvo.naoPerturbe === true,
+  };
+  function avisar(tipo, d) {
+    if (tipo !== 'teste' && (AVISOS.naoPerturbe || !AVISOS[tipo])) return;
+    if (PROGRAMA) {
+      if (PROGRAMA.aviso) PROGRAMA.aviso({ tipo, nome: d.nome, cor: d.cor, texto: d.texto, piscar: tipo === 'mencao' }).catch(() => {});
+      return;
+    }
+    if (tipo !== 'teste' && !document.hidden && document.hasFocus()) return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    try {
+      const n = new Notification(d.nome, { body: d.texto, tag: `${tipo}-${d.nome}`, silent: true });
+      n.onclick = () => {
+        window.focus();
+        if (d.ch && chan(d.ch)) selecionarCanal(d.ch);
+        n.close();
+      };
+    } catch { /* alguns navegadores só deixam pelo service worker */ }
+  }
+  function secaoAvisos() {
+    const nav = !PROGRAMA && typeof Notification !== 'undefined';
+    const permissao = nav ? Notification.permission : '';
+    const marca = (id, on, txt) => `<label class="av-op"><input type="checkbox" id="${id}"${on ? ' checked' : ''}> ${txt}</label>`;
+    let onde;
+    if (PROGRAMA && PROGRAMA.aviso) onde = 'Aparece um cartão no canto da tela, por cima do jogo, quando o programa não está na frente. Funciona com o jogo em "janela sem bordas" ou "tela cheia em janela"; em "tela cheia exclusiva" o Windows não deixa nada por cima (aí só pisca o ícone na barra de tarefas).';
+    else if (PROGRAMA) onde = 'Feche e abra o programa para atualizar: a versão nova mostra os avisos por cima do jogo.';
+    else if (!nav) onde = 'Este navegador não mostra notificações.';
+    else if (permissao === 'granted') onde = 'O navegador mostra uma notificação quando esta aba não está na frente.';
+    else if (permissao === 'denied') onde = 'As notificações estão bloqueadas para este site: libere no cadeado ao lado do endereço. (No programa para Windows, os avisos aparecem por cima do jogo.)';
+    else onde = 'Para receber notificações do navegador, clique em "Permitir notificações".';
+    return `<div class="pf-secao" id="pfAvisos"><b>Avisos</b>
+      ${marca('avEntrada', AVISOS.entrada, 'Quando alguém entra na sala em que eu estou')}
+      ${marca('avMencao', AVISOS.mencao, 'Quando me mencionam ou respondem')}
+      ${marca('avNaoPerturbe', AVISOS.naoPerturbe, 'Não perturbe (nenhum aviso)')}
+      <p class="muted small">${onde}</p>
+      <div class="se-botoes">${nav && permissao === 'default' ? '<button type="button" class="btn sm primary" id="avPermitir">Permitir notificações</button>' : ''}
+        ${!PROGRAMA || PROGRAMA.aviso ? '<button type="button" class="btn sm" id="avTestar">Testar aviso</button>' : ''}</div></div>`;
+  }
+  function ligarAvisos() {
+    const guardar = () => {
+      AVISOS.entrada = $('#avEntrada').checked;
+      AVISOS.mencao = $('#avMencao').checked;
+      AVISOS.naoPerturbe = $('#avNaoPerturbe').checked;
+      salvar({ avisoEntrada: AVISOS.entrada, avisoMencao: AVISOS.mencao, naoPerturbe: AVISOS.naoPerturbe });
+    };
+    for (const id of ['#avEntrada', '#avMencao', '#avNaoPerturbe']) $(id).addEventListener('change', guardar);
+    $('#avPermitir')?.addEventListener('click', async () => {
+      try { await Notification.requestPermission(); } catch { /* recusou */ }
+      $('#pfAvisos').outerHTML = secaoAvisos();
+      ligarAvisos();
+    });
+    $('#avTestar')?.addEventListener('click', () => {
+      toast(PROGRAMA ? 'Em 4 segundos aparece um aviso de teste no canto da tela. Pode trocar para o jogo.' : 'Em 4 segundos aparece uma notificação de teste. Pode trocar de aba.', 4000);
+      setTimeout(() => avisar('teste', { nome: S.myName || 'Caras E Telas', cor: S.myColor, texto: `entrou na ${S.sala ? nomeCanal(S.sala) : 'Sala 1'} (teste)` }), 4000);
+    });
+  }
 
   // ----- Buscar mensagens (nos canais de texto; Ctrl+F abre) -----
   const BU = { timer: null, ultimo: '', pedido: 0 };
@@ -5864,6 +5936,7 @@
               <button type="button" class="btn sm primary" id="seUsar">Usar este som</button></div>
             <p class="muted small" id="seStatus" aria-live="polite"></p>
           </div></div>
+        ${secaoAvisos()}
         <div class="pf-secao"><b>Entrar em outro aparelho</b>
           <p class="muted small">Gere um código e, no outro aparelho, clique em "Já tenho um nome" na tela de entrada. O código vale 15 minutos.</p>
           <button type="button" class="btn sm" id="pfCodigo">Gerar código</button><div class="pf-codigo" id="pfCodigoVer" hidden></div></div>
@@ -5875,6 +5948,7 @@
       },
     });
     ligarSomDeEntrada();
+    ligarAvisos();
     $('#pfCodigo').onclick = async () => {
       try {
         const r = await api('perfil-codigo');

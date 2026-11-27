@@ -59,6 +59,14 @@ contextBridge.exposeInMainWorld('carasETelas', {
     nome: String(d.nome ?? '').slice(0, 32),
   } : null),
   tintaEstado: () => ipcRenderer.invoke('tinta-estado'),
+  // a partir da 1.4.4: aviso por cima do jogo (alguém entrou na sua sala, alguém te mencionou)
+  aviso: (d) => ipcRenderer.invoke('aviso', d && typeof d === 'object' ? {
+    tipo: String(d.tipo ?? '').slice(0, 12),
+    nome: String(d.nome ?? '').slice(0, 64),
+    cor: String(d.cor ?? '').slice(0, 9),
+    texto: String(d.texto ?? '').slice(0, 300),
+    piscar: d.piscar === true,
+  } : null),
   // Tema escolhido no site: o programa usa nas telas dele (carregando, seletor de tela)
   aparencia: (dados) => ipcRenderer.invoke('aparencia', {
     escuro: dados?.escuro === true,

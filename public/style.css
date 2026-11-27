@@ -1385,3 +1385,6 @@ img.tl-rosa { animation-name: tlPuloRosa; animation-duration: 2.6s; animation-de
 .bu-item .fx-texto { display: block; margin-bottom: 0; }
 .bu-item .fx-texto .i { width: 14px; height: 14px; vertical-align: -2px; }
 .bu-item mark { background: rgba(255, 200, 61, .5); color: inherit; border-radius: 3px; padding: 0 1px; }
+/* avisos */
+.av-op { display: flex; gap: 8px; align-items: center; margin: 6px 0; color: var(--texto); }
+.av-op input { width: 17px; height: 17px; accent-color: var(--p2); }

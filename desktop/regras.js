@@ -208,6 +208,21 @@ function validarTraco(d) {
   const nome = typeof d.nome === 'string' ? d.nome.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 32) : '';
   return { tr: d.tr, c: d.c, p, fim: d.fim === true, nome };
 }
+// ---- aviso por cima do jogo: alguém entrou na sua sala, alguém te mencionou ----
+const TIPOS_DE_AVISO = new Set(['entrada', 'mencao', 'teste']);
+function validarAviso(d) {
+  if (!d || typeof d !== 'object' || !TIPOS_DE_AVISO.has(d.tipo)) return null;
+  const limpo = (x, max) => (typeof x === 'string' ? x.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '');
+  const nome = limpo(d.nome, 32);
+  if (!nome) return null;
+  return {
+    tipo: d.tipo,
+    nome,
+    cor: typeof d.cor === 'string' && /^#[0-9a-f]{6}$/i.test(d.cor) ? d.cor : '#3db3f0',
+    texto: limpo(d.texto, 140),
+    piscar: d.piscar === true,
+  };
+}
 // fonte escolhida no seletor: a tela inteira (monitor) ou uma janela (pelo número dela)
 function fonteDaCaneta(fonte) {
   if (!fonte || typeof fonte.id !== 'string') return null;
@@ -250,7 +265,7 @@ function formatosDosPerfis(perfis) {
 }
 
 module.exports = {
-  validarTraco, fonteDaCaneta, acharMesmaFonte, formatosDosPerfis,
+  validarTraco, validarAviso, fonteDaCaneta, acharMesmaFonte, formatosDosPerfis,
   teclaDoPtt, argumentosDoPtt,
   validarTema, cssDoTema,
   SITE_PADRAO, origemDe, siteValido, podeNavegar, podeAbrirFora, requisicaoPermitida,

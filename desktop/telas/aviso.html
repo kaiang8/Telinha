@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self'">
+  <title>Avisos</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+    #pilha { position: fixed; right: 0; bottom: 0; width: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-end; gap: 8px; padding: 8px; box-sizing: border-box; }
+    .cartao {
+      position: relative; display: grid; grid-template-columns: 46px 1fr; gap: 12px; align-items: center;
+      width: 330px; box-sizing: border-box; padding: 11px 14px 11px 11px; border-radius: 12px; overflow: hidden;
+      background: linear-gradient(180deg, rgba(30, 48, 72, .96), rgba(14, 24, 40, .96));
+      border: 1px solid rgba(140, 200, 255, .28); box-shadow: 0 10px 28px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .12);
+      color: #eaf4ff; animation: entra .32s cubic-bezier(.2, .9, .3, 1.15) both;
+    }
+    .cartao.saindo { animation: sai .35s ease-in both; }
+    /* a faixa de cor da pessoa, embaixo, que vai encolhendo até o aviso sumir */
+    .cartao::after { content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: var(--cor); transform-origin: left; animation: tempo 6s linear both; }
+    .avatar { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; font-weight: 800; font-size: 22px; color: #0b2a43;
+      background: linear-gradient(180deg, rgba(255, 255, 255, .45), rgba(255, 255, 255, 0) 55%), var(--cor); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .5); }
+    .linhas { min-width: 0; }
+    .nome { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .texto { font-size: 13px; color: #a9d4ff; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+    .marca { font-size: 11px; color: rgba(234, 244, 255, .5); margin-top: 2px; }
+    @keyframes entra { from { opacity: 0; transform: translateY(24px) scale(.96); } to { opacity: 1; transform: none; } }
+    @keyframes sai { to { opacity: 0; transform: translateX(40px); } }
+    @keyframes tempo { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+    @media (prefers-reduced-motion: reduce) {
+      .cartao { animation: aparece .2s linear both; }
+      .cartao.saindo { animation: some .25s linear both; }
+      .cartao::after { animation: none; }
+      @keyframes aparece { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes some { to { opacity: 0; } }
+    }
+  </style>
+</head>
+<body>
+  <div id="pilha" aria-live="polite"></div>
+  <script src="aviso.js"></script>
+</body>
+</html>

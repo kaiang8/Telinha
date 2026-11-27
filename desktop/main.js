@@ -90,8 +90,18 @@ app.on('web-contents-created', (_e, wc) => {
     if (janela && wc === janela.webContents && R.podeNavegar(url, SITE_ORIGEM)) return;
     ev.preventDefault();
   });
-  wc.on('will-download', (ev) => ev.preventDefault());
 });
+// Downloads: só os arquivos que o próprio site monta na página (o backup do painel de admin).
+// O Windows pergunta onde salvar. (O "will-download" é da sessão, não da página.)
+const sessoesVigiadas = new WeakSet();
+function vigiarDownloads(ses) {
+  if (sessoesVigiadas.has(ses)) return;
+  sessoesVigiadas.add(ses);
+  ses.on('will-download', (ev, item, quem) => {
+    const ok = !!janela && !janela.isDestroyed() && quem === janela.webContents && item.getURL().startsWith(`blob:${SITE_ORIGEM}/`);
+    if (!ok) ev.preventDefault();
+  });
+}
 
 // speaker-selection: escolher em qual alto-falante ou fone o som sai
 const PERMISSOES = new Set(['display-capture', 'clipboard-sanitized-write', 'fullscreen', 'speaker-selection']);
@@ -526,6 +536,69 @@ ipcMain.handle('tinta-estado', (e) => {
   };
 });
 
+// ---------- Avisos por cima do jogo ----------
+// Uma janelinha no canto de baixo da tela onde está o mouse (a do jogo), que não recebe cliques
+// nem foco e fica fora da transmissão. Aparece só quando o programa não está na frente, e some
+// sozinha. Num jogo em "tela cheia exclusiva" o Windows não deixa nada por cima: lá só pisca
+// o ícone na barra de tarefas (nas menções). Em "janela sem bordas" aparece normalmente.
+const AVISO_L = 360;
+const AVISO_A = 300;
+let aviso = null; // { win, pronta, timer }
+function garantirAviso() {
+  if (aviso && !aviso.win.isDestroyed()) return aviso;
+  const win = new BrowserWindow({
+    show: false, frame: false, transparent: true, backgroundColor: '#00000000', title: 'Avisos',
+    width: AVISO_L, height: AVISO_A,
+    resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false,
+    focusable: false, skipTaskbar: true, hasShadow: false, alwaysOnTop: true, thickFrame: false,
+    webPreferences: {
+      partition: 'caras-seletor', preload: path.join(__dirname, 'preload-aviso.js'),
+      sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false, devTools: false, backgroundThrottling: false,
+    },
+  });
+  win.setIgnoreMouseEvents(true); // os cliques passam direto para o jogo
+  win.setAlwaysOnTop(true, 'screen-saver');
+  if (CANETA_POR_CIMA) win.setContentProtection(true); // quem assiste a sua tela não vê o aviso
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
+  const a = { win, pronta: win.loadFile(tela('aviso.html')).catch(() => {}), timer: null };
+  aviso = a;
+  win.on('closed', () => {
+    clearTimeout(a.timer);
+    if (aviso === a) aviso = null;
+  });
+  return a;
+}
+function fecharAviso() {
+  const a = aviso;
+  aviso = null;
+  if (a && !a.win.isDestroyed()) a.win.destroy();
+}
+ipcMain.handle('aviso', async (e, d) => {
+  if (!pedidoConfiavel(e)) return { ok: false, motivo: 'pedido recusado' };
+  const av = R.validarAviso(d);
+  if (!av) return { ok: false, motivo: 'aviso inválido' };
+  if (!janela || janela.isDestroyed()) return { ok: false, motivo: 'sem janela' };
+  const naFrente = janela.isVisible() && !janela.isMinimized() && janela.isFocused();
+  if (av.piscar && !naFrente) janela.flashFrame(true); // para quando a pessoa abre o programa
+  if (naFrente && av.tipo !== 'teste') return { ok: true, mostrado: false };
+  const a = garantirAviso();
+  await a.pronta;
+  if (a.win.isDestroyed()) return { ok: false, motivo: 'a janelinha fechou' };
+  if (!a.win.isVisible()) {
+    const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+    a.win.setBounds({ x: area.x + area.width - AVISO_L - 8, y: area.y + area.height - AVISO_A - 8, width: AVISO_L, height: AVISO_A });
+  }
+  a.win.webContents.send('aviso', av);
+  if (!a.win.isVisible()) a.win.showInactive();
+  a.win.setAlwaysOnTop(true, 'screen-saver');
+  a.win.moveTop();
+  // cada aviso fica 6 s; a janelinha some um pouco depois do último
+  clearTimeout(a.timer);
+  a.timer = setTimeout(() => { if (!a.win.isDestroyed()) a.win.hide(); }, 7000);
+  return { ok: true, mostrado: true };
+});
+
 // ---------- Janela principal ----------
 async function siteRespondendo(ses) {
   const ctrl = new AbortController();
@@ -601,14 +674,17 @@ function criarJanela() {
   janela.on('close', () => { fechandoJanela = Date.now(); });
   janela.on('query-session-end', () => { saindoDeVez = true; }); // Windows desligando: não segura
   janela.on('session-end', () => { saindoDeVez = true; });
+  janela.on('focus', () => { if (janela && !janela.isDestroyed()) janela.flashFrame(false); });
   janela.on('closed', () => {
     janela = null;
     ajudante.parar();
     ajudante.soltarTecla();
     fecharTinta();
+    fecharAviso();
   });
 
   const wc = janela.webContents;
+  vigiarDownloads(wc.session);
   wc.on('did-fail-load', (_e, codigo, _desc, url, principal) => {
     if (!principal || codigo === -3) return;
     if (R.origemDe(url) === SITE_ORIGEM) acordarEAbrir();
