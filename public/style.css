@@ -1566,3 +1566,10 @@ body.leve :is(.sidebar, .main) { background: linear-gradient(180deg, var(--pop-1
 .adm-dm-lista { display: grid; gap: 10px; }
 .adm-dm-quem { font-weight: 700; margin-right: 6px; }
 .adm-dm-txt { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--texto); margin-top: 2px; }
+/* spoiler */
+.spoiler:not(.visto) { background: var(--texto-forte); color: transparent; border-radius: 4px; cursor: pointer; user-select: none; padding: 0 2px; }
+.spoiler:not(.visto) * { color: transparent !important; background: transparent !important; border-color: transparent !important; pointer-events: none; }
+.spoiler:not(.visto):hover { opacity: .85; }
+.spoiler:focus-visible { outline: 2px solid var(--foco); outline-offset: 1px; }
+.spoiler.visto { background: var(--hover); border-radius: 4px; padding: 0 2px; }
+img.embed.spoiler-img:not(.visto) { filter: blur(24px); cursor: pointer; clip-path: inset(0 round 10px); }

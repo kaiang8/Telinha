@@ -731,6 +731,10 @@ DICAS
     conhecidos. Nunca lê o nome de outras janelas. Para não mostrar:
     clique no seu nome → Privacidade → desmarque "Mostrar para os outros
     o jogo que estou jogando" (aí o programa nem confere).
+  - Spoiler: escreva o texto entre duas barras de cada lado, ||assim||,
+    e ele aparece tampado até alguém clicar. Funciona também com links
+    de imagem (a imagem fica borrada). Nos avisos, nas respostas e na
+    busca aparece só [spoiler].
   - Mensagens privadas: o ícone de conversa no alto da barra da esquerda
     (acima do CT) abre a aba das conversas privadas. Para começar uma,
     clique no + dessa aba ou no nome da pessoa na lista de membros →

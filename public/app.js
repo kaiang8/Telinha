@@ -750,7 +750,7 @@
     if (deOutro && msg.sistema !== 'boasvindas' && mencionaMe(msg) && (PROGRAMA?.aviso || document.hidden || !document.hasFocus())) {
       const a = autorDe(msg);
       const como = msg.resp && !String(msg.text || '').includes(`<@${S.myPid}>`) && !TODOS.test(String(msg.text || '')) ? 'respondeu você' : 'mencionou você';
-      avisar('mencao', { nome: a.name, cor: a.color, texto: `${como} em ${nomeCanal(msg.ch)}: ${textoComNomes(msg.text).replace(/\s+/g, ' ').slice(0, 100)}`, ch: msg.ch });
+      avisar('mencao', { nome: a.name, cor: a.color, texto: `${como} em ${nomeCanal(msg.ch)}: ${semSpoiler(textoComNomes(msg.text)).replace(/\s+/g, ' ').slice(0, 100)}`, ch: msg.ch });
     }
     renderTyping();
     renderSidebar();
@@ -798,6 +798,7 @@
   }
   const nomeDoPerfil = (pid) => S.perfis?.[pid]?.nome || 'alguém';
   // <@id> vira "@Nome atual" (para editar, ou um resuminho sem formatação)
+  const semSpoiler = (t) => String(t || '').replace(/\|\|([^\n]+?)\|\|/g, '[spoiler]');
   const textoComNomes = (t) => String(t || '').replace(/<@([0-9a-f]{12})>/g, (_, id) => `@${nomeDoPerfil(id)}`);
   // "@Nome" escrito à mão (mensagens de antes): acha o nome registrado mais comprido que combina
   const tiraAcento = (x) => x.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
@@ -835,9 +836,16 @@
     s = comEtiquetas;
     const codes = [];
     s = s.replace(/`([^`\n]+)`/g, (_, c) => { codes.push(c); return `\u0000${codes.length - 1}\u0000`; });
+    // spoiler: ||texto|| fica borrado até clicar (marcado aqui, vira <span> no fim)
+    s = s.replace(/\|\|([^\n]+?)\|\|/g, '\u0002$1\u0003');
+    const dentroDeSpoiler = (texto, pos) => (texto.slice(0, pos).match(/\u0002/g) || []).length > (texto.slice(0, pos).match(/\u0003/g) || []).length;
     const imgs = [];
-    s = s.replace(/https?:\/\/[^\s<]+[^\s<.,:;!?)\]'"]/g, (url) => {
-      if (/\.(png|jpe?g|gif|webp|avif)(\?\S*)?$/i.test(url) && imgs.length < 3) imgs.push(url);
+    const imgsSpoiler = new Set();
+    s = s.replace(/https?:\/\/[^\s<\u0002\u0003]+[^\s<.,:;!?)\]'"\u0002\u0003]/g, (url, pos, texto) => {
+      if (/\.(png|jpe?g|gif|webp|avif)(\?\S*)?$/i.test(url) && imgs.length < 3) {
+        imgs.push(url);
+        if (dentroDeSpoiler(texto, pos)) imgsSpoiler.add(url);
+      }
       return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
     });
     s = s
@@ -846,11 +854,12 @@
       .replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
     s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[i]}</code>`);
     s = s.replace(/\u0001(\d+)\u0001/g, (_, i) => mencoes[i]);
+    s = s.replace(/\u0002/g, '<span class="spoiler" tabindex="0" role="button" aria-label="Spoiler: clique para ver">').replace(/\u0003/g, '</span>');
     // a imagem vem pelo servidor: o site de origem não vê o IP de quem está no chat
     const bruto = (u) => u.replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[e]);
     // mensagem que é só o link de uma imagem (um GIF, por exemplo): mostra só a imagem
     if (imgs.length === 1 && s.trim() === `<a href="${imgs[0]}" target="_blank" rel="noopener noreferrer">${imgs[0]}</a>`) s = '';
-    return s + imgs.map((u) => `<img class="embed" src="/api/img?u=${encodeURIComponent(bruto(u))}&amp;t=${encodeURIComponent(S.token || '')}" alt="" loading="lazy" referrerpolicy="no-referrer">`).join('');
+    return s + imgs.map((u) => `<img class="embed${imgsSpoiler.has(u) ? ' spoiler-img' : ''}"${imgsSpoiler.has(u) ? ' title="Spoiler: clique para ver" tabindex="0"' : ''} src="/api/img?u=${encodeURIComponent(bruto(u))}&amp;t=${encodeURIComponent(S.token || '')}" alt="" loading="lazy" referrerpolicy="no-referrer">`).join('');
   }
 
   const mesmoDia = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
@@ -921,7 +930,7 @@
       resumo = 'boas-vindas';
     } else {
       quem = r.pid && S.perfis?.[r.pid] ? { name: S.perfis[r.pid].nome, color: S.perfis[r.pid].cor } : { name: r.nome, color: '#8a94a6' };
-      resumo = textoComNomes(original ? original.text : r.texto).replace(/\s+/g, ' ').slice(0, 120);
+      resumo = semSpoiler(textoComNomes(original ? original.text : r.texto)).replace(/\s+/g, ' ').slice(0, 120);
     }
     return `<div class="m-resp${apagada ? ' apagada' : ''}" data-ir="${esc(r.id)}" data-ir-pos="${Number.isInteger(r.pos) ? r.pos : ''}" title="${apagada ? 'A mensagem respondida foi apagada' : 'Ir até a mensagem respondida'}">
       ${icon('responder')}${avatar(quem, 'mini')}<b style="color:${esc(quem.color)}">${esc(quem.name)}</b>
@@ -1008,6 +1017,19 @@
   $('#messages').addEventListener('load', (e) => {
     if (e.target.tagName === 'IMG' && S.stick) $('#messages').scrollTop = $('#messages').scrollHeight;
   }, true);
+  const revelarSpoiler = (e) => {
+    const sp = e.target.closest('.spoiler:not(.visto), img.spoiler-img:not(.visto)');
+    if (!sp || (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ')) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    sp.classList.add('visto');
+    sp.removeAttribute('role');
+    return true;
+  };
+  for (const id of ['#messages', '#fixadasPanel']) {
+    $(id).addEventListener('click', revelarSpoiler, true);
+    $(id).addEventListener('keydown', revelarSpoiler, true);
+  }
   $('#messages').addEventListener('click', (e) => {
     const del = e.target.closest('[data-delmsg]');
     if (del) return apagarMensagem(del.dataset.delmsg, e.shiftKey);
@@ -1051,7 +1073,7 @@
     if (!m) return;
     S.resposta = m.sistema === 'boasvindas'
       ? { ch: S.view, id: m.id, pos: m.pos, rotulo: `Respondendo às boas-vindas de <b>${esc(nomeDoPerfil(m.alvo))}</b>`, texto: '' }
-      : { ch: S.view, id: m.id, pos: m.pos, rotulo: `Respondendo a <b>${esc(autorDe(m).name)}</b>`, texto: textoComNomes(m.text).replace(/\s+/g, ' ').slice(0, 90) };
+      : { ch: S.view, id: m.id, pos: m.pos, rotulo: `Respondendo a <b>${esc(autorDe(m).name)}</b>`, texto: semSpoiler(textoComNomes(m.text)).replace(/\s+/g, ' ').slice(0, 90) };
     renderRespBar();
     $('#msgInput').focus();
   }
@@ -1359,7 +1381,7 @@
       blip('msg');
       const a = autorDe(msg);
       if (PROGRAMA?.aviso || document.hidden || !document.hasFocus()) {
-        avisar('mencao', { nome: a.name, cor: a.color, texto: `mensagem privada: ${textoComNomes(msg.text).replace(/\s+/g, ' ').slice(0, 100)}`, dm: msg.ch });
+        avisar('mencao', { nome: a.name, cor: a.color, texto: `mensagem privada: ${semSpoiler(textoComNomes(msg.text)).replace(/\s+/g, ' ').slice(0, 100)}`, dm: msg.ch });
       }
     } else marcarDmVista(msg.ch);
     if (S.modo === 'dm') renderSidebar(); else renderRailDm();
@@ -1504,7 +1526,7 @@
       const marca = new RegExp(`(${termos.join('|')})`, 'gi');
       res.innerHTML = r.resultados.length ? r.resultados.map((m) => {
         const autor = m.pid && S.perfis?.[m.pid] ? { name: S.perfis[m.pid].nome, color: S.perfis[m.pid].cor } : { name: m.name, color: m.color };
-        const texto = esc(textoComNomes(m.text).replace(/\s+/g, ' ').slice(0, 220)).replace(marca, '<mark>$1</mark>');
+        const texto = esc(semSpoiler(textoComNomes(m.text)).replace(/\s+/g, ' ').slice(0, 220)).replace(marca, '<mark>$1</mark>');
         return `<button type="button" class="fx-item bu-item" data-bu-ch="${esc(m.ch)}" data-bu-id="${esc(m.id)}" data-bu-pos="${m.pos}">
           <span class="fx-cab"><span class="m-name" style="color:${esc(autor.color || '#8a94a6')}">${esc(autor.name || 'alguém')}</span>
             <span class="m-time">${onde ? '' : `${esc(nomeCanal(m.ch))} · `}${esc(new Date(m.ts).toLocaleDateString('pt-BR'))}</span></span>
@@ -6315,7 +6337,7 @@
     // as respostas a ela mostram o texto novo, mesmo se a original não estiver carregada
     let citada = false;
     for (const y of lista) if (y.resp?.id === m.id) { y.resp.texto = String(m.text).slice(0, 160); citada = true; }
-    if (S.resposta?.id === m.id && S.resposta.texto) { S.resposta.texto = textoComNomes(m.text).replace(/\s+/g, ' ').slice(0, 90); renderRespBar(); }
+    if (S.resposta?.id === m.id && S.resposta.texto) { S.resposta.texto = semSpoiler(textoComNomes(m.text)).replace(/\s+/g, ' ').slice(0, 90); renderRespBar(); }
     if ((x || citada) && m.channel === S.view) rerenderMantendoScroll();
   }
 
