@@ -1351,3 +1351,27 @@ img.tl-rosa { animation-name: tlPuloRosa; animation-duration: 2.6s; animation-de
 .fx-rodape { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .fx-rodape .muted { margin-right: auto; }
 .fx-vazio { padding: 10px 2px; }
+/* enquetes */
+.composer .eq-btn { margin-left: -10px; margin-right: 4px; }
+.m-text.enquete { white-space: normal; max-width: 460px; margin: 4px 0 2px; padding: 10px 12px; border-radius: 12px; background: var(--hover); border: 1px solid var(--borda-vidro); }
+.eq-pergunta { display: flex; gap: 8px; align-items: flex-start; font-weight: 700; color: var(--texto-forte); margin-bottom: 8px; }
+.eq-pergunta .i { flex: none; width: 18px; height: 18px; color: var(--p2); margin-top: 2px; }
+.eq-opcoes { display: grid; gap: 6px; }
+.eq-op { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 36px; padding: 6px 10px; overflow: hidden;
+  border-radius: 9px; border: 1px solid var(--linha-forte); background: var(--campo-1, transparent); color: var(--texto-forte); font: inherit; text-align: left; cursor: pointer; }
+.eq-op:hover:not(:disabled) { border-color: var(--foco); }
+.eq-op:focus-visible { outline: 2px solid var(--foco); outline-offset: 1px; }
+.eq-op:disabled { cursor: default; }
+.eq-barra { position: absolute; inset: 0 auto 0 0; background: var(--p-anel); transition: width .3s; }
+.eq-op.minha { border-color: var(--foco); font-weight: 700; }
+.eq-op.venceu .eq-barra { background: rgba(255, 200, 61, .45); }
+.eq-t, .eq-n { position: relative; }
+.eq-n { flex: none; font-size: 12px; color: var(--fraco); font-variant-numeric: tabular-nums; }
+.eq-rodape { margin-top: 8px; font-size: 12px; color: var(--fraco); }
+.eq-encerrar { background: none; border: 0; padding: 0; font: inherit; color: var(--p-texto); cursor: pointer; text-decoration: underline; }
+.eq-multipla { display: flex; gap: 8px; align-items: center; margin-top: 4px; color: var(--texto); }
+.field textarea { width: 100%; resize: vertical; font: inherit; font-size: 16px; line-height: 1.4; padding: 10px 14px; border: 1px solid var(--linha-forte); border-radius: 11px; outline: none;
+  background: linear-gradient(180deg, var(--campo-1), var(--campo-2) 40%); box-shadow: inset 0 1px 3px var(--sombra-campo); color: var(--texto-forte); }
+.field textarea:focus { border-color: var(--foco); box-shadow: inset 0 1px 3px var(--sombra-campo), 0 0 0 3px var(--p-anel); }
+.eq-multipla input { width: 17px; height: 17px; accent-color: var(--p2); }
+@media (prefers-reduced-motion: reduce) { .eq-barra { transition: none; } }

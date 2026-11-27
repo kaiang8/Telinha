@@ -38,6 +38,7 @@
     retry: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
     shield: '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>',
     crown: '<path d="M3.5 8.5 8 12l4-6.5 4 6.5 4.5-3.5-1.8 10H5.3z" fill="currentColor" stroke-width="1.5"/>',
+    enquete: '<path d="M5 20v-8M12 20V4M19 20v-12"/><path d="M3 20.5h18"/>',
     pin: '<path d="M9 3.5h6l-.8 6.2 3.3 3.3H6.5l3.3-3.3z"/><path d="M12 13v7.5"/>',
     pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m14 6 4 4"/>',
     responder: '<path d="M10 8.5 4.5 13 10 17.5"/><path d="M4.8 13H14a5.5 5.5 0 0 0 5.5-5.5V6"/>',
@@ -542,6 +543,7 @@
       case 'msg-delete': return onMsgDelete(m);
       case 'msg-edit': return onMsgEdit(m);
       case 'fixadas': return onFixadas(m);
+      case 'enquete': return onEnquete(m);
       case 'clear': return onClear(m);
       case 'settings': return onSettings(m);
       case 'announce': return mostrarAviso(m);
@@ -846,7 +848,7 @@
     const podeFixar = !m.sistema && chan(m.ch)?.type === 'text';
     const acoes = `<div class="m-actions">${botao(`data-responder="${esc(m.id)}"`, 'responder', 'Responder')}`
       + (podeFixar && (!fixada || podeDesafixar(fixada)) ? botao(`data-fixar="${esc(m.id)}"`, 'pin', fixada ? 'Desafixar' : 'Fixar no canal') : '')
-      + (minha && !m.sistema ? botao(`data-editar="${esc(m.id)}"`, 'pencil', 'Editar') : '')
+      + (minha && !m.sistema && !m.enquete ? botao(`data-editar="${esc(m.id)}"`, 'pencil', 'Editar') : '')
       + (minha || S.isAdmin ? botao(`data-delmsg="${esc(m.id)}"`, 'trash', 'Apagar mensagem (Shift+clique apaga sem perguntar)') : '')
       + '</div>'
       + (fixada ? `<span class="m-pin" aria-label="Fixada por ${esc(fixada.por)}">${icon('pin')}</span>` : '');
@@ -864,7 +866,7 @@
     const texto = editando
       ? `<div class="m-text m-editor"><textarea class="m-edit" rows="1" maxlength="2000" aria-label="Editar mensagem">${esc(S.editando.rascunho)}</textarea>
           <div class="m-edit-dica">Enter salva · Esc cancela · Shift+Enter pula linha</div></div>`
-      : `<div class="m-text">${formatar(m.text)}</div>`;
+      : m.enquete ? enqueteHtml(m) : `<div class="m-text">${formatar(m.text)}</div>`;
     const editada = m.editada ? `<span class="m-editada" title="Editada ${esc(quando(new Date(m.editada)).toLowerCase())}">(editada)</span>` : '';
     if (agrupada) {
       return h + `<div class="msg${cls}${fixada ? ' fixada' : ''}" ${attrs}><span class="m-stamp">${hhmm(d)}</span>${editada ? `<div class="m-editada-linha">${editada}</div>` : ''}${texto}${acoes}</div>`;
@@ -976,6 +978,14 @@
     if (ed) return editarMensagem(ed.dataset.editar);
     const fx = e.target.closest('[data-fixar]');
     if (fx) return fixarMensagem(fx.dataset.fixar);
+    const voto = e.target.closest('[data-votar], [data-encerrar]');
+    if (voto) {
+      const el = voto.closest('.msg');
+      const pedido = { channel: S.view, id: el.dataset.id, pos: el.dataset.pos === undefined ? null : Number(el.dataset.pos) };
+      if (voto.dataset.votar !== undefined) pedido.opcao = Number(voto.dataset.votar);
+      else pedido.encerrar = true;
+      return api('votar', pedido).catch((err) => toast(err.message));
+    }
     const ir = e.target.closest('[data-ir]');
     if (ir && !ir.classList.contains('apagada')) return irParaMensagem(ir.dataset.ir, ir.dataset.irPos === '' ? null : Number(ir.dataset.irPos));
     const img = e.target.closest('img.embed');
@@ -1033,6 +1043,49 @@
     el.classList.add('piscando');
     setTimeout(() => el.classList.remove('piscando'), 2400);
   }
+
+  // ----- Enquetes: uma mensagem com opções; cada um vota pelo seu perfil -----
+  function enqueteHtml(m) {
+    const e = m.enquete;
+    const total = new Set(e.opcoes.flatMap((o) => o.v)).size;
+    const maior = Math.max(...e.opcoes.map((o) => o.v.length));
+    const nomes = (v) => v.map((p) => S.perfis?.[p]?.nome || 'alguém').join(', ');
+    const podeEncerrar = !e.fechada && (S.isAdmin || (m.pid && m.pid === S.myPid));
+    const opcoes = e.opcoes.map((o, i) => {
+      const meu = !!S.myPid && o.v.includes(S.myPid);
+      const pct = total ? Math.round((o.v.length / total) * 100) : 0;
+      const venceu = e.fechada && maior > 0 && o.v.length === maior;
+      return `<button type="button" class="eq-op${meu ? ' minha' : ''}${venceu ? ' venceu' : ''}" data-votar="${i}"${e.fechada ? ' disabled' : ''} aria-pressed="${meu}"
+        title="${o.v.length ? esc(nomes(o.v)) : 'Ninguém votou nesta ainda'}"><span class="eq-barra" style="width:${pct}%"></span>
+        <span class="eq-t">${meu ? '✓ ' : ''}${esc(o.t)}</span><span class="eq-n">${o.v.length} · ${pct}%</span></button>`;
+    }).join('');
+    const como = e.fechada ? 'Encerrada' : e.multipla ? 'Pode escolher mais de uma' : 'Escolha uma (clique de novo para tirar)';
+    return `<div class="m-text enquete${e.fechada ? ' fechada' : ''}"><div class="eq-pergunta">${icon('enquete')}<span>${formatar(m.text)}</span></div>
+      <div class="eq-opcoes">${opcoes}</div>
+      <div class="eq-rodape">${plural(total, 'pessoa votou', 'pessoas votaram')} · ${como}${podeEncerrar ? ' · <button type="button" class="eq-encerrar" data-encerrar>Encerrar</button>' : ''}</div></div>`;
+  }
+  function onEnquete(m) {
+    const x = (S.messages[m.channel] || []).find((y) => y.id === m.id);
+    if (!x) return;
+    x.enquete = m.enquete;
+    if (m.channel === S.view) rerenderMantendoScroll();
+  }
+  function criarEnquete() {
+    if (!S.view) return;
+    abrirModal({
+      titulo: 'Criar enquete', ok: 'Criar',
+      corpo: `<label class="field"><span>Pergunta</span><input type="text" name="pergunta" maxlength="200" required placeholder="Que jogo hoje?" autocomplete="off"></label>
+        <label class="field"><span>Opções (uma por linha, de 2 a 10)</span><textarea name="opcoes" rows="5" maxlength="900" required placeholder="Valorant\nMinecraft\nLol"></textarea></label>
+        <label class="eq-multipla"><input type="checkbox" name="multipla"> Deixar escolher mais de uma</label>`,
+      aoConfirmar: async (f) => {
+        const opcoes = String(f.get('opcoes') || '').split('\n').map((x) => x.trim()).filter(Boolean);
+        if (opcoes.length < 2) throw new Error('Coloque pelo menos duas opções, uma em cada linha.');
+        if (opcoes.length > 10) throw new Error('No máximo 10 opções.');
+        await api('enquete', { channel: S.view, pergunta: f.get('pergunta'), opcoes, multipla: f.get('multipla') === 'on' });
+      },
+    });
+  }
+  $('#enqueteBtn').addEventListener('click', criarEnquete);
 
   // ----- Mensagens fixadas: qualquer um fixa; desafixa quem fixou, quem escreveu ou um admin -----
   const podeDesafixar = (f) => S.isAdmin || (S.myPid && (f.porPid === S.myPid || f.pid === S.myPid));
@@ -5365,6 +5418,7 @@
     $('#aparenciaBtn').addEventListener('click', abrirAparencia);
     $('#vpLeave').innerHTML = icon('logout');
     $('#sendBtn').innerHTML = icon('send');
+    $('#enqueteBtn').innerHTML = icon('enquete');
 
     $('#sendVol').addEventListener('input', (e) => {
       S.volEnvio = Number(e.target.value);

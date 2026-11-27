@@ -2355,6 +2355,66 @@ async function api(req, res, url) {
       return json(res, 200, { ok: true });
     }
 
+    case 'enquete': {
+      // enquete: uma mensagem com opções; os votos ficam nela (pelo perfil de quem votou)
+      const c = canal(body.channel);
+      if (!c) return json(res, 404, { error: 'Canal não existe' });
+      if (!u.pid) return json(res, 400, { error: 'Entre de novo para ter um nome guardado' });
+      const ate = silencioDe(u);
+      if (ate) return json(res, 403, { error: 'Você está silenciado por um admin', muted: ate });
+      if (limiteDe(u, 'limEnquete', 4, 60e3)) return json(res, 429, { error: 'Calma, espere um pouco para criar outra.' });
+      const pergunta = String(body.pergunta || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      const vistas = new Set();
+      const opcoes = (Array.isArray(body.opcoes) ? body.opcoes : [])
+        .map((x) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, 80))
+        .filter((x) => x && !vistas.has(x.toLowerCase()) && vistas.add(x.toLowerCase()))
+        .slice(0, 10);
+      if (!pergunta) return json(res, 400, { error: 'Escreva a pergunta' });
+      if (opcoes.length < 2) return json(res, 400, { error: 'Coloque pelo menos duas opções diferentes' });
+      const m = guardarMensagem({
+        id: crypto.randomBytes(8).toString('hex'),
+        ch: c.id,
+        uid: u.id,
+        pid: u.pid,
+        name: u.name,
+        color: u.color,
+        admin: !!u.admin,
+        text: pergunta,
+        enquete: { opcoes: opcoes.map((t) => ({ t, v: [] })), multipla: body.multipla === true },
+        ts: Date.now(),
+      });
+      broadcast({ type: 'msg', msg: m });
+      return json(res, 200, { ok: true });
+    }
+
+    case 'votar': {
+      const c = canal(body.channel);
+      const id = String(body.id || '');
+      const i = Number(body.opcao);
+      if (!c || !id) return json(res, 404, { error: 'Enquete não encontrada' });
+      if (!u.pid) return json(res, 400, { error: 'Entre de novo para ter um nome guardado' });
+      if (limiteDe(u, 'limVoto', 20, 10e3)) return json(res, 429, { error: 'Calma, espere um pouco.' });
+      let m;
+      try { m = await acharMensagem(c.id, id, Number(body.pos)); } catch { return json(res, 503, { error: 'Não consegui votar agora. Tente de novo.' }); }
+      const e = m?.enquete;
+      if (!e) return json(res, 404, { error: 'Enquete não encontrada' });
+      if (body.encerrar === true) {
+        // quem criou ou um admin encerra (os votos ficam como estão)
+        if (!(u.admin || msgParaEnviar(m).pid === u.pid)) return json(res, 403, { error: 'Só quem criou ou um admin pode encerrar' });
+        e.fechada = Date.now();
+      } else {
+        if (e.fechada) return json(res, 400, { error: 'Essa enquete já foi encerrada' });
+        if (!Number.isInteger(i) || !e.opcoes[i]) return json(res, 400, { error: 'Opção inválida' });
+        const ja = e.opcoes[i].v.includes(u.pid);
+        if (!e.multipla) for (const o of e.opcoes) o.v = o.v.filter((p) => p !== u.pid);
+        else if (ja) e.opcoes[i].v = e.opcoes[i].v.filter((p) => p !== u.pid);
+        if (!ja) e.opcoes[i].v.push(u.pid); // clicar de novo no próprio voto tira o voto
+      }
+      regravarMensagem(c.id, m, semPos(m));
+      broadcast({ type: 'enquete', channel: c.id, id, enquete: e });
+      return json(res, 200, { ok: true });
+    }
+
     case 'msg-edit': {
       // editar a própria mensagem: todo mundo vê "(editada)"
       const c = canal(body.channel);
@@ -2367,6 +2427,7 @@ async function api(req, res, url) {
       let m;
       try { m = await acharMensagem(c.id, id, Number(body.pos)); } catch { return json(res, 503, { error: 'Não consegui editar agora. Tente de novo.' }); }
       if (!m || m.sistema) return json(res, 404, { error: 'Mensagem não encontrada' });
+      if (m.enquete) return json(res, 400, { error: 'Uma enquete não pode ser editada' });
       const dono = (u.pid && msgParaEnviar(m).pid === u.pid) || m.uid === u.id;
       if (!dono) return json(res, 403, { error: 'Você só pode editar as suas mensagens' });
       const novo = converterMencoes(text);
