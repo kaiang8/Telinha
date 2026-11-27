@@ -2804,6 +2804,15 @@ async function api(req, res, url) {
       return json(res, 200, { ok: true });
     }
 
+    case 'lance': {
+      // alguém salvou um lance (os últimos 30 s) da sua transmissão: só avisa, o vídeo não passa por aqui
+      if (limiteDe(u, 'limLance', 10, 60e3)) return json(res, 429, { error: 'Calma, espere um pouco.' });
+      const alvo = users.get(String(body.alvo || ''));
+      if (!alvo || alvo === u || !u.sala || alvo.sala !== u.sala || !alvo.live) return json(res, 200, { ok: true });
+      enviar(alvo, { type: 'lance', nome: u.name });
+      return json(res, 200, { ok: true });
+    }
+
     case 'jogando': {
       // "jogando agora": o programa diz o jogo aberto (só de quem deixou mostrar); null = nenhum
       if (limiteDe(u, 'limJogo', 12, 60e3)) return json(res, 429, { error: 'Calma, espere um pouco.' });

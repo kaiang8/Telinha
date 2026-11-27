@@ -15,6 +15,8 @@
     olho: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
     olhoOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/><path d="M4 4l16 16"/>',
     full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    replay: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/>',
+    baixar: '<path d="M12 4v10.5"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19.5h14"/>',
     pip: '<rect x="2.5" y="4.5" width="19" height="15" rx="2"/><rect x="12" y="11.5" width="7" height="5.5" rx="1" fill="currentColor" stroke="none"/>',
     focus: '<path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/>',
     unfocus: '<path d="M20 10h-6V4M4 14h6v6M14 10l6.5-6.5M10 14l-6.5 6.5"/>',
@@ -135,9 +137,18 @@
   const coroa = (u) => (u.admin ? `<span class="crown" title="Admin">${icon('crown')}</span>` : '');
   const avatar = (u, extra = '') => `<div class="avatar ${extra}" style="background:${esc(u.color)}">${esc(initial(u.name))}${extra.includes('dotted') ? '<span class="dot"></span>' : ''}</div>`;
 
-  function toast(msg, ms = 3500) {
+  function toast(msg, ms = 3500, acao = null) {
     const t = $('#toast');
     t.textContent = msg;
+    t.classList.toggle('com-acao', !!acao);
+    if (acao) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'link-btn toast-acao';
+      b.textContent = acao.texto;
+      b.addEventListener('click', () => { t.classList.remove('show'); acao.fazer(); });
+      t.append(' ', b);
+    }
     t.classList.add('show');
     clearTimeout(toast.timer);
     toast.timer = setTimeout(() => t.classList.remove('show'), ms);
@@ -557,6 +568,7 @@
       case 'fixadas': return onFixadas(m);
       case 'enquete': return onEnquete(m);
       case 'x1': return onX1(m);
+      case 'lance': return toast(`${m.nome || 'Alguém'} salvou um lance da sua tela 🎬`, 5000);
       case 'clear': return onClear(m);
       case 'settings': return onSettings(m);
       case 'announce': return mostrarAviso(m);
@@ -2436,7 +2448,7 @@
       <canvas class="t-tinta" aria-hidden="true"></canvas>
       <div class="t-emotes" aria-hidden="true"></div>
       <div class="t-cores" hidden></div>
-      <div class="t-top"><span class="live-badge">ao vivo</span><span class="t-state"></span><span class="t-qual" hidden></span></div>
+      <div class="t-top"><span class="live-badge">ao vivo</span><span class="t-replay" hidden title="Replay ligado: guardando os últimos 30 s">replay</span><span class="t-state"></span><span class="t-qual" hidden></span></div>
       <button class="unmute-hint" data-act="center" hidden></button>
       ${barraDeReacoes()}
       <div class="t-bottom">
@@ -2449,6 +2461,8 @@
         <input type="range" min="0" max="2" step="0.05" value="1" data-act="vol" title="Volume desta transmissão (até 200%)">
         <span class="vol-pct">100%</span>
         <button class="icon-btn t-caneta" data-act="caneta" title="Caneta: desenhar na tela de quem transmite" hidden>${icon('caneta')}</button>
+        <button class="icon-btn t-lance" data-act="lance" hidden></button>
+        <button class="icon-btn t-lance-off" data-act="lance-off" title="Desligar o replay desta tela" aria-label="Desligar o replay desta tela" hidden>${icon('close')}</button>
         <button class="icon-btn" data-act="pip" title="Janela flutuante (picture-in-picture)">${icon('pip')}</button>
         <button class="icon-btn" data-act="focus"></button>
         <button class="icon-btn" data-act="full" title="Tela cheia">${icon('full')}</button>
@@ -2479,6 +2493,172 @@
     }
     atualizarBotaoCaneta(t);
     return t;
+  }
+
+  // ================= Replay: salvar os últimos 30 s de uma transmissão (um "lance") =================
+  // Liga em cada tela. Vários gravadores se revezam (um novo a cada 15 s, só os 3 mais novos ficam),
+  // então sempre existe um com 30 a 45 s. Salvar entrega esse: no programa, numa pasta do computador
+  // (Vídeos\Caras E Telas); no navegador, como download. Nada vai para o servidor.
+  const LANCE = { porUid: new Map(), salvando: false };
+  const LANCE_A_CADA = 15e3;
+  const LANCE_ALVO = 30e3;
+  const ATALHO_LANCE = { code: 'KeyL', alt: true };
+  function tipoDoLance(comAudio) {
+    if (typeof MediaRecorder === 'undefined') return '';
+    const tipos = comAudio
+      ? ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1,opus', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+      : ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+    return tipos.find((x) => { try { return MediaRecorder.isTypeSupported(x); } catch { return false; } }) || '';
+  }
+  const streamDoTile = (uid) => (uid === S.myId ? S.localStream : S.inc.get(uid)?.stream || null);
+  const nomeDoTile = (uid) => (uid === S.myId ? S.myName || 'você' : userById(uid)?.name || 'transmissão');
+  function descartarGravador(g) {
+    g.partes = [];
+    g.rec.ondataavailable = null;
+    try { if (g.rec.state !== 'inactive') g.rec.stop(); } catch { /* já parou */ }
+  }
+  function novoGravadorDoLance(L) {
+    while (L.recs.length >= 3) descartarGravador(L.recs.shift());
+    let rec;
+    try {
+      rec = new MediaRecorder(L.stream, { mimeType: L.tipo, videoBitsPerSecond: 5e6, audioBitsPerSecond: 128e3 });
+    } catch {
+      desligarLance(L.uid, 'Não deu para gravar esta transmissão: o replay desligou.');
+      return;
+    }
+    const g = { rec, inicio: performance.now(), partes: [] };
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) g.partes.push(e.data); };
+    rec.onerror = () => { if (LANCE.porUid.get(L.uid) === L) desligarLance(L.uid, 'A gravação do replay falhou: ele desligou.'); };
+    try { rec.start(1000); } catch { desligarLance(L.uid, 'Não deu para gravar esta transmissão: o replay desligou.'); return; }
+    L.recs.push(g);
+  }
+  function ligarLance(uid, calado = false) {
+    if (MODO_LEVE) { toast('O replay fica desligado no modo leve (ele pesa no computador).'); return; }
+    const fonte = streamDoTile(uid);
+    const video = fonte?.getVideoTracks().find((x) => x.readyState === 'live');
+    if (!video) { toast('Espere a transmissão aparecer para ligar o replay.'); return; }
+    const audio = fonte.getAudioTracks().filter((x) => x.readyState === 'live');
+    const tipo = tipoDoLance(audio.length > 0);
+    if (!tipo) { toast('Este navegador não consegue gravar vídeo.'); return; }
+    const L = { uid, tipo, fonte, video, stream: new MediaStream([video, ...audio]), recs: [], timer: 0 };
+    L.fim = () => { if (LANCE.porUid.get(uid) === L) desligarLance(uid, 'A transmissão acabou: o replay desligou.'); };
+    video.addEventListener('ended', L.fim);
+    LANCE.porUid.set(uid, L);
+    novoGravadorDoLance(L);
+    if (LANCE.porUid.get(uid) !== L) return;
+    L.timer = setInterval(() => novoGravadorDoLance(L), LANCE_A_CADA);
+    atualizarBotaoLance(S.tiles.get(uid));
+    sincronizarAtalhos();
+    if (!calado) toast(`Replay ligado: guardando os últimos 30 s da tela de ${uid === S.myId ? 'você' : nomeDoTile(uid)}. Para salvar, clique em ${PROGRAMA?.salvarLance ? 'salvar' : 'baixar'} na tela ou aperte Alt+L.`, 6000);
+  }
+  function desligarLance(uid, aviso = '') {
+    const L = LANCE.porUid.get(uid);
+    if (!L) return;
+    LANCE.porUid.delete(uid);
+    clearInterval(L.timer);
+    L.video.removeEventListener('ended', L.fim);
+    for (const g of L.recs) descartarGravador(g);
+    L.recs = [];
+    atualizarBotaoLance(S.tiles.get(uid));
+    sincronizarAtalhos();
+    if (aviso) toast(aviso);
+  }
+  function desligarTodosOsLances() {
+    for (const uid of [...LANCE.porUid.keys()]) desligarLance(uid);
+  }
+  // A transmissão reconectou (o vídeo é outro): recomeça o replay com o vídeo novo
+  function conferirLance(t, stream) {
+    const L = LANCE.porUid.get(t.uid);
+    if (!L || L.fonte === stream) return;
+    desligarLance(t.uid);
+    if (stream?.getVideoTracks().some((x) => x.readyState === 'live')) ligarLance(t.uid, true);
+  }
+  function atualizarBotaoLance(t) {
+    if (!t) return;
+    const pode = typeof MediaRecorder !== 'undefined' && !MODO_LEVE;
+    const ligado = LANCE.porUid.has(t.uid);
+    const b = t.el.querySelector('[data-act=lance]');
+    const prog = !!PROGRAMA?.salvarLance;
+    b.hidden = !pode;
+    b.classList.toggle('ligado', ligado);
+    b.innerHTML = icon(ligado ? 'baixar' : 'replay');
+    const titulo = ligado ? `${prog ? 'Salvar' : 'Baixar'} os últimos 30 s (Alt+L)` : 'Replay: guardar os últimos 30 s desta tela';
+    b.title = titulo;
+    b.setAttribute('aria-label', titulo);
+    t.el.querySelector('[data-act=lance-off]').hidden = !ligado;
+    t.el.querySelector('.t-replay').hidden = !ligado;
+  }
+  async function salvarLance(uid) {
+    const L = LANCE.porUid.get(uid);
+    if (!L) return;
+    const agora = performance.now();
+    const vivos = L.recs.filter((x) => x.rec.state === 'recording');
+    // o mais novo que já tem 30 s; se o replay acabou de ligar, o mais velho (com o que tiver)
+    const g = vivos.filter((x) => agora - x.inicio >= LANCE_ALVO).pop() || vivos[0];
+    if (!g) { toast('O replay ainda não gravou nada.'); return; }
+    // o MP4 só fica completo (e com a duração certa) quando a gravação termina: esse gravador
+    // sai do revezamento e os outros continuam guardando
+    L.recs = L.recs.filter((x) => x !== g);
+    if (!L.recs.length) novoGravadorDoLance(L);
+    const segundos = Math.max(1, Math.round((performance.now() - g.inicio) / 1000));
+    const partes = await new Promise((ok) => {
+      g.rec.onstop = () => ok(g.partes);
+      try { g.rec.stop(); } catch { ok(g.partes); }
+      setTimeout(() => ok(g.partes), 5000);
+    });
+    g.rec.ondataavailable = null;
+    if (!partes.length) { toast('O replay ainda não gravou nada.'); return; }
+    const base = L.tipo.split(';')[0];
+    const blob = new Blob(partes, { type: base });
+    const quem = nomeDoTile(uid);
+    const curto = segundos < 25 ? ` Só deu ${segundos} s: o replay tinha acabado de ligar.` : '';
+    if (PROGRAMA?.salvarLance) {
+      let r = null;
+      try { r = await PROGRAMA.salvarLance({ dados: new Uint8Array(await blob.arrayBuffer()), quem, tipo: L.tipo }); } catch { r = null; }
+      if (!r?.ok) { toast(r?.motivo || 'Não consegui salvar o lance.', 6000); return; }
+      toast(`Lance salvo em ${r.pasta} (${segundos} s).${curto}`, 6000, { texto: 'Abrir pasta', fazer: () => PROGRAMA.abrirPastaDosLances().catch(() => {}) });
+    } else {
+      const d = new Date();
+      const z = (n) => String(n).padStart(2, '0');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `Lance de ${quem.replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ').trim()} ${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}-${z(d.getMinutes())}-${z(d.getSeconds())}.${base === 'video/mp4' ? 'mp4' : 'webm'}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60e3);
+      toast(PROGRAMA ? `Lance pronto (${segundos} s): escolha onde salvar. Atualize o programa para ele ir direto para Vídeos\\Caras E Telas.${curto}`
+        : `Lance baixado (${segundos} s): ele está na pasta de downloads.${curto}`, 7000);
+    }
+    if (uid !== S.myId) api('lance', { alvo: uid }).catch(() => {}); // quem transmite fica sabendo
+  }
+  async function salvarTodosOsLances() {
+    if (LANCE.salvando) return;
+    if (!LANCE.porUid.size) { toast('Ligue o replay numa transmissão primeiro (o botão de replay na barra da tela).'); return; }
+    LANCE.salvando = true;
+    try { for (const uid of [...LANCE.porUid.keys()]) await salvarLance(uid); } finally { LANCE.salvando = false; }
+  }
+  function secaoLances() {
+    const prog = !!PROGRAMA?.salvarLance;
+    const onde = prog
+      ? '<p class="small">Os lances ficam em <b id="lcPasta">…</b></p><div class="se-botoes"><button type="button" class="btn sm" id="lcAbrir">Abrir pasta</button><button type="button" class="btn sm ghost" id="lcTrocar">Trocar pasta</button></div>'
+      : PROGRAMA ? '<p class="muted small">Feche e abra o programa para atualizar: a versão nova salva os lances numa pasta do computador.</p>'
+        : '<p class="muted small">No navegador, o lance vai para a pasta de downloads.</p>';
+    return `<div class="pf-secao" id="pfLances"><b>Replay (lances)</b>
+      <p class="muted small">Ligue o replay no botão dele, na barra de baixo de uma transmissão: ele passa a guardar os últimos 30 s. Para salvar, clique no mesmo botão ou aperte Alt+L${prog ? ' (funciona com o jogo na frente)' : ''}. O vídeo fica só no seu computador. Pesa um pouco no computador enquanto está ligado; no modo leve, fica desligado.</p>
+      ${onde}</div>`;
+  }
+  function ligarLances() {
+    if (!PROGRAMA?.salvarLance) return;
+    PROGRAMA.pastaDosLances().then((r) => { if ($('#lcPasta')) $('#lcPasta').textContent = r?.pasta || ''; }).catch(() => {});
+    $('#lcAbrir').addEventListener('click', () => PROGRAMA.abrirPastaDosLances().catch(() => {}));
+    $('#lcTrocar').addEventListener('click', async () => {
+      let r = null;
+      try { r = await PROGRAMA.escolherPastaDosLances(); } catch { r = null; }
+      if (!r?.ok) return;
+      if ($('#lcPasta')) $('#lcPasta').textContent = r.pasta;
+      toast(`Os próximos lances vão para ${r.pasta}.`);
+    });
   }
 
   // ================= Volume =================
@@ -2606,6 +2786,7 @@
         if (document.pictureInPictureElement === t.video) document.exitPictureInPicture().catch(() => {});
         if (CANETA.ativa === uid) sairDaCaneta();
         CANETA.tintas.delete(uid);
+        desligarLance(uid, 'A transmissão acabou: o replay desligou.');
         desligarAudio(t);
         t.video.srcObject = null;
         clearTimeout(t.ctrlTimer);
@@ -2663,6 +2844,8 @@
     const c = S.inc.get(uid);
     const stream = self ? S.localStream : c?.stream || null;
     if (!self) ligarAudio(t, stream);
+    conferirLance(t, stream);
+    atualizarBotaoLance(t);
     if (t.video.srcObject !== stream) {
       t.video.srcObject = stream;
       if (stream) tocarTile(t);
@@ -2743,6 +2926,8 @@
     if (act === 'caneta') return alternarCaneta(uid);
     if (act === 'cor') return escolherCor(Number(e.target.closest('[data-cor]').dataset.cor));
     if (act === 'sair-caneta') return sairDaCaneta();
+    if (act === 'lance') return LANCE.porUid.has(uid) ? salvarLance(uid) : ligarLance(uid);
+    if (act === 'lance-off') return desligarLance(uid, 'Replay desligado.');
     if (!act && tileEl.classList.contains('desenhando')) return; // clique de desenho não muda o destaque
     if (act === 'center') {
       if (e.target.closest('[data-act]').dataset.mode === 'retry') {
@@ -5004,6 +5189,7 @@
           const ptt = cfg.modo === 'ptt' && cfg.atalho;
           if (!a) toast('Use Ctrl ou Alt junto com uma tecla (ex.: Ctrl+M), ou uma das teclas F1 a F24.', 6000);
           else if (mesmoAtalho(a, ATALHO_PARAR)) toast('Alt+0 já é o atalho de "Parar sons".');
+          else if (mesmoAtalho(a, ATALHO_LANCE)) toast('Alt+L já é o atalho de salvar o replay.');
           else if (ptt && ptt.code === a.code && !!ptt.ctrl === a.ctrl && !!ptt.alt === a.alt && !!ptt.shift === a.shift) toast('Essa já é a tecla do apertar-para-falar.');
           else {
             if (mesmoAtalho(cfg[outro], a)) cfg[outro] = null;
@@ -6100,6 +6286,8 @@
       MODO_LEVE = $('#apLeve').checked;
       salvar({ modoLeve: MODO_LEVE });
       aplicarModoLeve();
+      if (MODO_LEVE) desligarTodosOsLances();
+      for (const t of S.tiles.values()) atualizarBotaoLance(t);
       if (S.view && chan(S.view)?.type === 'text') rerenderMantendoScroll(); // roleta girando para de girar
     });
     $('#apRestaurar').addEventListener('click', () => {
@@ -6202,6 +6390,14 @@
   // ================= Botões fixos =================
   // ----- Novidades: o que mudou (por versão) e o que o Caras E Telas oferece -----
   const NV_MUDOU = [
+    { v: '1.4.7', data: '27/11', nome: 'Lances e disputas', itens: [
+      { t: 'Replay: ligue numa transmissão e salve os últimos 30 s (Alt+L). O vídeo vai para Vídeos\\Caras E Telas, no seu computador.', p: true },
+      { t: 'Canal #X1 Otário?: desafie alguém no pedra, papel e tesoura pra decidir uma disputa. O vencedor é anunciado no canal.' },
+      { t: 'Status: Ausente ou Não perturbe, com recado e hora pra acabar (clique no seu nome).' },
+      { t: 'Spoiler: escreva ||assim|| e o texto fica tampado até clicarem.' },
+      { t: 'Prévia de links: título, resumo e imagem embaixo do link (e a capa dos vídeos do YouTube).' },
+      { t: 'Jogo mais jogado do mês, anunciado no #geral na virada do mês (só o jogo, nunca quem jogou).' },
+    ] },
     { v: '1.4.6', data: '27/11', nome: 'Conversas e jogos', itens: [
       { t: 'Mensagens privadas entre duas pessoas, na aba de conversa (o balãozinho em cima do CT).' },
       { t: '“Jogando agora”: embaixo do seu nome aparece o jogo que você está jogando. Dá pra desligar no seu perfil.', p: true },
@@ -6711,6 +6907,7 @@
           </div></div>
         ${secaoAvisos()}
         ${secaoPrivacidade()}
+        ${secaoLances()}
         <div class="pf-secao"><b>Entrar em outro aparelho</b>
           <p class="muted small">Gere um código e, no outro aparelho, clique em "Já tenho um nome" na tela de entrada. O código vale 15 minutos.</p>
           <button type="button" class="btn sm" id="pfCodigo">Gerar código</button><div class="pf-codigo" id="pfCodigoVer" hidden></div></div>
@@ -6725,6 +6922,7 @@
     ligarSomDeEntrada();
     ligarAvisos();
     ligarPrivacidade();
+    ligarLances();
     $('#pfCodigo').onclick = async () => {
       try {
         const r = await api('perfil-codigo');
@@ -7785,6 +7983,7 @@
         ...(VOZ.cfg.atalhoMudo ? [{ id: 'voz-mudo', ...VOZ.cfg.atalhoMudo }] : []),
         ...(VOZ.cfg.atalhoSurdo ? [{ id: 'voz-surdo', ...VOZ.cfg.atalhoSurdo }] : []),
         { id: 'parar', ...ATALHO_PARAR },
+        ...(LANCE.porUid.size ? [{ id: 'lance', ...ATALHO_LANCE }] : []), // só enquanto um replay está ligado
         ...SB.slots.filter((s) => s.atalho).map((s) => ({ id: s.id, ...s.atalho })),
       ];
       const assinatura = JSON.stringify(lista);
@@ -7804,6 +8003,7 @@
       if (id === 'voz-mudo') return alternarMudoPorAtalho();
       if (id === 'voz-surdo') return alternarSurdoPorAtalho();
       if (id === 'parar') return pararTodos();
+      if (id === 'lance') return salvarTodosOsLances();
       if (SB.slots.some((s) => s.id === id)) tocarSom(id, 'atalho');
     });
   }
@@ -7962,6 +8162,11 @@
       if (GLOBAIS.has('parar')) return; // o programa já cuidou pelo atalho global
       return pararTodos();
     }
+    if (LANCE.porUid.size && mesmoAtalho(ATALHO_LANCE, ev)) {
+      e.preventDefault();
+      if (GLOBAIS.has('lance')) return;
+      return salvarTodosOsLances();
+    }
     const slot = SB.slots.find((s) => mesmoAtalho(s.atalho, ev));
     if (!slot) return;
     e.preventDefault();
@@ -8099,6 +8304,7 @@
         const nome = String(fd.get('nome') || '').trim().slice(0, 24);
         if (!nome) throw new Error('Dê um nome para o som');
         if (atalho && mesmoAtalho(atalho, ATALHO_PARAR)) throw new Error('Alt+0 já é o atalho de "Parar sons".');
+        if (atalho && mesmoAtalho(atalho, ATALHO_LANCE)) throw new Error('Alt+L já é o atalho de salvar o replay.');
         for (const [campo, nomeDoAtalho] of [['atalhoMudo', 'ligar/desligar o microfone'], ['atalhoSurdo', 'mutar a sala']]) {
           if (atalho && mesmoAtalho(atalho, VOZ.cfg[campo])) {
             VOZ.cfg = validarCfgVoz({ ...VOZ.cfg, [campo]: null });

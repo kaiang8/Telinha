@@ -214,4 +214,24 @@ t('jogando agora: reconhece o jogo pelo caminho e ignora o que não é jogo', ()
   assert.equal(R.jogoAtual([{ exe: 42, caminho: null }]), null);
 });
 
+t('lances: só grava vídeo de verdade, com nome que o Windows aceita', () => {
+  const quando = new Date(2026, 10, 27, 21, 5, 9);
+  const mp4 = new Uint8Array(64); mp4.set([0, 0, 0, 32, 0x66, 0x74, 0x79, 0x70]);
+  const webm = new Uint8Array(64); webm.set([0x1a, 0x45, 0xdf, 0xa3]);
+  const a = R.validarLance({ dados: mp4, quem: 'Ana', tipo: 'video/mp4;codecs=avc1,mp4a.40.2' }, quando);
+  assert.equal(a.ext, 'mp4');
+  assert.equal(a.base, 'Lance de Ana 2026-11-27 21-05-09');
+  assert.equal(a.dados.length, 64);
+  assert.equal(R.validarLance({ dados: webm.buffer, quem: 'Beto', tipo: 'video/webm;codecs=vp9,opus' }, quando).ext, 'webm');
+  assert.equal(R.validarLance({ dados: webm, quem: 'x', tipo: 'video/mp4' }), null); // tipo não bate com o arquivo
+  assert.equal(R.validarLance({ dados: mp4, quem: 'x', tipo: 'text/html' }), null);
+  assert.equal(R.validarLance({ dados: 'ftyp', quem: 'x', tipo: 'video/mp4' }), null);
+  assert.equal(R.validarLance({ dados: new Uint8Array(8), quem: 'x', tipo: 'video/mp4' }), null);
+  assert.equal(R.validarLance(null), null);
+  assert.equal(R.nomeDoLance('..\\..\\Win<dows>:/*?|"', quando), 'Lance de .. .. Win dows 2026-11-27 21-05-09');
+  assert.equal(R.nomeDoLance('Ana. . ', quando), 'Lance de Ana 2026-11-27 21-05-09');
+  assert.equal(R.nomeDoLance('', quando), 'Lance de transmissão 2026-11-27 21-05-09');
+  assert.ok(!/[<>:"/\\|?*]/.test(R.nomeDoLance('a/b\\c:d', quando)));
+});
+
 console.log(`\n${n} grupos de testes passaram.`);

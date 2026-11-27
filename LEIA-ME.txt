@@ -746,6 +746,17 @@ DICAS
     e ele aparece tampado até alguém clicar. Funciona também com links
     de imagem (a imagem fica borrada). Nos avisos, nas respostas e na
     busca aparece só [spoiler].
+  - Replay (lances): na barra de baixo de uma transmissão, clique no
+    botão de replay. Ele passa a guardar os últimos 30 s daquela tela
+    (aparece "replay" em cima). Para salvar, clique de novo no botão ou
+    aperte Alt+L (no programa, funciona com o jogo na frente). No
+    programa para Windows (1.4.7 ou mais novo), o vídeo vai para
+    Vídeos\Caras E Telas; dá para abrir ou trocar a pasta em: clique no
+    seu nome → Replay. No navegador, vira um download. O vídeo nunca
+    passa pelo servidor nem pelo Upstash. Quem transmite recebe um aviso
+    "fulano salvou um lance da sua tela". O replay pesa um pouco no
+    computador enquanto está ligado (por isso cada um liga na tela que
+    quiser) e fica desligado no modo leve.
   - Jogo do mês: o servidor soma o tempo do "Jogando agora" de cada jogo
     (só de quem deixou mostrar). Na virada do mês, uma telinha anuncia
     no #geral o jogo mais jogado, com o 2º e o 3º. Mostra só os jogos e

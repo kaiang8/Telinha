@@ -79,6 +79,12 @@ contextBridge.exposeInMainWorld('carasETelas', {
     piscar: d.piscar === true,
   } : null),
   // Tema escolhido no site: o programa usa nas telas dele (carregando, seletor de tela)
+  // a partir da 1.4.7: lances (os últimos 30 s de uma transmissão) numa pasta do computador
+  salvarLance: (d) => ipcRenderer.invoke('salvar-lance', d && typeof d === 'object'
+    ? { dados: d.dados, quem: String(d.quem ?? '').slice(0, 64), tipo: String(d.tipo ?? '').slice(0, 60) } : null),
+  abrirPastaDosLances: () => ipcRenderer.invoke('abrir-pasta-dos-lances'),
+  escolherPastaDosLances: () => ipcRenderer.invoke('escolher-pasta-dos-lances'),
+  pastaDosLances: () => ipcRenderer.invoke('pasta-dos-lances'),
   aparencia: (dados) => ipcRenderer.invoke('aparencia', {
     escuro: dados?.escuro === true,
     vars: dados?.vars && typeof dados.vars === 'object' ? Object.fromEntries(Object.entries(dados.vars).slice(0, 60).map(([k, v]) => [String(k), String(v)])) : {},

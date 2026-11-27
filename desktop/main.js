@@ -612,6 +612,57 @@ async function conferirJogo() {
     janela.webContents.send('jogo', nome);
   }
 }
+// ---------- Lances: os últimos 30 s de uma transmissão, salvos numa pasta do computador ----------
+// Nada disso vai para o servidor: o vídeo sai da página direto para a pasta (Vídeos\Caras E Telas).
+let ultimoLance = null;
+const arqDaPastaDosLances = () => path.join(app.getPath('userData'), 'pasta-dos-lances.json');
+function pastaDosLances() {
+  if (TESTE_RAPIDO) return path.join(os.tmpdir(), 'caras-e-telas-teste-lances');
+  try {
+    const p = JSON.parse(fs.readFileSync(arqDaPastaDosLances(), 'utf8')).pasta;
+    if (typeof p === 'string' && path.isAbsolute(p)) return p;
+  } catch { /* ainda não escolheu: usa a padrão */ }
+  return path.join(app.getPath('videos'), 'Caras E Telas');
+}
+// "Vídeos\Caras E Telas" em vez do caminho inteiro (que tem o nome do usuário do Windows)
+function rotuloDaPasta(p) {
+  const videos = app.getPath('videos');
+  return p.toLowerCase().startsWith(videos.toLowerCase()) ? `Vídeos${p.slice(videos.length)}` : p;
+}
+ipcMain.handle('salvar-lance', async (e, d) => {
+  if (!pedidoConfiavel(e)) return { ok: false };
+  const l = R.validarLance(d);
+  if (!l) return { ok: false, motivo: 'O vídeo veio estragado.' };
+  const pasta = pastaDosLances();
+  try {
+    await fs.promises.mkdir(pasta, { recursive: true });
+    let arq = path.join(pasta, `${l.base}.${l.ext}`);
+    for (let n = 2; fs.existsSync(arq) && n < 100; n++) arq = path.join(pasta, `${l.base} (${n}).${l.ext}`);
+    await fs.promises.writeFile(arq, l.dados, { flag: 'wx' });
+    ultimoLance = arq;
+    return { ok: true, arquivo: path.basename(arq), pasta: rotuloDaPasta(pasta) };
+  } catch {
+    return { ok: false, motivo: `Não consegui salvar em ${rotuloDaPasta(pasta)}. Escolha outra pasta.` };
+  }
+});
+ipcMain.handle('abrir-pasta-dos-lances', async (e) => {
+  if (!pedidoConfiavel(e)) return { ok: false };
+  if (TESTE_RAPIDO) return { ok: true };
+  if (ultimoLance && fs.existsSync(ultimoLance)) { shell.showItemInFolder(ultimoLance); return { ok: true }; }
+  const pasta = pastaDosLances();
+  await fs.promises.mkdir(pasta, { recursive: true }).catch(() => {});
+  return { ok: !(await shell.openPath(pasta)) };
+});
+ipcMain.handle('escolher-pasta-dos-lances', async (e) => {
+  if (!pedidoConfiavel(e) || TESTE_RAPIDO) return { ok: false };
+  const r = await dialog.showOpenDialog(janela, { title: 'Onde salvar os lances', defaultPath: pastaDosLances(), properties: ['openDirectory', 'createDirectory'] });
+  if (r.canceled || !r.filePaths[0]) return { ok: false };
+  try { fs.writeFileSync(arqDaPastaDosLances(), JSON.stringify({ pasta: r.filePaths[0] })); } catch { return { ok: false }; }
+  ultimoLance = null;
+  return { ok: true, pasta: rotuloDaPasta(r.filePaths[0]) };
+});
+ipcMain.handle('pasta-dos-lances', (e) => (pedidoConfiavel(e) ? { pasta: rotuloDaPasta(pastaDosLances()) } : null));
+
 ipcMain.handle('jogos', (e, ligar) => {
   if (!pedidoConfiavel(e)) return { ok: false };
   JOGO.ligado = ligar === true;
@@ -1008,6 +1059,11 @@ async function testeRapido() {
     r.jogos = await js(`window.carasETelas.jogos(true)`, true).catch((e) => ({ erro: String(e?.message || e) }));
     await js(`window.carasETelas.jogos(false)`, true).catch(() => {});
     r.avisoRuim = await js(`window.carasETelas.aviso({ tipo: 'qualquer', nome: 'x' })`, true).catch((e) => ({ erro: String(e?.message || e) }));
+    // lance: grava na pasta (no teste, uma pasta temporária) e recusa o que não é vídeo
+    r.lance = await js(`(() => { const b = new Uint8Array(64); b.set([0, 0, 0, 32, 102, 116, 121, 112]); return window.carasETelas.salvarLance({ dados: b, quem: 'Teste <1>', tipo: 'video/mp4' }); })()`, true).catch((e) => ({ erro: String(e?.message || e) }));
+    r.lanceRuim = await js(`window.carasETelas.salvarLance({ dados: new Uint8Array(64), quem: 'x', tipo: 'video/mp4' })`, true).catch((e) => ({ erro: String(e?.message || e) }));
+    r.lanceNoDisco = r.lance?.ok && fs.existsSync(path.join(pastaDosLances(), r.lance.arquivo)) ? fs.statSync(path.join(pastaDosLances(), r.lance.arquivo)).size : 0;
+    fs.rmSync(pastaDosLances(), { recursive: true, force: true });
     // saídas de áudio: a lista aparece e dá para trocar
     r.saidas = await js(`navigator.mediaDevices.enumerateDevices().then(async (ds) => {
       const saidas = ds.filter((d) => d.kind === 'audiooutput');
@@ -1083,6 +1139,7 @@ async function testeRapido() {
       && Array.isArray(r.atalhos?.ok) && !r.atalhos.ok.includes('ruim')
       && r.microfone === 'ok: audio' && r.camera === 'ok: video' && r.pttRuim?.ok === false
       && r.aviso?.mostrado === true && r.avisoRuim?.ok === false && r.jogos?.ok === true
+      && r.lance?.ok === true && r.lanceNoDisco === 64 && r.lanceRuim?.ok === false
       // a caneta nunca pode entrar na transmissão (se o teste enxerga a tela, a camada tem que estar fora)
       // a caneta tem que aparecer no monitor e nunca entrar na transmissão
       && (r.caneta?.controle !== 'aparece na captura' || (r.caneta.camadaNoMonitor === 'desenhada no monitor'

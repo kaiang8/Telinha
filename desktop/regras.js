@@ -313,10 +313,39 @@ function formatosDosPerfis(perfis) {
   return ['H.264', 'VP8', 'VP9', 'HEVC', 'AV1'].filter((n) => nomes.has(n));
 }
 
+// ---------- Lances: os últimos 30 s de uma transmissão, salvos numa pasta do computador ----------
+const MAX_LANCE = 300 * 1024 * 1024;
+const TIPOS_DE_LANCE = { 'video/mp4': 'mp4', 'video/webm': 'webm' };
+function bytesDe(dados) {
+  if (dados instanceof ArrayBuffer) return Buffer.from(dados);
+  if (ArrayBuffer.isView(dados)) return Buffer.from(dados.buffer, dados.byteOffset, dados.byteLength);
+  return null;
+}
+// Nome do arquivo: "Lance de Ana 2026-11-27 21-05-09.mp4" (sem caracteres que o Windows recusa)
+function nomeDoLance(quem, quando = new Date()) {
+  const limpo = String(quem ?? '').replace(/[\u0000-\u001f\u007f<>:"/\\|?*]/g, ' ').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '').slice(0, 32).trim();
+  const d = quando instanceof Date && !Number.isNaN(quando.getTime()) ? quando : new Date();
+  const z = (n) => String(n).padStart(2, '0');
+  return `Lance de ${limpo || 'transmissão'} ${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}-${z(d.getMinutes())}-${z(d.getSeconds())}`;
+}
+// Só grava vídeo de verdade: o começo do arquivo tem que bater com o tipo
+function validarLance(d, quando) {
+  if (!d || typeof d !== 'object') return null;
+  const tipo = String(d.tipo || '').split(';')[0].trim().toLowerCase();
+  const ext = TIPOS_DE_LANCE[tipo];
+  const dados = bytesDe(d.dados);
+  if (!ext || !dados || dados.length < 32 || dados.length > MAX_LANCE) return null;
+  const mp4 = dados.toString('latin1', 4, 8) === 'ftyp';
+  const webm = dados[0] === 0x1a && dados[1] === 0x45 && dados[2] === 0xdf && dados[3] === 0xa3;
+  if ((ext === 'mp4' && !mp4) || (ext === 'webm' && !webm)) return null;
+  return { dados, ext, base: nomeDoLance(d.quem, quando) };
+}
+
 module.exports = {
   validarTraco, validarAviso, jogoAtual, fonteDaCaneta, acharMesmaFonte, formatosDosPerfis,
   teclaDoPtt, argumentosDoPtt,
   validarTema, cssDoTema,
   SITE_PADRAO, origemDe, siteValido, podeNavegar, podeAbrirFora, requisicaoPermitida,
   teclaDoCodigo, aceleradorDe, validarAtalhos,
+  nomeDoLance, validarLance, MAX_LANCE,
 };

@@ -1639,3 +1639,16 @@ body.leve .x1-sacode { display: none; }
 .jogo-mes .jm-tempo { color: var(--suave); font-size: 12px; }
 .jm-podio { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; font-size: 13px; color: var(--suave); }
 .jm-podio small { font-size: 11px; }
+
+/* Replay (lances) */
+.toast.com-acao.show { pointer-events: auto; }
+.toast-acao { margin-left: 4px; font-weight: 700; }
+.t-replay {
+  color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; padding: 0 7px; border-radius: 999px; flex: none; white-space: nowrap;
+  background: rgba(20, 30, 45, .55); border: 1px solid rgba(255, 255, 255, .25);
+}
+.t-replay::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: #ff4d5e; vertical-align: 0; animation: replayPisca 1.6s ease-in-out infinite; }
+@keyframes replayPisca { 50% { opacity: .35; } }
+body.leve .t-replay::before { animation: none; }
+.tile .icon-btn.t-lance.ligado { background: rgba(255, 77, 94, .55); border-color: rgba(255, 140, 150, .7); }
+.tile .icon-btn.t-lance-off { width: 24px; min-width: 24px; }
