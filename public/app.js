@@ -41,6 +41,7 @@
     roleta: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17M6 6l12 12M18 6 6 18"/><circle cx="12" cy="12" r="2" fill="currentColor"/>',
     camera: '<rect x="2.5" y="6.5" width="13" height="11" rx="2.5"/><path d="m15.5 10.5 6-3.5v10l-6-3.5z"/>',
     cameraOff: '<rect x="2.5" y="6.5" width="13" height="11" rx="2.5"/><path d="m15.5 10.5 6-3.5v10l-6-3.5zM3 3l18 18"/>',
+    presente: '<path d="M4 10h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M3 7h18v3H3zM12 7v13"/><path d="M12 7S9.5 3 7.5 4.3 9 7 12 7zM12 7s2.5-4 4.5-2.7S15 7 12 7z"/>',
     controle: '<path d="M7 8h10a4.5 4.5 0 0 1 4.3 5.8l-1 3.3a2.4 2.4 0 0 1-4.1.9L14.5 16h-5l-1.7 2a2.4 2.4 0 0 1-4.1-.9l-1-3.3A4.5 4.5 0 0 1 7 8z"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="16" cy="11.5" r=".6" fill="currentColor"/><circle cx="17.5" cy="13.5" r=".6" fill="currentColor"/>',
     lupa: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>',
     enquete: '<path d="M5 20v-8M12 20V4M19 20v-12"/><path d="M3 20.5h18"/>',
@@ -5997,6 +5998,76 @@
   }
 
   // ================= Botões fixos =================
+  // ----- Novidades: o que mudou (por versão) e o que o Caras E Telas oferece -----
+  const NV_MUDOU = [
+    { v: '1.4.6', data: '27/11', nome: 'Conversas e jogos', itens: [
+      { t: 'Mensagens privadas entre duas pessoas, na aba de conversa (o balãozinho em cima do CT).' },
+      { t: '“Jogando agora”: embaixo do seu nome aparece o jogo que você está jogando. Dá pra desligar no seu perfil.', p: true },
+      { t: 'Botão de GIFs na caixa de mensagem.' },
+      { t: 'Logo do Caras E Telas nova, animada — estrela com vida, nuvens passando e letras flutuando.' },
+    ] },
+    { v: '1.4.5', data: '27/11', nome: 'Mais no chat', itens: [
+      { t: 'Câmera nas salas de tela: liga do lado de compartilhar tela.', p: true },
+      { t: 'Roleta de sorteio, no canal #roleta — todo mundo vê girar e cada opção tem a mesma chance.' },
+      { t: 'Modo leve, pra pesar menos no computador (desliga animações e efeitos).' },
+      { t: 'Buscar mensagens (Ctrl+F), fixar mensagens no canal e enquetes.' },
+    ] },
+    { v: '1.4.4', data: '26/11', nome: 'Avisos e som', itens: [
+      { t: 'Aviso quando alguém entra na sua sala ou te menciona: um cartão no canto, por cima do jogo.', p: true },
+      { t: 'Notificações no navegador, pra quando a aba não está na frente.' },
+      { t: 'Som de entrada personalizado, com ajuste de volume (o seu e o dos outros).' },
+      { t: 'Sons do soundboard refeitos, e alguns novos.' },
+      { t: 'Faixa avisando quando o site é atualizado, pra recarregar.' },
+    ] },
+    { v: '1.4.3', data: 'base', nome: 'O começo', itens: [
+      { t: 'Chat com respostas, reações, editar e apagar mensagens, e imagens.' },
+      { t: 'Salas de tela: compartilhar tela em grupo, assistir junto, voz e apertar-pra-falar.' },
+      { t: 'Soundboard, caneta por cima da tela e lista de quem está online e offline.' },
+    ] },
+  ];
+  const NV_RECURSOS = [
+    { icone: 'chat', titulo: 'Conversar', itens: ['Canais de texto', 'Respostas, reações e menções', 'Editar e apagar as suas mensagens', 'Imagens e GIFs', 'Mensagens privadas', 'Buscar, fixar e enquetes'] },
+    { icone: 'screen', titulo: 'Salas de tela', itens: ['Compartilhar a tela em grupo', 'Assistir junto', 'Câmera (no programa)', 'Voz e apertar-pra-falar', 'Caneta por cima da tela', 'Soundboard e som de entrada'] },
+    { icone: 'controle', titulo: 'No dia a dia', itens: ['Avisos quando te chamam', 'Jogando agora (no programa)', 'Roleta de sorteio', 'Quem está online e offline', 'Modo leve', 'Temas e cores'] },
+  ];
+  const NV = { aba: 'mudou', abertos: new Set([0]) };
+  const versaoAtualNv = () => NV_MUDOU[0].v;
+  function renderNovidades() {
+    const abas = [['mudou', 'Novidades'], ['recursos', 'O que dá pra fazer']];
+    let corpo;
+    if (NV.aba === 'mudou') {
+      corpo = `<p class="nv-intro">Os números são das versões do programa pra Windows (aparecem embaixo, no ${esc(MARCA)}). O que tem <span class="nv-win">🪟 programa</span> precisa dele atualizado; o resto funciona também no navegador.</p>`
+        + NV_MUDOU.map((r, i) => {
+          const aberto = NV.abertos.has(i);
+          return `<div class="nv-rel ${aberto ? 'aberto' : ''}">
+            <button type="button" class="nv-rel-cab" data-nv-rel="${i}" aria-expanded="${aberto}">
+              <span class="nv-chev">${icon('chevron')}</span>
+              <span class="nv-v">v${esc(r.v)}</span><span class="nv-nome">${esc(r.nome)}</span>
+              <span class="nv-data">${esc(r.data)}</span></button>
+            <div class="nv-itens">${r.itens.map((it) => `<div class="nv-item">${icon('presente')}<span>${esc(it.t)}${it.p ? ' <span class="nv-win">🪟 programa</span>' : ''}</span></div>`).join('')}</div></div>`;
+        }).join('');
+    } else {
+      corpo = `<div class="nv-recursos">${NV_RECURSOS.map((c) => `<div class="nv-cat">
+        <div class="nv-cat-cab">${icon(c.icone)}<b>${esc(c.titulo)}</b></div>
+        <ul>${c.itens.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`).join('')}</div>`;
+    }
+    $('#novidadesPanel').innerHTML = `<div class="admin-card nv-card" role="dialog" aria-label="Novidades">
+      <header class="admin-head"><div class="admin-title">${icon('presente')} Novidades</div>
+        <button class="icon-btn" data-nv-fechar title="Fechar (Esc)" aria-label="Fechar">${icon('close')}</button></header>
+      <nav class="admin-tabs">${abas.map(([id, nome]) => `<button data-nv-aba="${id}" class="${NV.aba === id ? 'on' : ''}">${nome}</button>`).join('')}</nav>
+      <div class="admin-body nv-body">${corpo}</div></div>`;
+  }
+  function abrirNovidades(abrir = $('#novidadesPanel').hidden) {
+    $('#novidadesPanel').hidden = !abrir;
+    if (!abrir) return;
+    if (salvo.novidadesVista !== versaoAtualNv()) { salvar({ novidadesVista: versaoAtualNv() }); $('#novidadesBtn').classList.remove('tem-novo'); }
+    renderNovidades();
+    $('#novidadesPanel .admin-tabs button')?.focus?.();
+  }
+  function marcarNovidadesNovo() {
+    $('#novidadesBtn').classList.toggle('tem-novo', salvo.novidadesVista !== versaoAtualNv());
+  }
+
   function montarBotoes() {
     $('#inviteBtn').innerHTML = icon('link');
     $('#railBrand').innerHTML = LOGO;
@@ -6008,6 +6079,17 @@
     $('#audioBtn').innerHTML = icon('engrenagem');
     $('#ajudaBtn').innerHTML = icon('ajuda');
     $('#ajudaBtn').addEventListener('click', () => abrirRelatarProblema().catch((e) => toast(e.message)));
+    $('#novidadesBtn').innerHTML = icon('presente');
+    marcarNovidadesNovo();
+    $('#novidadesBtn').addEventListener('click', () => abrirNovidades());
+    $('#novidadesPanel').addEventListener('click', (e) => {
+      if (e.target.id === 'novidadesPanel' || e.target.closest('[data-nv-fechar]')) return abrirNovidades(false);
+      const aba = e.target.closest('[data-nv-aba]');
+      if (aba) { NV.aba = aba.dataset.nvAba; return renderNovidades(); }
+      const rel = e.target.closest('[data-nv-rel]');
+      if (rel) { const i = Number(rel.dataset.nvRel); NV.abertos.has(i) ? NV.abertos.delete(i) : NV.abertos.add(i); return renderNovidades(); }
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#novidadesPanel').hidden) abrirNovidades(false); });
     $('#vozOpcoesBtn').innerHTML = icon('engrenagem');
     for (const sel of ['#micBtn', '#vpMic']) $(sel).addEventListener('click', alternarMudo);
     for (const sel of ['#surdoBtn', '#vpSurdo']) $(sel).addEventListener('click', alternarSurdo);
