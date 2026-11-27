@@ -275,6 +275,7 @@ let data = {
   nomesAntigos: {}, // nome (normalizado) das mensagens de antes dos perfis -> id do perfil que ficou com ele
   nomesLegados: [], // nomes (normalizados) que aparecem nas mensagens de antes dos perfis
   fixadas: {}, // canal -> mensagens fixadas (uma cópia de cada, até 25)
+  dms: {}, // conversas privadas: id -> { a, b, ultima, de } (as mensagens ficam guardadas como as dos canais)
 };
 let podeSalvar = true;
 
@@ -290,6 +291,7 @@ function aplicarDados(raw) {
   if (raw.nomesAntigos && typeof raw.nomesAntigos === 'object') data.nomesAntigos = raw.nomesAntigos;
   if (Array.isArray(raw.nomesLegados)) data.nomesLegados = raw.nomesLegados;
   if (raw.fixadas && typeof raw.fixadas === 'object' && !Array.isArray(raw.fixadas)) data.fixadas = raw.fixadas;
+  if (raw.dms && typeof raw.dms === 'object' && !Array.isArray(raw.dms)) data.dms = raw.dms;
 }
 
 async function upstash(comando, { semContar = false } = {}) {
@@ -1219,6 +1221,7 @@ function enviarInit(u) {
     channels: data.channels,
     messages: historico,
     fixadas: data.fixadas,
+    dms: u.pid ? minhasDms(u.pid) : [],
     antigas,
     perfis: perfisPublicos(),
     users: listaUsuarios(),
@@ -1483,6 +1486,47 @@ const limparNome = (s, max) => String(s || '').replace(/\s+/g, ' ').trim().slice
 function canal(id) {
   return data.channels.find((c) => c.id === id);
 }
+
+// ---------- Mensagens privadas ----------
+// Conversa entre dois perfis: id "dm-<perfil>-<perfil>" (em ordem). Só os dois leem e recebem os avisos
+// dela, nem admin vê pelo site. Ficam fora do backup do admin (são privadas). As mensagens são
+// guardadas como as dos canais e carregadas só quando a conversa é aberta.
+const idDaDm = (p1, p2) => `dm-${[p1, p2].sort().join('-')}`;
+function dmDe(id, u) {
+  const m = /^dm-([0-9a-f]{12})-([0-9a-f]{12})$/.exec(String(id || ''));
+  if (!m || !u?.pid || (m[1] !== u.pid && m[2] !== u.pid) || m[1] === m[2]) return null;
+  if (!data.perfis[m[1]] || !data.perfis[m[2]]) return null;
+  return { id: m[0], type: 'dm', a: m[1], b: m[2] };
+}
+const conversa = (id, u) => canal(id) || dmDe(id, u);
+// manda um evento de mensagem: numa conversa privada, só para os dois
+function difundir(c, obj) {
+  if (c?.type !== 'dm') return broadcast(obj);
+  for (const x of users.values()) if (x.pid === c.a || x.pid === c.b) enviar(x, obj);
+}
+const dmCarregando = new Map();
+async function garantirDm(id) {
+  if (MSGS.total[id] !== undefined) return;
+  if (dmCarregando.has(id)) return dmCarregando.get(id);
+  const p = (async () => {
+    if (USA_UPSTASH) {
+      const total = Number(await upstash(['LLEN', chaveMsgs(id)])) || 0;
+      const ini = Math.max(0, total - MSG_MEMORIA);
+      MSGS.recentes[id] = total ? lerMensagens(await upstash(['LRANGE', chaveMsgs(id), String(ini), String(total - 1)]), ini) : [];
+      MSGS.total[id] = total;
+    } else {
+      const lista = MSGS.arquivo[id] || [];
+      const ini = Math.max(0, lista.length - MSG_MEMORIA);
+      MSGS.recentes[id] = lerMensagens(lista.slice(ini), ini);
+      MSGS.total[id] = lista.length;
+    }
+  })().finally(() => dmCarregando.delete(id));
+  dmCarregando.set(id, p);
+  return p;
+}
+const minhasDms = (pid) => Object.entries(data.dms || {})
+  .filter(([, d]) => d.a === pid || d.b === pid)
+  .map(([id, d]) => ({ id, com: d.a === pid ? d.b : d.a, ultima: d.ultima || 0, de: d.de || null }));
 
 const TIPOS = {
   '.html': 'text/html; charset=utf-8',
@@ -2177,7 +2221,7 @@ async function montarBackup() {
     if (!p.som) continue;
     try { const x = await lerSomGuardado(pid); if (x) sons[pid] = x; } catch { /* sem esse som, o resto vai */ }
   }
-  const { messages, ...dados } = data;
+  const { messages, dms, ...dados } = data; // as conversas privadas não vão para o backup
   return { formato: BACKUP_FORMATO, versao: 1, criado: Date.now(), dados, mensagens, sons };
 }
 async function restaurarBackup(b) {
@@ -2213,9 +2257,11 @@ async function restaurarBackup(b) {
   }
   SONS_CACHE.clear();
   // o resto dos dados
-  const { messages, ...resto } = b.dados;
+  const { messages, dms, ...resto } = b.dados;
+  const dmsAgora = data.dms;
   Object.assign(data, { messages: {}, settings: { locked: false }, bans: [], mutes: [], lembretes: [], perfis: {}, nomesAntigos: {}, nomesLegados: [], fixadas: {} });
   aplicarDados({ ...resto, channels: canais, perfis, messages: {} });
+  data.dms = dmsAgora; // as conversas privadas continuam como estavam
   sujo = true;
   clearTimeout(saveTimer);
   await gravar();
@@ -2428,11 +2474,15 @@ async function api(req, res, url) {
 
   switch (rota) {
     case 'msg': {
-      const c = canal(body.channel);
+      const c = conversa(body.channel, u);
       const text = String(body.text || '').trim().slice(0, 2000);
       if (!c || !text) return json(res, 400, { error: 'mensagem inválida' });
       const ate = silencioDe(u);
       if (ate) return json(res, 403, { error: 'Você está silenciado por um admin', muted: ate });
+      if (c && c.type === 'dm') {
+        if (limiteDe(u, 'limDm', 20, 10e3)) return json(res, 429, { error: 'Calma, espere um pouco.' });
+        try { await garantirDm(c.id); } catch { return json(res, 503, { error: 'Não consegui mandar agora. Tente de novo.' }); }
+      }
       // respondendo a uma mensagem: guarda um resuminho dela (quem e o começo do texto)
       let resp = null;
       if (body.resp && typeof body.resp === 'object' && typeof body.resp.id === 'string') {
@@ -2454,7 +2504,11 @@ async function api(req, res, url) {
         ...(resp ? { resp } : {}),
         ts: Date.now(),
       });
-      broadcast({ type: 'msg', msg: m });
+      if (c.type === 'dm') {
+        data.dms[c.id] = { a: c.a, b: c.b, ultima: m.ts, de: u.pid };
+        salvar();
+      }
+      difundir(c, { type: 'msg', msg: m });
       return json(res, 200, { ok: true });
     }
 
@@ -2488,6 +2542,18 @@ async function api(req, res, url) {
       });
       broadcast({ type: 'msg', msg: m });
       return json(res, 200, { ok: true });
+    }
+
+    case 'dm-abrir': {
+      // abre (ou começa) a conversa privada com alguém: devolve as mensagens mais recentes
+      const com = String(body.pid || '');
+      if (!u.pid) return json(res, 400, { error: 'Entre de novo para ter um nome guardado' });
+      if (!/^[0-9a-f]{12}$/.test(com) || !data.perfis[com] || com === u.pid) return json(res, 404, { error: 'Pessoa não encontrada' });
+      if (limiteDe(u, 'limDmAbrir', 40, 60e3)) return json(res, 429, { error: 'Calma, espere um pouco.' });
+      const id = idDaDm(u.pid, com);
+      try { await garantirDm(id); } catch { return json(res, 503, { error: 'Não consegui abrir a conversa agora. Tente de novo.' }); }
+      const ult = (MSGS.recentes[id] || []).slice(-MSG_PAGINA);
+      return json(res, 200, { id, com, mensagens: ult.map(msgParaEnviar), antigas: ult.length ? ult[0].pos : (MSGS.total[id] || 0) });
     }
 
     case 'gifs': {
@@ -2576,13 +2642,14 @@ async function api(req, res, url) {
 
     case 'msg-edit': {
       // editar a própria mensagem: todo mundo vê "(editada)"
-      const c = canal(body.channel);
+      const c = conversa(body.channel, u);
       const id = String(body.id || '');
       const text = String(body.text || '').trim().slice(0, 2000);
       if (!c || !id) return json(res, 404, { error: 'Mensagem não encontrada' });
       if (!text) return json(res, 400, { error: 'A mensagem não pode ficar vazia (para tirar, apague)' });
       if (silencioDe(u)) return json(res, 403, { error: 'Você está silenciado por um admin' });
       if (limiteDe(u, 'limEdit', 10, 10e3)) return json(res, 429, { error: 'Calma com as edições' });
+      if (c?.type === 'dm') await garantirDm(c.id).catch(() => {});
       let m;
       try { m = await acharMensagem(c.id, id, Number(body.pos)); } catch { return json(res, 503, { error: 'Não consegui editar agora. Tente de novo.' }); }
       if (!m || m.sistema) return json(res, 404, { error: 'Mensagem não encontrada' });
@@ -2595,18 +2662,19 @@ async function api(req, res, url) {
       m.editada = Date.now();
       regravarMensagem(c.id, m, semPos(m));
       citacoesDepois(c.id, m, false);
-      broadcast({ type: 'msg-edit', channel: c.id, id, text: m.text, editada: m.editada });
+      difundir(c, { type: 'msg-edit', channel: c.id, id, text: m.text, editada: m.editada });
       mexerNaFixada(c.id, id, m.text);
       return json(res, 200, { ok: true });
     }
 
     case 'historico': {
       // mensagens mais antigas que as que a página já tem (quando a pessoa sobe o chat)
-      const c = canal(body.channel);
+      const c = conversa(body.channel, u);
       const antes = Number(body.antes);
       if (!c || !Number.isInteger(antes) || antes <= 0) return json(res, 400, { error: 'pedido inválido' });
       if (limiteDe(u, 'limHist', 30, 10e3)) return json(res, 429, { error: 'Calma, carregando…' });
       try {
+        if (c.type === 'dm') await garantirDm(c.id);
         const r = await mensagensAntigas(c.id, antes);
         return json(res, 200, { mensagens: r.lista.map(msgParaEnviar), mais: r.mais, desde: r.desde });
       } catch (e) {
@@ -2669,17 +2737,18 @@ async function api(req, res, url) {
     }
 
     case 'msg-delete': {
-      const c = canal(body.channel);
+      const c = conversa(body.channel, u);
       const id = String(body.id || '');
       if (!c || !id) return json(res, 404, { error: 'Mensagem não encontrada' });
       // a própria (pelo perfil, ou pela sessão nas mensagens de antes dos perfis) ou admin
-      const pode = (m) => u.admin || (u.pid && msgParaEnviar(m).pid === u.pid) || m.uid === u.id;
+      const pode = (m) => (u.admin && c.type !== 'dm') || (u.pid && msgParaEnviar(m).pid === u.pid) || m.uid === u.id;
+      if (c.type === 'dm') await garantirDm(c.id).catch(() => {});
       let r;
       try { r = await apagarMensagemGuardada(c.id, id, Number(body.pos), pode); } catch { r = { status: 503 }; }
       if (r.status === 404) return json(res, 404, { error: 'Mensagem não encontrada' });
       if (r.status === 403) return json(res, 403, { error: 'Você só pode apagar as suas mensagens' });
       if (!r.ok) return json(res, 503, { error: 'Não consegui apagar agora. Tente de novo.' });
-      broadcast({ type: 'msg-delete', channel: c.id, id });
+      difundir(c, { type: 'msg-delete', channel: c.id, id });
       mexerNaFixada(c.id, id, null);
       return json(res, 200, { ok: true });
     }
@@ -2716,9 +2785,10 @@ async function api(req, res, url) {
 
     case 'typing': {
       const agora = Date.now();
-      if (canal(body.channel) && agora - u.lastTyping > 1500 && !silencioDe(u)) {
+      const cd = conversa(body.channel, u);
+      if (cd && agora - u.lastTyping > 1500 && !silencioDe(u)) {
         u.lastTyping = agora;
-        broadcast({ type: 'typing', channel: body.channel, uid: u.id, name: u.name });
+        difundir(cd, { type: 'typing', channel: cd.id, uid: u.id, name: u.name });
       }
       return json(res, 200, { ok: true });
     }

@@ -724,6 +724,14 @@ DICAS
     você ouve (0% desliga). Para uma pessoa só, use "Volume da voz e
     dos sons" no nome dela, dentro da sala: vale também para o som de
     entrada dela.
+  - Mensagens privadas: o ícone de conversa no alto da barra da esquerda
+    (acima do CT) abre a aba das conversas privadas. Para começar uma,
+    clique no + dessa aba ou no nome da pessoa na lista de membros →
+    "Mandar mensagem privada". Só as duas pessoas recebem e leem: nem os
+    admins veem pelo site, a busca não acha e o backup do painel não
+    leva. (Elas ficam guardadas no Upstash, como o resto: quem tem
+    acesso ao painel do Upstash tecnicamente consegue ver.) O CT volta
+    para o servidor.
   - GIFs: o botão "GIF" na caixa de mensagem busca GIFs no GIPHY (o
     Tenor, do Google, encerrou o serviço em 2026). Para ligar: crie uma
     conta em developers.giphy.com, clique em "Create an API Key" (tipo

@@ -94,6 +94,11 @@
     envio: null, sendStream: null,
     unread: new Set(), typing: new Map(), collapsed: {},
     mencoes: new Set(), // canais onde mencionaram você (marquinha "@")
+    modo: 'servidor', // 'servidor' ou 'dm' (a aba das mensagens privadas, no ícone acima do CT)
+    dms: [], // minhas conversas privadas: { id, com, ultima, de }
+    dmCanais: new Map(), // id -> canal de mentira da conversa
+    dmNaoLidas: new Set(),
+    ultimoCanal: null, // para voltar ao servidor no mesmo canal
     apagadas: new Set(), // mensagens apagadas (quem respondeu a elas mostra "mensagem apagada")
     resposta: null, // { ch, id, pos, rotulo, texto }: respondendo a uma mensagem
     editando: null, // { id, ch, pos, rascunho, original }: editando uma mensagem minha
@@ -119,7 +124,8 @@
   const NO_WINDOWS = /Windows/i.test(navigator.userAgent);
   const LINK_PROGRAMA = '/baixar';
   if (PROGRAMA && S.som === 'janela') S.som = 'pc';
-  const chan = (id) => S.channels.find((c) => c.id === id);
+  // conversa privada: um "canal" de mentira com o nome da outra pessoa (só existe na página)
+  const chan = (id) => S.channels.find((c) => c.id === id) || (S.dmCanais?.get(id) ?? null);
   const textChannels = () => S.channels.filter((c) => c.type === 'text');
   const salas = () => S.channels.filter((c) => c.type === 'sala');
   const userById = (id) => S.users.find((u) => u.id === id);
@@ -581,6 +587,11 @@
     S.channels = m.channels;
     S.messages = m.messages || {};
     S.fixadas = m.fixadas || {};
+    S.dms = Array.isArray(m.dms) ? m.dms : [];
+    for (const d of S.dms) registrarDm(d);
+    S.dmNaoLidas = new Set(S.dms.filter((d) => d.de && d.de !== S.myPid && d.ultima > (DM_VISTO[d.id] || 0)).map((d) => d.id));
+    if (S.modo === 'dm' && !chan(S.view)) S.modo = 'servidor';
+    if (chan(S.view)?.dm) setTimeout(() => abrirDm(S.view), 0); // reconectou: busca a conversa de novo
     S.antigas = m.antigas || {}; // canal -> posição de onde começam as mais antigas (0: não tem)
     S.perfis = m.perfis || {};
     if (m.me?.pid) S.myPid = m.me.pid;
@@ -709,6 +720,7 @@
     if (tm) tm.delete(msg.uid);
 
     if (msg.sistema === 'roleta') RL.chegou.set(msg.id, Date.now()); // as que chegam agora giram
+    if (/^dm-/.test(msg.ch)) chegouDm(msg);
     const deOutro = msg.uid !== S.myId;
     const visivel = msg.ch === S.view && !(chan(S.view)?.type === 'sala' && !S.showSalaChat);
     if (visivel) {
@@ -716,7 +728,7 @@
       const perto = box.scrollHeight - box.scrollTop - box.clientHeight < 150;
       box.insertAdjacentHTML('beforeend', msgHtml(msg, prev));
       if (perto || !deOutro) box.scrollTop = box.scrollHeight;
-    } else if (deOutro) {
+    } else if (deOutro && !/^dm-/.test(msg.ch)) {
       S.unread.add(msg.ch);
     }
     if (deOutro && (document.hidden || !visivel)) {
@@ -862,7 +874,7 @@
     const minha = (m.pid && m.pid === S.myPid) || m.uid === S.myId;
     const botao = (attr, ic, titulo) => `<button class="icon-btn small" ${attr} title="${titulo}" aria-label="${titulo}">${icon(ic)}</button>`;
     const fixada = (S.fixadas?.[m.ch] || []).find((x) => x.id === m.id);
-    const podeFixar = !m.sistema && chan(m.ch)?.type === 'text';
+    const podeFixar = !m.sistema && chan(m.ch)?.type === 'text' && !chan(m.ch)?.dm;
     const acoes = `<div class="m-actions">${botao(`data-responder="${esc(m.id)}"`, 'responder', 'Responder')}`
       + (podeFixar && (!fixada || podeDesafixar(fixada)) ? botao(`data-fixar="${esc(m.id)}"`, 'pin', fixada ? 'Desafixar' : 'Fixar no canal') : '')
       + (minha && !m.sistema && !m.enquete ? botao(`data-editar="${esc(m.id)}"`, 'pencil', 'Editar') : '')
@@ -919,6 +931,9 @@
     // as mensagens ficam guardadas para sempre: as mais antigas vêm quando sobe o chat
     let h = S.antigas?.[c.id] > 0
       ? `<div class="antigas"><button type="button" class="btn sm ghost" data-antigas>${S.carregandoAntigas ? 'Carregando…' : 'Carregar mensagens anteriores'}</button></div>`
+      : c.dm ? `<div class="welcome"><div class="wicon">${icon('chat')}</div>
+      <h2>${esc(c.name)}</h2>
+      <p>Começo da sua conversa privada com ${esc(c.name)}. Só vocês dois veem estas mensagens.</p></div>`
       : `<div class="welcome"><div class="wicon">${icon(sala ? 'screen' : 'hash')}</div>
       <h2>${sala ? 'Chat da ' + esc(c.name) : 'Bem-vindo(a) a #' + esc(c.name) + '!'}</h2>
       <p>${sala ? 'Converse aqui enquanto assistem juntos.' : c.roleta ? 'Na dúvida entre duas (ou vinte) opções? Crie uma roleta: todo mundo vê girar, e cada opção tem a mesma chance.' : `Este é o começo do canal #${esc(c.name)}.`}</p>
@@ -946,7 +961,7 @@
         ? 'Você foi silenciado por um admin'
         : `Você foi silenciado por um admin até ${hhmm(ate)}${mesmoDia(ate, Date.now()) ? '' : ' de ' + ate.toLocaleDateString('pt-BR')}`;
     } else {
-      input.placeholder = (c.type === 'sala' ? `Conversar na ${c.name}` : `Conversar em #${c.name}`) + (S.isAdmin ? ' · / para comandos' : '');
+      input.placeholder = c.dm ? `Mensagem para ${c.name}` : (c.type === 'sala' ? `Conversar na ${c.name}` : `Conversar em #${c.name}`) + (S.isAdmin ? ' · / para comandos' : '');
     }
   }
   setInterval(() => { if (S.mutedUntil && S.mutedUntil < Date.now()) { S.mutedUntil = 0; atualizarComposer(); } }, 5000);
@@ -1237,6 +1252,113 @@
   }
   $('#enqueteBtn').addEventListener('click', criarEnquete);
 
+  // ----- Mensagens privadas: a aba do ícone de conversa, acima do CT -----
+  const DM_VISTO = salvo.dmVisto && typeof salvo.dmVisto === 'object' ? { ...salvo.dmVisto } : {};
+  function marcarDmVista(id) {
+    DM_VISTO[id] = Date.now();
+    const ids = Object.keys(DM_VISTO);
+    if (ids.length > 300) for (const k of ids.sort((a, b) => DM_VISTO[a] - DM_VISTO[b]).slice(0, ids.length - 300)) delete DM_VISTO[k];
+    salvar({ dmVisto: DM_VISTO });
+    renderRailDm();
+  }
+  const idDaDm = (pid) => `dm-${[S.myPid, pid].sort().join('-')}`;
+  const outroDaDm = (id) => id.slice(3).split('-').find((p) => p !== S.myPid);
+  function registrarDm(d) {
+    const com = d.com || outroDaDm(d.id);
+    const nome = S.perfis?.[com]?.nome || 'alguém';
+    const c = S.dmCanais.get(d.id) || { id: d.id, type: 'text', dm: true };
+    Object.assign(c, { name: nome, com });
+    S.dmCanais.set(d.id, c);
+    return c;
+  }
+  function renderRailDm() {
+    const n = S.dmNaoLidas.size;
+    const b = $('#railDm');
+    b.classList.toggle('active', S.modo === 'dm');
+    $('#railServer').classList.toggle('inativo', S.modo === 'dm');
+    b.innerHTML = `${icon('chat')}${n ? `<span class="rail-badge">${n > 9 ? '9+' : n}</span>` : ''}`;
+    b.title = n ? `Mensagens privadas (${n} nova${n > 1 ? 's' : ''})` : 'Mensagens privadas';
+    b.setAttribute('aria-label', b.title);
+  }
+  function listaDeDms() {
+    const online = new Set(S.users.map((u) => u.pid).filter(Boolean));
+    const itens = [...S.dms].sort((a, b) => b.ultima - a.ultima).map((d) => {
+      const c = registrarDm(d);
+      const p = S.perfis?.[c.com] || {};
+      const cls = [d.id === S.view && 'active', S.dmNaoLidas.has(d.id) && 'unread'].filter(Boolean).join(' ');
+      return `<div class="channel dm-item ${cls}" data-dm="${esc(d.id)}"><span class="avatar dm-av" style="background:${esc(p.cor || '#8a94a6')}">${esc(initial(p.nome || '?'))}${online.has(c.com) ? '<i class="dm-on" title="Online"></i>' : ''}</span>
+        <span class="ch-name">${esc(c.name)}</span>${S.dmNaoLidas.has(d.id) ? '<span class="ch-mencao" title="Mensagem nova">•</span>' : ''}</div>`;
+    }).join('');
+    return `<div class="category"><span class="cat-name">Mensagens privadas</span>
+        <button class="icon-btn" data-nova-dm title="Nova conversa">${icon('plus')}</button></div>
+      ${itens || '<p class="muted small dm-vazio">Nenhuma conversa ainda. Clique no + ou no nome de alguém na lista de membros e escolha "Mandar mensagem privada".</p>'}`;
+  }
+  function mostrarDms() {
+    if (S.modo !== 'dm' && !chan(S.view)?.dm) S.ultimoCanal = S.view;
+    S.modo = 'dm';
+    const recente = [...S.dms].sort((a, b) => b.ultima - a.ultima)[0];
+    if (chan(S.view)?.dm) return renderTudo();
+    if (recente) return abrirDm(recente.id);
+    renderSidebar();
+    $('#sidebar').classList.add('open');
+  }
+  function voltarAoServidor() {
+    S.modo = 'servidor';
+    const volta = S.ultimoCanal && S.channels.some((c) => c.id === S.ultimoCanal) ? S.ultimoCanal : (textChannels()[0] || S.channels[0]).id;
+    selecionarCanal(volta);
+  }
+  async function abrirDm(id, pid) {
+    pid = pid || outroDaDm(id);
+    if (!pid || pid === S.myPid) return;
+    try {
+      const r = await api('dm-abrir', { pid });
+      S.messages[r.id] = r.mensagens || [];
+      S.antigas[r.id] = r.antigas || 0;
+      if (!S.dms.some((d) => d.id === r.id)) S.dms.push({ id: r.id, com: pid, ultima: 0, de: null });
+      registrarDm({ id: r.id, com: pid });
+      if (S.modo !== 'dm' && !chan(S.view)?.dm) S.ultimoCanal = S.view;
+      S.modo = 'dm';
+      selecionarCanal(r.id);
+    } catch (e) { toast(e.message); }
+  }
+  function novaDm() {
+    const online = new Set(S.users.map((u) => u.pid).filter(Boolean));
+    const pessoas = Object.entries(S.perfis || {}).filter(([pid, p]) => pid !== S.myPid && !p.oculto)
+      .sort((a, b) => (online.has(b[0]) - online.has(a[0])) || a[1].nome.localeCompare(b[1].nome, 'pt-BR'));
+    abrirModal({
+      titulo: 'Nova conversa privada', ok: 'Fechar',
+      corpo: pessoas.length ? `<div class="dm-escolher">${pessoas.map(([pid, p]) => `<button type="button" class="dm-pessoa" data-dm-pessoa="${esc(pid)}">
+          <span class="avatar dm-av" style="background:${esc(p.cor || '#8a94a6')}">${esc(initial(p.nome))}${online.has(pid) ? '<i class="dm-on"></i>' : ''}</span>${esc(p.nome)}</button>`).join('')}</div>`
+        : '<p>Ainda não tem mais ninguém por aqui.</p>',
+      aoConfirmar: async () => {},
+    });
+    $('#modalCancel').hidden = true;
+    $('#modalBody').onclick = (e) => {
+      const b = e.target.closest('[data-dm-pessoa]');
+      if (!b) return;
+      $('#modal').hidden = true;
+      abrirDm(idDaDm(b.dataset.dmPessoa), b.dataset.dmPessoa);
+    };
+  }
+  function chegouDm(msg) {
+    const com = outroDaDm(msg.ch);
+    const meu = msg.pid === S.myPid || msg.uid === S.myId;
+    let d = S.dms.find((x) => x.id === msg.ch);
+    if (!d) { d = { id: msg.ch, com, ultima: 0, de: null }; S.dms.push(d); }
+    d.ultima = msg.ts; d.de = msg.pid || null;
+    registrarDm(d);
+    if (meu) { marcarDmVista(msg.ch); }
+    else if (msg.ch !== S.view || document.hidden) {
+      if (msg.ch !== S.view) S.dmNaoLidas.add(msg.ch);
+      blip('msg');
+      const a = autorDe(msg);
+      if (PROGRAMA?.aviso || document.hidden || !document.hasFocus()) {
+        avisar('mencao', { nome: a.name, cor: a.color, texto: `mensagem privada: ${textoComNomes(msg.text).replace(/\s+/g, ' ').slice(0, 100)}`, dm: msg.ch });
+      }
+    } else marcarDmVista(msg.ch);
+    if (S.modo === 'dm') renderSidebar(); else renderRailDm();
+  }
+
   // ----- Avisos: alguém entrou na sua sala, alguém te mencionou -----
   // No programa (1.4.4+): um cartão no canto da tela, por cima do jogo. No navegador: notificação
   // do sistema, se a pessoa deixou. Só quando você não está olhando para o Caras E Telas.
@@ -1257,7 +1379,8 @@
       const n = new Notification(d.nome, { body: d.texto, tag: `${tipo}-${d.nome}`, silent: true });
       n.onclick = () => {
         window.focus();
-        if (d.ch && chan(d.ch)) selecionarCanal(d.ch);
+        if (d.dm) abrirDm(d.dm);
+        else if (d.ch && chan(d.ch)) selecionarCanal(d.ch);
         n.close();
       };
     } catch { /* alguns navegadores só deixam pelo service worker */ }
@@ -1276,7 +1399,7 @@
     else onde = 'Para receber notificações do navegador, clique em "Permitir notificações".';
     return `<div class="pf-secao" id="pfAvisos"><b>Avisos</b>
       ${marca('avEntrada', AVISOS.entrada, 'Quando alguém entra na sala em que eu estou')}
-      ${marca('avMencao', AVISOS.mencao, 'Quando me mencionam ou respondem')}
+      ${marca('avMencao', AVISOS.mencao, 'Quando me mencionam, respondem ou mandam mensagem privada')}
       ${marca('avNaoPerturbe', AVISOS.naoPerturbe, 'Não perturbe (nenhum aviso)')}
       <p class="muted small">${onde}</p>
       <div class="se-botoes">${nav && permissao === 'default' ? '<button type="button" class="btn sm primary" id="avPermitir">Permitir notificações</button>' : ''}
@@ -1321,8 +1444,9 @@
     const r = $('#buscaBtn').getBoundingClientRect();
     p.style.top = `${Math.round(r.bottom + 6)}px`;
     p.style.right = `${Math.max(8, Math.round(innerWidth - r.right))}px`;
-    $('#buscaOnde option[value=aqui]').disabled = chan(S.view)?.type !== 'text';
-    if ($('#buscaOnde').value === 'aqui' && chan(S.view)?.type !== 'text') $('#buscaOnde').value = '';
+    const soTexto = chan(S.view)?.type === 'text' && !chan(S.view)?.dm;
+    $('#buscaOnde option[value=aqui]').disabled = !soTexto;
+    if ($('#buscaOnde').value === 'aqui' && !soTexto) $('#buscaOnde').value = '';
     $('#buscaInput').focus();
     $('#buscaInput').select();
   }
@@ -1395,7 +1519,7 @@
   function atualizarBotaoFixadas() {
     const b = $('#fixadasBtn');
     const n = (S.fixadas?.[S.view] || []).length;
-    b.hidden = chan(S.view)?.type !== 'text';
+    b.hidden = chan(S.view)?.type !== 'text' || !!chan(S.view)?.dm;
     b.innerHTML = `${icon('pin')}${n ? `<span class="fx-n">${n}</span>` : ''}`;
     b.title = n ? `Mensagens fixadas (${n})` : 'Mensagens fixadas';
     b.setAttribute('aria-label', b.title);
@@ -1592,6 +1716,13 @@
     rail.textContent = (initial(palavras[0]) + (palavras.length > 1 ? initial(palavras[palavras.length - 1]) : '')).toUpperCase();
     rail.title = S.serverName;
 
+    renderRailDm();
+    if (S.modo === 'dm') {
+      $('#channels').innerHTML = listaDeDms();
+      $('#adminBtn').hidden = !S.isAdmin;
+      $('#lockBadge').hidden = !S.locked;
+      return;
+    }
     const cat = (tipo, nome) => `<div class="category ${S.collapsed[tipo] ? 'collapsed' : ''}">
       <span class="cat-name" data-collapse="${tipo}">${icon('chevron')}${nome}</span>
       ${S.isAdmin ? `<button class="icon-btn" data-add="${tipo}" title="Criar ${tipo === 'sala' ? 'sala' : 'canal'}">${icon('plus')}</button>` : ''}</div>`;
@@ -1626,7 +1757,7 @@
     const c = chan(S.view);
     if (!c) return;
     const sala = c.type === 'sala';
-    $('#headerIcon').innerHTML = icon(sala ? 'screen' : 'hash');
+    $('#headerIcon').innerHTML = icon(sala ? 'screen' : c.dm ? 'chat' : 'hash');
     $('#headerTitle').textContent = c.name;
     if (sala) {
       const membros = S.users.filter((u) => u.sala === c.id);
@@ -1635,7 +1766,7 @@
         ? `${plural(membros.length, 'pessoa', 'pessoas')} na sala${vivos ? ` · ${vivos} ao vivo` : ''}`
         : 'Sala vazia';
     } else {
-      $('#headerSub').textContent = '';
+      $('#headerSub').textContent = c.dm ? 'Mensagem privada' : '';
     }
     $('#toggleChatBtn').hidden = !sala;
     $('#toggleChatBtn').classList.toggle('active', S.showSalaChat);
@@ -1643,6 +1774,7 @@
     $('#toggleMembersBtn').classList.toggle('active', S.showMembers);
     if (S.fixadasDe !== S.view) { S.fixadasDe = S.view; $('#fixadasPanel').hidden = true; }
     $('#roletaBtn').hidden = !chan(S.view)?.roleta;
+    $('#enqueteBtn').hidden = !!chan(S.view)?.dm;
     atualizarBotaoFixadas();
 
     const body = $('.main-body');
@@ -1766,7 +1898,10 @@
     else {
       const itens = [];
       if (eu) itens.push(item('perfil', 'Mudar meu nome ou cor'));
-      else itens.push(item('mencionar', 'Mencionar no chat'));
+      else {
+        if (u?.pid || MM.pid) itens.push(item('dm', 'Mandar mensagem privada'));
+        itens.push(item('mencionar', 'Mencionar no chat'));
+      }
       if (u && !eu && S.sala && u.sala === S.sala) itens.push(item('volume', 'Volume da voz e dos sons'));
       if (S.isAdmin && !eu) {
         const silenciado = u ? u.silenciado : MM.info?.silenciado > Date.now();
@@ -1846,6 +1981,7 @@
     if (act === 'voltar') { MM.form = null; desenharMenuMembro(); MM.el.querySelector('button')?.focus(); return; }
     if (act === 'fechar') return fecharMenuMembro(true);
     if (act === 'mencionar') { fecharMenuMembro(); return mencionarNoChat(nome); }
+    if (act === 'dm') { const pid = MM.pid || pessoaDoMenu().u?.pid; fecharMenuMembro(); return pid && abrirDm(idDaDm(pid), pid); }
     if (act === 'perfil') { fecharMenuMembro(); return $('#meInfo').click(); }
     if (act === 'volume') {
       const row = $(`#members [data-chave="${CSS.escape(MM.chave)}"]`);
@@ -5808,12 +5944,14 @@
   function selecionarCanal(id) {
     const c = chan(id);
     if (!c) return;
+    if (!c.dm) { S.modo = 'servidor'; S.ultimoCanal = id; }
     S.view = id;
     S.unread.delete(id);
     S.mencoes.delete(id);
     if (S.resposta && S.resposta.ch !== id) cancelarResposta();
     S.editando = null;
-    salvar({ view: id });
+    if (!c.dm) salvar({ view: id });
+    else { S.dmNaoLidas.delete(id); marcarDmVista(id); }
     $('#sidebar').classList.remove('open');
     if (c.type === 'sala' && S.sala !== id) entrarNaSala(id);
     renderTudo();
@@ -5842,6 +5980,7 @@
     $('#vpLeave').innerHTML = icon('logout');
     $('#sendBtn').innerHTML = icon('send');
     $('#enqueteBtn').innerHTML = icon('enquete');
+    renderRailDm();
     $('#roletaBtn').innerHTML = icon('roleta');
     $('#gifBtn').innerHTML = '<span class="gf-txt">GIF</span>';
     $('#buscaBtn').innerHTML = icon('lupa');
@@ -5965,9 +6104,14 @@
         S.collapsed[col.dataset.collapse] = !S.collapsed[col.dataset.collapse];
         return renderSidebar();
       }
+      if (e.target.closest('[data-nova-dm]')) return novaDm();
+      const dm = e.target.closest('[data-dm]');
+      if (dm) return abrirDm(dm.dataset.dm);
       const ch = e.target.closest('[data-ch]');
       if (ch) selecionarCanal(ch.dataset.ch);
     });
+    $('#railDm').addEventListener('click', () => mostrarDms());
+    $('#railServer').addEventListener('click', () => voltarAoServidor());
 
     $('#shareBtn').addEventListener('click', () => (S.live ? pararTransmissao() : compartilharTela()));
     $('#vpShare').addEventListener('click', () => (S.live ? pararTransmissao() : compartilharTela()));
@@ -6030,7 +6174,7 @@
   }
 
   // ================= Moderação: eventos recebidos =================
-  const nomeCanal = (id) => { const c = chan(id); return c ? (c.type === 'sala' ? c.name : '#' + c.name) : 'o canal'; };
+  const nomeCanal = (id) => { const c = chan(id); return c ? (c.type === 'sala' || c.dm ? c.name : '#' + c.name) : 'o canal'; };
 
   function rerenderMantendoScroll() {
     const box = $('#messages');

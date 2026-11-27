@@ -1510,3 +1510,19 @@ body.leve :is(.sidebar, .main) { background: linear-gradient(180deg, var(--pop-1
 .gf-item:hover, .gf-item:focus-visible { outline: 3px solid var(--foco); outline-offset: -3px; }
 .gf-rodape { text-align: right; font-size: 11px; color: var(--suave); }
 .gf-rodape b { color: var(--texto-forte); letter-spacing: .03em; }
+/* mensagens privadas */
+.rail-dm { position: relative; width: 46px; height: 46px; margin: 6px auto 0; display: grid; place-items: center; border: 0; border-radius: 16px; cursor: pointer;
+  color: var(--p2); background: linear-gradient(180deg, var(--sup-1), var(--sup-2)); box-shadow: 0 2px 6px -3px var(--sombra-cor); transition: border-radius .15s; }
+.rail-dm .i { width: 22px; height: 22px; }
+.rail-dm:hover, .rail-dm.active { border-radius: 12px; color: #fff; background: linear-gradient(180deg, var(--p1, #4fb6f0), var(--p2, #1e88e5)); }
+.rail-dm:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+.rail-badge { position: absolute; right: -3px; bottom: -3px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; font-size: 11px; font-weight: 800; line-height: 18px; text-align: center; color: #fff; background: #e5484d; box-shadow: 0 0 0 2px var(--rail-fundo, #fff); }
+.rail-server { cursor: pointer; }
+.rail-server.inativo { opacity: .7; filter: saturate(.6); }
+.dm-item { gap: 8px; }
+.dm-av { position: relative; flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #0b2a43; }
+.dm-on { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%; background: #3bc46c; box-shadow: 0 0 0 2px var(--sup-1, #fff); }
+.dm-vazio { padding: 6px 14px; }
+.dm-escolher { display: grid; gap: 4px; max-height: 50vh; overflow-y: auto; }
+.dm-pessoa { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--texto-forte); font: inherit; text-align: left; cursor: pointer; }
+.dm-pessoa:hover, .dm-pessoa:focus-visible { background: var(--hover); outline: none; }
