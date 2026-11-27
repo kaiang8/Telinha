@@ -787,7 +787,7 @@
   const TODOS = /(^|[^\p{L}\p{N}_])@(everyone|todos|here|galera)(?![\p{L}\p{N}_])/iu;
   function mencionaMe(m) {
     if (!m) return false;
-    if (m.sistema === 'roleta' || m.sistema === 'x1') return false;
+    if (m.sistema === 'roleta' || m.sistema === 'x1' || m.sistema === 'jogomes') return false;
     if (m.sistema === 'boasvindas') return !!S.myPid && m.alvo === S.myPid;
     if (m.uid === S.myId || (m.pid && m.pid === S.myPid)) return false; // as minhas não
     const t = String(m.text || '');
@@ -905,6 +905,7 @@
     const attrs = `data-id="${esc(m.id)}"${Number.isInteger(m.pos) ? ` data-pos="${m.pos}"` : ''}${fixada ? ` title="Fixada por ${esc(fixada.por)}"` : ''}`;
     if (m.sistema === 'roleta' && m.roleta) return h + roletaHtml(m, cls, attrs, acoes);
     if (m.sistema === 'x1' && m.x1) return h + x1Html(m, cls, attrs, acoes);
+    if (m.sistema === 'jogomes' && m.jogomes) return h + jogoDoMesHtml(m, cls, attrs, acoes, d);
     if (m.sistema === 'boasvindas') {
       const p = S.perfis?.[m.alvo];
       const nome = `<span class="bv-nome" style="--cor:${esc(p?.cor || '#3db3f0')}">${esc(p?.nome || 'alguém')}</span>`;
@@ -924,6 +925,26 @@
       return h + `<div class="msg${cls}${fixada ? ' fixada' : ''}" ${attrs}><span class="m-stamp">${hhmm(d)}</span>${editada ? `<div class="m-editada-linha">${editada}</div>` : ''}${texto}${acoes}</div>`;
     }
     return h + `<div class="msg head${cls}${fixada ? ' fixada' : ''}${m.resp ? ' com-resp' : ''}" ${attrs}>${m.resp ? citacaoHtml(m) : ''}${avatar(autor)}<div class="m-head"><span class="m-name" style="color:${esc(autor.color)}">${esc(autor.name)}</span>${coroa(m)}<span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span>${editada}</div>${texto}${acoes}</div>`;
+  }
+
+  // ---------- Jogo mais jogado do mês (anúncio no #geral, na virada do mês) ----------
+  function tempoDeJogo(min) {
+    if (min < 60) return `${min} min`;
+    const h = Math.round(min / 6) / 10;
+    return `${h.toLocaleString('pt-BR')} ${h === 1 ? 'hora' : 'horas'}`;
+  }
+  function jogoDoMesHtml(m, cls, attrs, acoes, d) {
+    const [ano, mes] = String(m.jogomes.mes || '').split('-').map(Number);
+    const nomeMes = ano && mes ? new Date(ano, mes - 1, 15).toLocaleString('pt-BR', { month: 'long' }) : 'mês';
+    const top = Array.isArray(m.jogomes.top) ? m.jogomes.top : [];
+    if (!top.length) return '';
+    const [primeiro, ...resto] = top;
+    const podio = resto.length
+      ? `<div class="jm-podio">${resto.map((j, i) => `<span>${i + 2}º ${esc(j.nome)} <small>(${tempoDeJogo(j.min)})</small></span>`).join('')}</div>`
+      : '';
+    return `<div class="msg boas-vindas jogo-mes${cls}" ${attrs}>${STICKERS[m.figura] || STICKERS[0]}
+      <div class="bv-texto"><div class="bv-frase">🏆 O jogo mais jogado de ${esc(nomeMes)} foi <span class="jm-jogo">${esc(primeiro.nome)}</span>! <small class="jm-tempo">(${tempoDeJogo(primeiro.min)} no total)</small></div>
+        ${podio}<span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span></div>${acoes}</div>`;
   }
   // A mensagem respondida, em cima da resposta (clicar leva até ela)
   function citacaoHtml(m) {

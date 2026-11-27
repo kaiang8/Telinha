@@ -1433,6 +1433,62 @@ function limparItensDaRoleta(lista) {
     .slice(0, 20);
 }
 
+// ---------- Jogo mais jogado do mês (só o jogo, nunca quem jogou) ----------
+// Soma os minutos do "jogando agora" (só de quem deixou mostrar). Na virada do mês (horário de
+// Brasília), uma telinha anuncia no #geral os jogos mais jogados. Grava no máximo a cada 30 minutos.
+const FMT_MES_BR = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' });
+const mesNoBrasil = (t = Date.now()) => FMT_MES_BR.format(t).slice(0, 7);
+const JOGOS_MES = guardadoSeparado('jogos-mes', () => ({ mes: mesNoBrasil(), min: {} }));
+const JOGO_MES_MINIMO = 30; // menos que meia hora no mês todo não vale anúncio
+function anunciarJogoDoMes(d) {
+  const top = Object.entries(d.min || {})
+    .filter(([, m]) => m >= JOGO_MES_MINIMO)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([nome, min]) => ({ nome, min }));
+  if (!top.length) return;
+  const c = canal('geral') || data.channels.find((x) => x.type === 'text');
+  if (!c) return;
+  const m = guardarMensagem({
+    id: crypto.randomBytes(8).toString('hex'),
+    ch: c.id,
+    sistema: 'jogomes',
+    jogomes: { mes: d.mes, top },
+    figura: crypto.randomInt(3),
+    name: nomeServidor(),
+    color: '#3db3f0',
+    text: `Jogo mais jogado do mês: ${top[0].nome}`,
+    ts: Date.now(),
+  });
+  broadcast({ type: 'msg', msg: m });
+}
+function contarJogos() {
+  if (!JOGOS_MES.ok) return;
+  const agora = mesNoBrasil();
+  if (JOGOS_MES.dados.mes !== agora) {
+    const antigo = JOGOS_MES.dados;
+    JOGOS_MES.dados = { mes: agora, min: {} };
+    JOGOS_MES.sujo = true;
+    JOGOS_MES.gravar(); // grava já, para não anunciar duas vezes se o servidor reiniciar
+    anunciarJogoDoMes(antigo);
+  }
+  const min = JOGOS_MES.dados.min;
+  const contados = new Set(); // a mesma pessoa conectada duas vezes conta uma vez só
+  for (const u of users.values()) {
+    if (!u.jogo || !u.pid || !u.joined || u.kicked || contados.has(u.pid)) continue;
+    contados.add(u.pid);
+    const nome = u.jogo.nome;
+    const chave = Object.keys(min).find((k) => k.toLowerCase() === nome.toLowerCase()) || nome;
+    min[chave] = (min[chave] || 0) + 1;
+  }
+  if (!contados.size) return;
+  const nomes = Object.keys(min);
+  if (nomes.length > 300) {
+    nomes.sort((a, b) => min[a] - min[b]).slice(0, nomes.length - 300).forEach((k) => delete min[k]);
+  }
+  JOGOS_MES.salvar(30 * 60e3, false);
+}
+
 // ---------- Boas-vindas: quem entra pela primeira vez é recebido no #geral ----------
 function boasVindas(pid) {
   const c = canal('geral') || data.channels.find((x) => x.type === 'text');
@@ -3424,6 +3480,9 @@ async function iniciar() {
   await carregarMensagens();
   await carregarRegistro();
   await TRAFEGO.carregar();
+  await JOGOS_MES.carregar();
+  contarJogos(); // se o servidor estava desligado na virada do mês, anuncia agora
+  setInterval(contarJogos, 60e3);
   await USO_TURN.carregar();
   iniciarTurn();
   await carregarProblemas();
@@ -3457,6 +3516,7 @@ async function desligar() {
     ERROS.terminar(),
     QUALIDADE.terminar(),
     TRAFEGO.terminar(),
+    JOGOS_MES.terminar(),
     USO_TURN.terminar(),
     // mensagens que ainda não foram para o banco
     (async () => {

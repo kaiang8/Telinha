@@ -746,6 +746,11 @@ DICAS
     e ele aparece tampado até alguém clicar. Funciona também com links
     de imagem (a imagem fica borrada). Nos avisos, nas respostas e na
     busca aparece só [spoiler].
+  - Jogo do mês: o servidor soma o tempo do "Jogando agora" de cada jogo
+    (só de quem deixou mostrar). Na virada do mês, uma telinha anuncia
+    no #geral o jogo mais jogado, com o 2º e o 3º. Mostra só os jogos e
+    as horas somadas, nunca quem jogou. Jogo com menos de meia hora no
+    mês não entra.
   - X1 Otário?: no canal #X1 Otário?, clique em "Desafiar alguém" (ou no
     nome da pessoa na lista → "Desafiar para um X1"). Escolha quem
     (precisa estar online), o que está valendo e a sua jogada. A pessoa

@@ -1633,3 +1633,9 @@ img.embed.spoiler-img:not(.visto) { filter: blur(24px); cursor: pointer; clip-pa
 .x1-escolha input:focus-visible + span { outline: 2px solid var(--foco); outline-offset: 2px; }
 .x1-sel { width: 100%; height: 40px; border: 1px solid var(--linha-forte); border-radius: 11px; padding: 0 10px; font: inherit; color: var(--texto-forte); background: linear-gradient(180deg, var(--campo-1), var(--campo-2) 40%); }
 body.leve .x1-sacode { display: none; }
+
+/* Jogo mais jogado do mês */
+.jogo-mes .jm-jogo { font-weight: 800; padding: 0 6px; border-radius: 6px; background: rgba(255, 200, 61, .35); }
+.jogo-mes .jm-tempo { color: var(--suave); font-size: 12px; }
+.jm-podio { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; font-size: 13px; color: var(--suave); }
+.jm-podio small { font-size: 11px; }
