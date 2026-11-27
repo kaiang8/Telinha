@@ -724,6 +724,15 @@ DICAS
     você ouve (0% desliga). Para uma pessoa só, use "Volume da voz e
     dos sons" no nome dela, dentro da sala: vale também para o som de
     entrada dela.
+  - GIFs: o botão "GIF" na caixa de mensagem busca GIFs no GIPHY (o
+    Tenor, do Google, encerrou o serviço em 2026). Para ligar: crie uma
+    conta em developers.giphy.com, clique em "Create an API Key" (tipo
+    API, uso pessoal), copie a chave e, no Render, em Environment, crie
+    a variável GIPHY_CHAVE com ela. A chave grátis aceita 100 buscas por
+    hora; o servidor guarda as buscas repetidas por 15 minutos e avisa
+    se o limite da hora acabar. As imagens passam pelo servidor, então o
+    GIPHY não vê o IP de ninguém. A marca "Powered by GIPHY" no seletor
+    é exigência do GIPHY: não tire.
   - Roleta: no canal #roleta, clique em "Criar roleta" (ou no botão de
     roda, ao lado da caixa de mensagem), dê um nome ao sorteio e escreva
     as opções, uma por linha (de 2 a 20). Cada opção tem a mesma chance.

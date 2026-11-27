@@ -1496,3 +1496,17 @@ body.leve * { -webkit-backdrop-filter: none !important; backdrop-filter: none !i
 body.leve :is(.sidebar, .main) { background: linear-gradient(180deg, var(--pop-1), var(--pop-2)); }
 .ap-leve { margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--linha); }
 .ap-leve p { margin: 4px 0 0; font-size: 13px; color: var(--suave); }
+/* GIFs */
+.gf-btn .gf-txt { font-size: 11px; font-weight: 900; letter-spacing: .02em; border: 2px solid currentColor; border-radius: 6px; padding: 1px 4px; line-height: 1.1; }
+.gf-painel { position: absolute; bottom: calc(100% + 6px); right: 16px; z-index: 30; width: min(380px, calc(100% - 32px)); height: min(420px, 60vh); display: flex; flex-direction: column;
+  background: linear-gradient(180deg, var(--pop-1), var(--pop-2)); border: 1px solid var(--borda-vidro); border-radius: 14px; box-shadow: 0 14px 40px rgba(10, 40, 80, .28); padding: 10px; }
+.gf-topo { display: flex; gap: 6px; align-items: center; }
+.gf-topo input { flex: 1; min-width: 0; height: 36px; border: 1px solid var(--linha-forte); border-radius: 9px; padding: 0 10px; font: inherit; color: var(--texto-forte);
+  background: linear-gradient(180deg, var(--campo-1), var(--campo-2) 40%); outline: none; }
+.gf-topo input:focus { border-color: var(--foco); box-shadow: 0 0 0 3px var(--p-anel); }
+.gf-grade { flex: 1; overflow-y: auto; margin: 8px 0 4px; columns: 3 100px; column-gap: 6px; }
+.gf-item { display: block; width: 100%; padding: 0; margin: 0 0 6px; border: 0; border-radius: 8px; overflow: hidden; background: rgba(120, 160, 200, .18); cursor: pointer; break-inside: avoid; }
+.gf-item img { display: block; width: 100%; height: auto; }
+.gf-item:hover, .gf-item:focus-visible { outline: 3px solid var(--foco); outline-offset: -3px; }
+.gf-rodape { text-align: right; font-size: 11px; color: var(--suave); }
+.gf-rodape b { color: var(--texto-forte); letter-spacing: .03em; }

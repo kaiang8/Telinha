@@ -2104,6 +2104,45 @@ async function proxyImagem(req, res, url) {
   }
 }
 
+// ---------- GIFs (GIPHY) ----------
+// A chave fica na variável GIPHY_CHAVE do Render (nunca vai para a página). A chave grátis do GIPHY
+// aceita 100 buscas por hora: as buscas repetidas ficam guardadas 15 min e o servidor para antes do
+// limite. As imagens vêm pelo /api/img, como as do chat (o GIPHY não vê o IP de ninguém).
+const GIPHY_CHAVE = (process.env.GIPHY_CHAVE || '').trim();
+const GIPHY_URL = (process.env.GIPHY_URL || 'https://api.giphy.com').replace(/\/+$/, '');
+const GIFS = { cache: new Map(), hora: 0, usadas: 0 };
+const urlDoGiphy = (u) => { try { const x = new URL(u); return x.protocol === 'https:' && /(^|\.)giphy\.com$/i.test(x.hostname) ? x.href : ''; } catch { return ''; } };
+async function buscarGifs(q, pagina) {
+  const chave = `${q.toLowerCase()}|${pagina}`;
+  const c = GIFS.cache.get(chave);
+  if (c && Date.now() - c.em < 15 * 60e3) return c.lista;
+  const agora = Date.now();
+  if (agora - GIFS.hora > 3600e3) { GIFS.hora = agora; GIFS.usadas = 0; }
+  if (GIFS.usadas >= 95) {
+    const e = new Error(`O limite de buscas de GIF desta hora acabou. Tente de novo em ${Math.ceil((GIFS.hora + 3600e3 - agora) / 60e3)} min.`);
+    e.status = 429; throw e;
+  }
+  GIFS.usadas++;
+  const params = new URLSearchParams({ api_key: GIPHY_CHAVE, limit: '24', offset: String(pagina * 24), rating: 'pg-13', bundle: 'messaging_non_clips' });
+  if (q) { params.set('q', q); params.set('lang', 'pt'); }
+  const r = await fetch(`${GIPHY_URL}/v1/gifs/${q ? 'search' : 'trending'}?${params}`, { signal: AbortSignal.timeout(8000) });
+  if (!r.ok) {
+    const e = new Error(r.status === 401 || r.status === 403 ? 'A chave do GIPHY foi recusada. Confira a variável GIPHY_CHAVE no Render.' : r.status === 429 ? 'O GIPHY pediu uma pausa. Tente daqui a pouco.' : 'O GIPHY não respondeu. Tente de novo.');
+    e.status = 502; throw e;
+  }
+  const j = await r.json();
+  const lista = (Array.isArray(j.data) ? j.data : []).map((g) => {
+    const im = g.images || {};
+    const previa = urlDoGiphy(im.fixed_width_small?.webp || im.fixed_width_small?.url || im.fixed_width?.url || '');
+    const url = urlDoGiphy(im.fixed_height?.url || im.downsized?.url || '');
+    return previa && url ? { id: String(g.id || '').slice(0, 40), titulo: String(g.title || '').slice(0, 80), previa, url,
+      w: Number(im.fixed_width_small?.width) || 100, h: Number(im.fixed_width_small?.height) || 100 } : null;
+  }).filter(Boolean);
+  GIFS.cache.set(chave, { em: Date.now(), lista });
+  if (GIFS.cache.size > 300) GIFS.cache.delete(GIFS.cache.keys().next().value);
+  return lista;
+}
+
 // ---------- Backup (só admin): tudo num arquivo, e restaurar a partir dele ----------
 // Vai junto: canais, perfis, configurações, banimentos, todas as mensagens (com as "lápides" das
 // apagadas, para as posições não mudarem) e os sons de entrada. O arquivo tem os resumos das senhas
@@ -2449,6 +2488,18 @@ async function api(req, res, url) {
       });
       broadcast({ type: 'msg', msg: m });
       return json(res, 200, { ok: true });
+    }
+
+    case 'gifs': {
+      if (!GIPHY_CHAVE) return json(res, 503, { error: 'Os GIFs ainda não foram ligados: falta a variável GIPHY_CHAVE no Render (veja o LEIA-ME).' });
+      if (limiteDe(u, 'limGif', 30, 60e3)) return json(res, 429, { error: 'Calma, espere um pouco.' });
+      const q = String(body.q || '').replace(/\s+/g, ' ').trim().slice(0, 50);
+      const pagina = Math.max(0, Math.min(4, Number(body.pagina) || 0));
+      try {
+        return json(res, 200, { gifs: await buscarGifs(q, pagina) });
+      } catch (e) {
+        return json(res, e.status || 502, { error: e.message || 'Não consegui buscar GIFs agora.' });
+      }
     }
 
     case 'roleta': {

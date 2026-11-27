@@ -830,6 +830,8 @@
     s = s.replace(/\u0001(\d+)\u0001/g, (_, i) => mencoes[i]);
     // a imagem vem pelo servidor: o site de origem não vê o IP de quem está no chat
     const bruto = (u) => u.replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[e]);
+    // mensagem que é só o link de uma imagem (um GIF, por exemplo): mostra só a imagem
+    if (imgs.length === 1 && s.trim() === `<a href="${imgs[0]}" target="_blank" rel="noopener noreferrer">${imgs[0]}</a>`) s = '';
     return s + imgs.map((u) => `<img class="embed" src="/api/img?u=${encodeURIComponent(bruto(u))}&amp;t=${encodeURIComponent(S.token || '')}" alt="" loading="lazy" referrerpolicy="no-referrer">`).join('');
   }
 
@@ -1068,6 +1070,54 @@
     el.classList.add('piscando');
     setTimeout(() => el.classList.remove('piscando'), 2400);
   }
+
+  // ----- GIFs (GIPHY): busca pelo servidor; clicar manda o GIF no chat -----
+  const GF = { timer: null, pedido: 0, q: null };
+  function abrirGifs(abrir = $('#gifPanel').hidden) {
+    const p = $('#gifPanel');
+    p.hidden = !abrir;
+    $('#gifBtn').classList.toggle('active', abrir);
+    if (!abrir) return;
+    if (!p.innerHTML) {
+      p.innerHTML = `<div class="gf-topo"><input type="search" id="gifBusca" maxlength="50" placeholder="Buscar GIFs" aria-label="Buscar GIFs" autocomplete="off">
+          <button type="button" class="icon-btn small" data-gf-fechar title="Fechar (Esc)" aria-label="Fechar">${icon('close')}</button></div>
+        <div class="gf-grade" id="gifGrade" aria-live="polite"></div>
+        <div class="gf-rodape">Powered by <b>GIPHY</b></div>`;
+      $('#gifBusca').addEventListener('input', () => { clearTimeout(GF.timer); GF.timer = setTimeout(() => buscarGifs(), 450); });
+      $('#gifBusca').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(GF.timer); buscarGifs(); } });
+    }
+    $('#gifBusca').focus();
+    if (GF.q === null) buscarGifs();
+  }
+  async function buscarGifs() {
+    const q = $('#gifBusca').value.trim();
+    if (q === GF.q) return;
+    GF.q = q;
+    const n = ++GF.pedido;
+    const grade = $('#gifGrade');
+    grade.innerHTML = '<p class="muted fx-vazio">Buscando…</p>';
+    try {
+      const r = await api('gifs', { q });
+      if (n !== GF.pedido) return;
+      grade.innerHTML = r.gifs.length ? r.gifs.map((g) => `<button type="button" class="gf-item" data-gif="${esc(g.url)}" title="${esc(g.titulo || 'GIF')}" aria-label="Mandar o GIF ${esc(g.titulo || '')}">
+          <img src="/api/img?u=${encodeURIComponent(g.previa)}&amp;t=${encodeURIComponent(S.token || '')}" alt="" loading="lazy" referrerpolicy="no-referrer" style="aspect-ratio:${g.w} / ${g.h}"></button>`).join('')
+        : '<p class="muted fx-vazio">Nenhum GIF com essas palavras.</p>';
+    } catch (e) {
+      if (n === GF.pedido) { grade.innerHTML = `<p class="muted fx-vazio">${esc(e.message)}</p>`; GF.q = null; }
+    }
+  }
+  $('#gifBtn').addEventListener('click', () => abrirGifs());
+  $('#gifPanel').addEventListener('click', async (e) => {
+    if (e.target.closest('[data-gf-fechar]')) return abrirGifs(false);
+    const b = e.target.closest('[data-gif]');
+    if (!b || !S.view) return;
+    abrirGifs(false);
+    try { await api('msg', { channel: S.view, text: b.dataset.gif }); } catch (err) { toast(err.message); }
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#gifPanel').hidden) abrirGifs(false); });
+  document.addEventListener('mousedown', (e) => {
+    if (!$('#gifPanel').hidden && !e.target.closest('#gifPanel, #gifBtn')) abrirGifs(false);
+  });
 
   // ----- Roleta: o servidor sorteia; a roda gira na tela de todo mundo e uma telinha anuncia -----
   const RL_DUR = 4600;
@@ -5793,6 +5843,7 @@
     $('#sendBtn').innerHTML = icon('send');
     $('#enqueteBtn').innerHTML = icon('enquete');
     $('#roletaBtn').innerHTML = icon('roleta');
+    $('#gifBtn').innerHTML = '<span class="gf-txt">GIF</span>';
     $('#buscaBtn').innerHTML = icon('lupa');
 
     $('#sendVol').addEventListener('input', (e) => {
