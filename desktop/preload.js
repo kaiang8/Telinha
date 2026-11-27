@@ -59,6 +59,8 @@ contextBridge.exposeInMainWorld('carasETelas', {
     nome: String(d.nome ?? '').slice(0, 32),
   } : null),
   tintaEstado: () => ipcRenderer.invoke('tinta-estado'),
+  // a partir da 1.4.5: a câmera é liberada para o site (antes, só o microfone)
+  camera: true,
   // a partir da 1.4.4: aviso por cima do jogo (alguém entrou na sua sala, alguém te mencionou)
   aviso: (d) => ipcRenderer.invoke('aviso', d && typeof d === 'object' ? {
     tipo: String(d.tipo ?? '').slice(0, 12),

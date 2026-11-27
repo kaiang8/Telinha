@@ -38,6 +38,8 @@
     retry: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
     shield: '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>',
     crown: '<path d="M3.5 8.5 8 12l4-6.5 4 6.5 4.5-3.5-1.8 10H5.3z" fill="currentColor" stroke-width="1.5"/>',
+    camera: '<rect x="2.5" y="6.5" width="13" height="11" rx="2.5"/><path d="m15.5 10.5 6-3.5v10l-6-3.5z"/>',
+    cameraOff: '<rect x="2.5" y="6.5" width="13" height="11" rx="2.5"/><path d="m15.5 10.5 6-3.5v10l-6-3.5zM3 3l18 18"/>',
     lupa: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>',
     enquete: '<path d="M5 20v-8M12 20V4M19 20v-12"/><path d="M3 20.5h18"/>',
     pin: '<path d="M9 3.5h6l-.8 6.2 3.3 3.3H6.5l3.3-3.3z"/><path d="M12 13v7.5"/>',
@@ -1786,7 +1788,12 @@
     const vp = $('#voicePanel');
     vp.hidden = false;
     vp.classList.toggle('fora', !S.sala);
-    for (const sel of ['#vpShare', '#vpLeave']) $(sel).hidden = !S.sala;
+    for (const sel of ['#vpShare', '#vpLeave', '#vpCam']) $(sel).hidden = !S.sala;
+    const cb = $('#vpCam');
+    cb.innerHTML = icon(CAM.faixa ? 'cameraOff' : 'camera');
+    cb.title = CAM.faixa ? 'Desligar câmera' : 'Ligar câmera';
+    cb.setAttribute('aria-label', cb.title);
+    cb.classList.toggle('active', !!CAM.faixa);
     $('#vpInfo').title = S.sala ? 'Voltar para a sala' : '';
     const st = $('#vpStatus');
     if (!S.sala) {
@@ -1823,6 +1830,7 @@
     $('#stagePeople').innerHTML = pessoas.map((u) => `<div class="person-chip"${u.id !== S.myId ? ` data-pessoa="${esc(u.id)}" title="Volume da voz de ${esc(u.name)}"` : ''}>${avatarVoz(u)}<span>${esc(u.name)}${u.id === S.myId ? ' (você)' : ''}</span>${coroa(u)}${vozIcones(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('');
 
     const vivos = naSala ? pessoas.filter((u) => u.live) : [];
+    renderCameras();
     sincronizarTiles(vivos.map((u) => u.id));
     // Com vídeo na tela, os painéis param de desfocar o fundo: a placa de vídeo refazia o
     // desfoque a cada quadro e o vídeo (e a captura de quem transmite) caía pela metade
@@ -2304,6 +2312,7 @@
 
   function sairDaSalaLocal(motivo = 'sala') {
     if (S.live) pararTransmissao(true, motivo);
+    desligarCamera(false);
     for (const sid of [...S.inc.keys()]) fecharInc(sid);
     S.tries.clear();
     S.sala = null;
@@ -3552,7 +3561,7 @@
     aoMedir: null,
   };
   const silenciado = () => S.mutedUntil > Date.now();
-  function estadoVoz() { return { mudo: VOZ.mudo || silenciado(), surdo: VOZ.surdo, efeitos: true }; }
+  function estadoVoz() { return { mudo: VOZ.mudo || silenciado(), surdo: VOZ.surdo, efeitos: true, camOk: true, cam: !!CAM.faixa }; }
   function guardarVoz() { salvar({ voz: VOZ.cfg, vozMudo: VOZ.mudo, vozSurdo: VOZ.surdo }); }
   const transmitindoVoz = () => !!S.sala && !VOZ.mudo && !VOZ.surdo && !silenciado();
 
@@ -3785,6 +3794,96 @@
     atualizarMicrofone();
   }
 
+  // ----- câmera: vai pela conexão de voz, numa faixa de vídeo -----
+  // Liga e desliga sem refazer a conexão (a faixa já existe; só troca o que vai nela). Pequena e
+  // leve: até 640x360, 24 quadros e ~450 kbps para cada pessoa da sala, para não pesar na
+  // internet de ninguém nem no TURN.
+  const CAM = { stream: null, faixa: null, ligando: false };
+  const CAM_KBPS = 450;
+  const trCamera = (pc) => pc.getTransceivers().find((t) => t.receiver?.track?.kind === 'video');
+  function limitarCamera(sender) {
+    try {
+      const p = sender.getParameters();
+      if (!p.encodings?.length) return;
+      p.encodings[0].maxBitrate = CAM_KBPS * 1000;
+      p.encodings[0].maxFramerate = 24;
+      sender.setParameters(p).catch(() => {});
+    } catch { /* tenta de novo quando conectar */ }
+  }
+  async function ligarFaixaDeCamera(tr) {
+    if (!tr) return;
+    tr.direction = 'sendrecv';
+    await tr.sender.replaceTrack(CAM.faixa || null).catch(() => {});
+    limitarCamera(tr.sender);
+  }
+  async function ligarCamera() {
+    if (CAM.faixa || CAM.ligando || !S.sala) return;
+    CAM.ligando = true;
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 24, max: 24 } }, audio: false });
+      if (!S.sala) { s.getTracks().forEach((t) => t.stop()); return; }
+      CAM.stream = s;
+      CAM.faixa = s.getVideoTracks()[0];
+      CAM.faixa.contentHint = 'motion';
+      CAM.faixa.onended = () => desligarCamera(); // a câmera foi desconectada
+      for (const v of VOZ.pcs.values()) {
+        const tr = trCamera(v.pc);
+        if (tr) { await tr.sender.replaceTrack(CAM.faixa).catch(() => {}); limitarCamera(tr.sender); }
+      }
+      api('state', { sala: S.sala, live: S.live, ...estadoVoz() }).catch(() => {});
+    } catch (e) {
+      const n = e?.name;
+      toast(n === 'NotAllowedError'
+        ? (PROGRAMA && !PROGRAMA.camera ? 'Feche e abra o programa para atualizar: a versão nova libera a câmera.' : 'A câmera foi bloqueada. Libere no cadeado ao lado do endereço.')
+        : n === 'NotFoundError' || n === 'OverconstrainedError' ? 'Nenhuma câmera encontrada.'
+          : n === 'NotReadableError' ? 'A câmera está sendo usada por outro programa.' : 'Não consegui ligar a câmera.', 7000);
+    } finally {
+      CAM.ligando = false;
+      renderPaineis();
+      renderCameras();
+    }
+  }
+  function desligarCamera(avisarServidor = true) {
+    if (!CAM.faixa) return;
+    CAM.stream.getTracks().forEach((t) => t.stop());
+    CAM.stream = null;
+    CAM.faixa = null;
+    for (const v of VOZ.pcs.values()) trCamera(v.pc)?.sender.replaceTrack(null).catch(() => {});
+    if (avisarServidor && S.sala) api('state', { sala: S.sala, live: S.live, ...estadoVoz() }).catch(() => {});
+    renderPaineis();
+    renderCameras();
+  }
+  // As câmeras de quem está na sua sala, numa faixa em cima do palco (clique aumenta)
+  const CAMV = new Map(); // id -> elemento
+  function renderCameras() {
+    const faixa = $('#camFaixa');
+    const quem = S.sala && S.view === S.sala
+      ? S.users.filter((u) => u.sala === S.sala && (u.id === S.myId ? !!CAM.faixa : u.cam && VOZ.pcs.get(u.id)?.cam))
+      : [];
+    const ids = new Set(quem.map((u) => u.id));
+    for (const [id, el] of CAMV) if (!ids.has(id)) { el.querySelector('video').srcObject = null; el.remove(); CAMV.delete(id); }
+    for (const u of quem) {
+      let el = CAMV.get(u.id);
+      if (!el) {
+        el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'cam-tile';
+        el.innerHTML = '<video autoplay muted playsinline></video><span class="cam-nome"></span>';
+        el.addEventListener('click', () => el.classList.toggle('grande'));
+        CAMV.set(u.id, el);
+      }
+      const eu = u.id === S.myId;
+      el.classList.toggle('eu', eu);
+      el.querySelector('.cam-nome').textContent = eu ? `${u.name} (você)` : u.name;
+      el.title = 'Clique para aumentar ou diminuir';
+      const video = el.querySelector('video');
+      const fonte = eu ? CAM.stream : VOZ.pcs.get(u.id)?.cam;
+      if (video.srcObject !== fonte) { video.srcObject = fonte; video.play().catch(() => {}); }
+      faixa.appendChild(el); // mantém a ordem da lista
+    }
+    faixa.hidden = quem.length === 0;
+  }
+
   // ----- sons (soundboard) pela chamada -----
   // Vão numa segunda faixa de áudio da conexão de voz, separada da voz: assim cada pessoa
   // controla o volume (ou silencia) os sons de cada um sem mexer na voz dele.
@@ -3815,6 +3914,10 @@
     };
     pc.ontrack = (e) => {
       const stream = e.streams[0] || new MediaStream([e.track]);
+      if (e.track.kind === 'video') { // a câmera
+        v.cam = stream;
+        return renderCameras();
+      }
       // a primeira faixa é a voz; a segunda, os sons
       if (pc.getTransceivers().indexOf(e.transceiver) === 1) ouvirEfeitos(id, v, stream);
       else ouvirVoz(id, v, stream);
@@ -3823,8 +3926,12 @@
       if (VOZ.pcs.get(id) !== v) return;
       clearTimeout(v.timer);
       const st = pc.connectionState;
-      if (st === 'connected') VOZ.tentativas.set(id, 0);
-      else if (st === 'failed') reconectarVoz(id);
+      if (st === 'connected') {
+        VOZ.tentativas.set(id, 0);
+        const tc = trCamera(pc);
+        if (tc) limitarCamera(tc.sender); // só dá para limitar depois de negociar
+        renderCameras();
+      } else if (st === 'failed') reconectarVoz(id);
       else if (st === 'disconnected') {
         v.timer = setTimeout(() => { if (VOZ.pcs.get(id) === v && pc.connectionState === 'disconnected') reconectarVoz(id); }, 7000);
       }
@@ -3836,6 +3943,8 @@
     const v = VOZ.pcs.get(id);
     if (!v) return;
     VOZ.pcs.delete(id);
+    v.cam = null;
+    setTimeout(renderCameras, 0);
     clearTimeout(v.timer);
     try { v.pc.close(); } catch { /* ok */ }
     if (v.audio) {
@@ -3864,6 +3973,8 @@
     if (VOZ.mic) await tr.sender.replaceTrack(VOZ.mic.faixa).catch(() => {});
     // a faixa dos sons só vai para quem sabe recebê-la (página antiga trocaria a voz por ela)
     if (userById(id)?.efeitos) await ligarFaixaDeEfeitos(v.pc.addTransceiver('audio', { direction: 'sendrecv' }));
+    // a faixa da câmera também só vai para quem sabe recebê-la
+    if (userById(id)?.camOk) await ligarFaixaDeCamera(v.pc.addTransceiver('video', { direction: 'sendrecv' }));
     const oferta = await v.pc.createOffer();
     if (VOZ.pcs.get(id) !== v) return;
     await v.pc.setLocalDescription(oferta);
@@ -3880,7 +3991,9 @@
       tr.direction = 'sendrecv';
       if (VOZ.mic) await tr.sender.replaceTrack(VOZ.mic.faixa).catch(() => {});
     }
-    await ligarFaixaDeEfeitos(v.pc.getTransceivers()[1]); // a faixa dos sons, se quem ofereceu mandou
+    const t1 = v.pc.getTransceivers()[1];
+    if (t1?.receiver.track.kind === 'audio') await ligarFaixaDeEfeitos(t1); // a faixa dos sons, se quem ofereceu mandou
+    await ligarFaixaDeCamera(trCamera(v.pc)); // e a da câmera
     const resposta = await v.pc.createAnswer();
     if (VOZ.pcs.get(id) !== v) return;
     await v.pc.setLocalDescription(resposta);
@@ -5691,6 +5804,7 @@
 
     $('#shareBtn').addEventListener('click', () => (S.live ? pararTransmissao() : compartilharTela()));
     $('#vpShare').addEventListener('click', () => (S.live ? pararTransmissao() : compartilharTela()));
+    $('#vpCam').addEventListener('click', () => (CAM.faixa ? desligarCamera() : ligarCamera()));
     $('#swapBtn').addEventListener('click', trocarTela);
     $('#vpSwap').innerHTML = icon('swap');
     $('#vpSwap').addEventListener('click', trocarTela);

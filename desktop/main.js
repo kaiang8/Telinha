@@ -114,16 +114,16 @@ function configurarSessaoDoSite(ses) {
   ses.setPermissionRequestHandler((wc, permissao, responder, detalhes) => {
     const url = detalhes?.requestingUrl || wc?.getURL?.() || '';
     let ok = daJanelaPrincipal(wc, url) && PERMISSOES.has(permissao);
-    // "media": microfone (só áudio, nunca câmera). Até o Electron 44 a captura de tela
-    // também chegava como "media", sem câmera nem microfone.
+    // "media": microfone e (a partir da 1.4.5) câmera, só para o site. Até o Electron 44 a
+    // captura de tela também chegava como "media", sem câmera nem microfone.
     if (!ok && permissao === 'media' && daJanelaPrincipal(wc, url)) {
       const tipos = detalhes?.mediaTypes || [];
-      ok = tipos.every((t) => t === 'audio');
+      ok = tipos.every((t) => t === 'audio' || t === 'video');
     }
     responder(ok);
   });
   ses.setPermissionCheckHandler((wc, permissao, origem, detalhes) => (
-    (PERMISSOES.has(permissao) || (permissao === 'media' && detalhes?.mediaType === 'audio'))
+    (PERMISSOES.has(permissao) || (permissao === 'media' && (detalhes?.mediaType === 'audio' || detalhes?.mediaType === 'video')))
     && R.origemDe(origem) === SITE_ORIGEM && (!wc || wc === janela?.webContents)
   ));
   ses.setDevicePermissionHandler(() => false); // USB, HID, serial: nunca
@@ -971,10 +971,13 @@ async function testeRapido() {
     await capturar('false'); // volta a escolher a tela inteira (a caneta, abaixo, usa a última escolha)
     r.falhas = await js('window.carasETelas.falhas()');
     r.placa = await js('window.carasETelas.placa()');
-    // microfone liberado e câmera sempre bloqueada (com aparelhos de mentira)
+    // microfone e câmera liberados para o site (com aparelhos de mentira)
     const midia = (c) => js(`navigator.mediaDevices.getUserMedia(${c}).then((s) => { const n = s.getTracks().map((t) => t.kind).join(','); s.getTracks().forEach((t) => t.stop()); return 'ok: ' + n; }, (e) => e.name)`, true);
     r.microfone = await midia('{ audio: true }');
     r.camera = await midia('{ video: true }');
+    // aviso por cima do jogo: a janelinha abre (o teste aparece mesmo com o programa na frente)
+    r.aviso = await js(`window.carasETelas.aviso({ tipo: 'teste', nome: 'Teste', cor: '#3db3f0', texto: 'entrou na Sala 1' })`, true).catch((e) => ({ erro: String(e?.message || e) }));
+    r.avisoRuim = await js(`window.carasETelas.aviso({ tipo: 'qualquer', nome: 'x' })`, true).catch((e) => ({ erro: String(e?.message || e) }));
     // saídas de áudio: a lista aparece e dá para trocar
     r.saidas = await js(`navigator.mediaDevices.enumerateDevices().then(async (ds) => {
       const saidas = ds.filter((d) => d.kind === 'audiooutput');
@@ -1048,7 +1051,8 @@ async function testeRapido() {
       && Array.isArray(r.falhas) && r.perguntaAoSair === 'perguntou' && r.bloqueioExterno === 'bloqueado' && r.listaDeEnderecos === 'bloqueado'
       && r.janelaNova === 'bloqueada' && r.navegacaoExterna === 'bloqueada'
       && Array.isArray(r.atalhos?.ok) && !r.atalhos.ok.includes('ruim')
-      && r.microfone === 'ok: audio' && r.camera === 'NotAllowedError' && r.pttRuim?.ok === false
+      && r.microfone === 'ok: audio' && r.camera === 'ok: video' && r.pttRuim?.ok === false
+      && r.aviso?.mostrado === true && r.avisoRuim?.ok === false
       // a caneta nunca pode entrar na transmissão (se o teste enxerga a tela, a camada tem que estar fora)
       // a caneta tem que aparecer no monitor e nunca entrar na transmissão
       && (r.caneta?.controle !== 'aparece na captura' || (r.caneta.camadaNoMonitor === 'desenhada no monitor'

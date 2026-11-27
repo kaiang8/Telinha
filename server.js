@@ -1127,6 +1127,8 @@ function publicUser(u) {
     id: u.id, name: u.name, color: u.color, sala: u.sala, live: u.live, admin: !!u.admin,
     mudo: !!u.mudo, surdo: !!u.surdo, silenciado: silencioDe(u) > Date.now(),
     ...(u.efeitos ? { efeitos: true } : {}),
+    ...(u.camOk ? { camOk: true } : {}),
+    ...(u.cam && u.sala ? { cam: true } : {}),
     ...(u.pid ? { pid: u.pid } : {}),
     ...(u.live && u.caneta ? { caneta: u.caneta } : {}),
   };
@@ -1510,7 +1512,7 @@ const CABECALHOS_SEGURANCA = {
     "form-action 'self'",
     "frame-ancestors 'none'",
   ].join('; '),
-  'Permissions-Policy': 'camera=(), geolocation=(), payment=(), usb=()',
+  'Permissions-Policy': 'camera=(self), geolocation=(), payment=(), usb=()',
 };
 
 // Link fixo para o instalador do programa (sempre a última versão publicada no GitHub)
@@ -2623,6 +2625,8 @@ async function api(req, res, url) {
       if (typeof body.mudo === 'boolean') u.mudo = body.mudo; // microfone desligado
       if (typeof body.surdo === 'boolean') u.surdo = body.surdo; // som da sala desligado
       if (body.efeitos === true) u.efeitos = true; // a página sabe mandar e ouvir os sons pela chamada
+      if (body.camOk === true) u.camOk = true; // e a câmera
+      u.cam = !!(u.sala && body.cam === true);
       broadcastPresenca();
       return json(res, 200, { ok: true });
     }

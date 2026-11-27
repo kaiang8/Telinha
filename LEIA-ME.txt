@@ -724,6 +724,37 @@ DICAS
     você ouve (0% desliga). Para uma pessoa só, use "Volume da voz e
     dos sons" no nome dela, dentro da sala: vale também para o som de
     entrada dela.
+  - Câmera: dentro de uma sala, o botão de câmera (ao lado de
+    compartilhar tela) liga a sua. As câmeras aparecem numa faixa em
+    cima do palco; clique numa para aumentar. Ela é leve de propósito
+    (até 640x360), para não pesar na internet nem no TURN. No programa,
+    precisa da versão 1.4.5 ou mais nova.
+  - Avisos: quando alguém entra na sala em que você está, ou te menciona
+    ou responde, aparece um cartão no canto da tela, por cima do jogo
+    (programa 1.4.4 ou mais novo, com o jogo em "janela sem bordas"; em
+    "tela cheia exclusiva" o Windows não deixa nada por cima, e aí só
+    pisca o ícone na barra de tarefas). No navegador, vira notificação
+    do sistema, se você permitir. Escolha o que quer receber, ou "Não
+    perturbe", em: clique no seu nome → "Avisos" (tem um botão "Testar
+    aviso").
+  - Buscar mensagens: a lupa no topo (ou Ctrl+F) procura nos canais de
+    texto, sem ligar para acentos nem maiúsculas. Clique num resultado
+    para ir até a mensagem.
+  - Mensagens fixadas: passe o mouse numa mensagem e clique no alfinete.
+    O alfinete no topo do canal mostra as fixadas (até 25 por canal).
+    Qualquer um fixa; desafixa quem fixou, quem escreveu ou um admin.
+  - Enquete: o botão de gráfico, à esquerda da caixa de mensagem, cria
+    uma pergunta com até 10 opções (uma por linha). Cada pessoa vota uma
+    vez (ou em várias, se marcar a opção) e clicar de novo tira o voto.
+    Quem criou ou um admin pode encerrar.
+  - Backup (admin): Painel de admin → Servidor → "Baixar backup" salva
+    um arquivo com canais, perfis, configurações, todas as mensagens e
+    os sons de entrada. Guarde com você, porque ele tem os resumos das
+    senhas. "Restaurar um backup…" volta tudo ao que está no arquivo,
+    mas antes baixa uma cópia do que está agora.
+  - Versão nova: quando o site é atualizado, aparece uma faixa amarela
+    "O Caras E Telas foi atualizado" para quem está com ele aberto.
+    Clique em Recarregar quando puder.
   - Lista de membros: embaixo de quem está online aparece todo mundo
     que já entrou alguma vez, com "offline há 3 h", "há 2 dias"...
     (sem IP de ninguém). Quando a pessoa entra, ela sobe para o
