@@ -939,7 +939,7 @@
       ? `<div class="antigas"><button type="button" class="btn sm ghost" data-antigas>${S.carregandoAntigas ? 'Carregando…' : 'Carregar mensagens anteriores'}</button></div>`
       : c.dm ? `<div class="welcome"><div class="wicon">${icon('chat')}</div>
       <h2>${esc(c.name)}</h2>
-      <p>Começo da sua conversa privada com ${esc(c.name)}. Só vocês dois veem estas mensagens.</p></div>`
+      <p>Começo da sua conversa com ${esc(c.name)}.</p></div>`
       : `<div class="welcome"><div class="wicon">${icon(sala ? 'screen' : 'hash')}</div>
       <h2>${sala ? 'Chat da ' + esc(c.name) : 'Bem-vindo(a) a #' + esc(c.name) + '!'}</h2>
       <p>${sala ? 'Converse aqui enquanto assistem juntos.' : c.roleta ? 'Na dúvida entre duas (ou vinte) opções? Crie uma roleta: todo mundo vê girar, e cada opção tem a mesma chance.' : `Este é o começo do canal #${esc(c.name)}.`}</p>
@@ -6942,7 +6942,7 @@
   });
 
   // ================= Painel de admin =================
-  const P = { aberto: false, aba: 'pessoas', dados: null, foco: null, form: null, timer: null, conexoes: null, filtroCon: '' };
+  const P = { aberto: false, aba: 'pessoas', dados: null, foco: null, form: null, timer: null, conexoes: null, filtroCon: '', conversas: null, dmAberta: null };
 
   function abrirPainelAdmin(aba = 'pessoas', foco = null) {
     if (!S.isAdmin) return;
@@ -6981,13 +6981,14 @@
       ['pessoas', 'Pessoas', d ? d.users.length : ''],
       ['nomes', 'Nomes', ''],
       ['conexoes', 'Conexões', ''],
+      ['conversas', 'Conversas', ''],
       ['problemas', 'Problemas', d?.problemasNovos ? d.problemasNovos : ''],
       ['banidos', 'Banidos', d ? d.bans.length : ''],
       ['servidor', 'Servidor', ''],
       ['comandos', 'Comandos', ''],
     ];
     let corpo = '<div class="ap-empty">Carregando…</div>';
-    if (d) corpo = { pessoas: abaPessoas, nomes: abaNomes, conexoes: abaConexoes, problemas: abaProblemas, banidos: abaBanidos, servidor: abaServidor, comandos: abaComandos }[P.aba](d);
+    if (d) corpo = { pessoas: abaPessoas, nomes: abaNomes, conexoes: abaConexoes, conversas: abaConversas, problemas: abaProblemas, banidos: abaBanidos, servidor: abaServidor, comandos: abaComandos }[P.aba](d);
     // preserva o que estava sendo digitado
     const digitando = {};
     $('#adminPanel').querySelectorAll('input[id], select[id]').forEach((el) => { digitando[el.id] = el.value; });
@@ -7220,6 +7221,33 @@
     if (h < 48) return `${h} h${min % 60 ? ` ${String(min % 60).padStart(2, '0')}` : ''}`;
     return `${Math.round(h / 24)} dias`;
   }
+  async function carregarConversas() {
+    try { P.conversas = (await adm('dms-listar')).conversas; renderPainel(); } catch (e) { toast(e.message); }
+  }
+  function abaConversas() {
+    const c = P.dmAberta;
+    if (c) {
+      const linhas = c.mensagens.map((m) => {
+        const a = autorDe(m);
+        const quando = new Date(m.ts).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+        return `<div class="adm-dm-msg"><div><span class="adm-dm-quem" style="color:${esc(a.color)}">${esc(a.name)}</span>
+          <span class="muted small">${esc(quando)}${m.editada ? ' · editada' : ''}</span></div>
+          <div class="adm-dm-txt">${esc(textoComNomes(m.text || '')) || '<i class="muted">(sem texto)</i>'}</div></div>`;
+      }).join('');
+      return `<div class="ap-section adm-dm">
+        <div class="adm-dm-top"><button class="btn sm ghost" data-act="dm-voltar">Voltar</button>
+          <b>${esc(c.nomeA || '?')} e ${esc(c.nomeB || '?')}</b>
+          <button class="btn sm" data-act="dm-atualizar">Atualizar</button></div>
+        ${c.mais ? '<button class="btn sm ghost ap-mais" data-act="dm-mais">Mensagens anteriores</button>' : ''}
+        <div class="adm-dm-lista">${linhas || '<p class="muted">Sem mensagens.</p>'}</div></div>`;
+    }
+    if (!P.conversas) return '<div class="ap-empty">Carregando…</div>';
+    if (!P.conversas.length) return '<div class="ap-empty">Nenhuma conversa ainda.</div>';
+    return P.conversas.map((x) => `<button type="button" class="ap-user adm-dm-item" data-act="dm-ver" data-dm-id="${esc(x.id)}">
+      <span class="adm-dm-par"><span style="color:${esc(x.corA)}">${esc(x.nomeA)}</span> <span class="muted">e</span> <span style="color:${esc(x.corB)}">${esc(x.nomeB)}</span></span>
+      <span class="muted small">${x.ultima ? esc(quandoCurto(x.ultima)) : ''}</span></button>`).join('');
+  }
+
   function abaConexoes() {
     const r = P.conexoes;
     if (!r) {
@@ -7293,6 +7321,7 @@
       if (P.aba === 'conexoes' && P.conexoes) carregarPainel(); // atualiza sem piscar a lista
       if (P.aba === 'nomes') P.perfis = null; // busca de novo
       if (P.aba === 'problemas') carregarProblemas();
+      if (P.aba === 'conversas') { P.dmAberta = null; carregarConversas(); }
       return renderPainel();
     }
     const b = e.target.closest('[data-act]');
@@ -7305,6 +7334,27 @@
     try {
       switch (act) {
         case 'fechar': return fecharPainelAdmin();
+        case 'dm-ver': {
+          const id = b.dataset.dmId;
+          const meta = (P.conversas || []).find((c) => c.id === id) || {};
+          const r = await adm('dm-ler', { id });
+          P.dmAberta = { id, nomeA: meta.nomeA, nomeB: meta.nomeB, mensagens: r.mensagens, mais: r.mais, desde: r.desde };
+          renderPainel();
+          const l = document.querySelector('#adminPanel .admin-body');
+          if (l) l.scrollTop = l.scrollHeight;
+          return;
+        }
+        case 'dm-voltar': P.dmAberta = null; return renderPainel();
+        case 'dm-atualizar': {
+          const r = await adm('dm-ler', { id: P.dmAberta.id });
+          Object.assign(P.dmAberta, { mensagens: r.mensagens, mais: r.mais, desde: r.desde });
+          return renderPainel();
+        }
+        case 'dm-mais': {
+          const r = await adm('dm-ler', { id: P.dmAberta.id, antes: P.dmAberta.desde });
+          Object.assign(P.dmAberta, { mensagens: [...r.mensagens, ...P.dmAberta.mensagens], mais: r.mais, desde: r.desde });
+          return renderPainel();
+        }
         case 'form': P.form = { uid, tipo: b.dataset.form }; P.foco = uid; renderPainel(); document.querySelector('#apMotivo, #apRename, #apMuteMin')?.focus(); return;
         case 'cancelar': P.form = null; return renderPainel();
         case 'form-perfil': P.form = { pid: b.closest('[data-pid]').dataset.pid, tipo: b.dataset.form }; renderPainel(); document.querySelector('#apNomePerfil')?.focus(); return;

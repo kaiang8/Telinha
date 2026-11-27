@@ -1557,3 +1557,12 @@ body.leve :is(.sidebar, .main) { background: linear-gradient(180deg, var(--pop-1
 .nv-cat-cab .i { width: 20px; height: 20px; color: var(--p2); }
 .nv-cat ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
 .nv-cat li { font-size: 13px; color: var(--texto); }
+/* painel: conversas */
+.adm-dm-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; font: inherit; text-align: left; cursor: pointer; color: var(--texto-forte); }
+.adm-dm-item:hover { outline-color: var(--foco); }
+.adm-dm-par { font-weight: 700; }
+.adm-dm { padding: 12px 14px; }
+.adm-dm-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; color: var(--texto-forte); }
+.adm-dm-lista { display: grid; gap: 10px; }
+.adm-dm-quem { font-weight: 700; margin-right: 6px; }
+.adm-dm-txt { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--texto); margin-top: 2px; }

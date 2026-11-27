@@ -1894,6 +1894,33 @@ async function acaoAdmin(u, body, res, req) {
       console.log(`! ${u.name} tirou o som de entrada de ${data.perfis[id].nome}`);
       return json(res, 200, { ok: true });
     }
+    case 'dms-listar': {
+      // conversas privadas que existem, para a moderação do admin (uma por par de pessoas)
+      const lista = Object.entries(data.dms || {}).map(([id, d]) => ({
+        id,
+        nomeA: data.perfis[d.a]?.nome || '?', corA: data.perfis[d.a]?.cor || '#8a94a6',
+        nomeB: data.perfis[d.b]?.nome || '?', corB: data.perfis[d.b]?.cor || '#8a94a6',
+        ultima: d.ultima || 0,
+      })).map((x) => (x.nomeA.localeCompare(x.nomeB, 'pt-BR') > 0 ? { ...x, nomeA: x.nomeB, corA: x.corB, nomeB: x.nomeA, corB: x.corA } : x))
+        .sort((x, y) => y.ultima - x.ultima);
+      return json(res, 200, { conversas: lista });
+    }
+
+    case 'dm-ler': {
+      // lê uma conversa privada (só leitura; o admin não escreve nela)
+      const id = String(body.id || '');
+      if (!/^dm-[0-9a-f]{12}-[0-9a-f]{12}$/.test(id) || !data.dms[id]) return json(res, 404, { error: 'Conversa não encontrada' });
+      try {
+        await garantirDm(id);
+        const total = MSGS.total[id] || 0;
+        const antes = Number.isInteger(Number(body.antes)) && Number(body.antes) > 0 ? Math.min(Number(body.antes), total) : total;
+        const r = await mensagensAntigas(id, antes);
+        return json(res, 200, { id, mensagens: r.lista.map(msgParaEnviar), mais: r.mais, desde: r.desde });
+      } catch (e) {
+        return json(res, 503, { error: 'Não consegui ler agora. Tente de novo.' });
+      }
+    }
+
     case 'backup': {
       if (limiteDe(u, 'limBaixarBackup', 6, 10 * 60e3)) return json(res, 429, { error: 'Espere uns minutos antes de baixar de novo.' });
       const b = await montarBackup();
