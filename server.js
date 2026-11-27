@@ -1765,6 +1765,12 @@ async function acaoAdmin(u, body, res, req) {
       console.log(`! ${u.name} tirou o som de entrada de ${data.perfis[id].nome}`);
       return json(res, 200, { ok: true });
     }
+    case 'backup': {
+      if (limiteDe(u, 'limBaixarBackup', 6, 10 * 60e3)) return json(res, 429, { error: 'Espere uns minutos antes de baixar de novo.' });
+      const b = await montarBackup();
+      console.log(`! ${u.name} baixou um backup`);
+      return json(res, 200, b);
+    }
     case 'turn-desligar':
       USO_TURN.dados.desligado = true;
       USO_TURN.salvar(500);
@@ -2014,6 +2020,90 @@ async function proxyImagem(req, res, url) {
   }
 }
 
+// ---------- Backup (só admin): tudo num arquivo, e restaurar a partir dele ----------
+// Vai junto: canais, perfis, configurações, banimentos, todas as mensagens (com as "lápides" das
+// apagadas, para as posições não mudarem) e os sons de entrada. O arquivo tem os resumos das senhas
+// e das chaves dos aparelhos: deve ficar guardado só com o admin.
+const BACKUP_FORMATO = 'caras-e-telas-backup';
+const BACKUP_MAX = 60 * 1024 * 1024;
+async function esperarGravacoes(ms = 15000) {
+  const ate = Date.now() + ms;
+  while ((MSGS.fila.length || MSGS.rodando) && Date.now() < ate) await new Promise((ok) => setTimeout(ok, 200));
+}
+async function todasAsMensagens(ch) {
+  if (!USA_UPSTASH) return (MSGS.arquivo[ch] || []).map((x) => x || { apagada: true });
+  const total = Number(await upstash(['LLEN', chaveMsgs(ch)])) || 0;
+  const out = [];
+  for (let ini = 0; ini < total; ini += 1000) {
+    const itens = await upstash(['LRANGE', chaveMsgs(ch), String(ini), String(Math.min(total, ini + 1000) - 1)]);
+    for (const x of itens || []) { try { out.push(JSON.parse(x)); } catch { out.push({ apagada: true }); } }
+  }
+  return out;
+}
+async function lerSomGuardado(pid) {
+  const raw = USA_UPSTASH ? await upstash(['GET', `${CHAVE_UPSTASH}:som:${pid}`]) : (await arquivoDeSons())[pid];
+  const x = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  return x?.b64 ? x : null;
+}
+async function montarBackup() {
+  await esperarGravacoes();
+  const mensagens = {};
+  for (const c of data.channels) mensagens[c.id] = await todasAsMensagens(c.id);
+  const sons = {};
+  for (const [pid, p] of Object.entries(data.perfis)) {
+    if (!p.som) continue;
+    try { const x = await lerSomGuardado(pid); if (x) sons[pid] = x; } catch { /* sem esse som, o resto vai */ }
+  }
+  const { messages, ...dados } = data;
+  return { formato: BACKUP_FORMATO, versao: 1, criado: Date.now(), dados, mensagens, sons };
+}
+async function restaurarBackup(b) {
+  if (!b || b.formato !== BACKUP_FORMATO || !b.dados || typeof b.dados !== 'object' || !b.mensagens || typeof b.mensagens !== 'object') {
+    throw new Error('Esse arquivo não é um backup do Caras E Telas.');
+  }
+  const canais = (Array.isArray(b.dados.channels) ? b.dados.channels : [])
+    .filter((c) => c && typeof c.id === 'string' && c.id.length <= 64 && typeof c.name === 'string' && (c.type === 'sala' || c.type === 'text'));
+  if (!canais.length) throw new Error('O backup não tem nenhum canal.');
+  if (!podeSalvar || !MSGS.ok) throw new Error('O banco não foi lido direito quando o servidor ligou. Reinicie o serviço antes de restaurar.');
+  await esperarGravacoes();
+  // mensagens: cada canal (os de agora e os do backup) fica igual ao backup
+  const ids = new Set([...data.channels.map((c) => c.id), ...canais.map((c) => c.id)]);
+  for (const ch of ids) {
+    const lista = (Array.isArray(b.mensagens[ch]) ? b.mensagens[ch] : [])
+      .map((x) => (x && typeof x === 'object' && !Array.isArray(x) ? { ...x, ch } : { apagada: true, ch }));
+    if (USA_UPSTASH) {
+      await upstash(['DEL', chaveMsgs(ch)]);
+      for (let i = 0; i < lista.length; i += 200) await upstash(['RPUSH', chaveMsgs(ch), ...lista.slice(i, i + 200).map((x) => JSON.stringify(x))]);
+    } else MSGS.arquivo[ch] = lista;
+  }
+  // sons de entrada: os de quem não está no backup saem
+  const perfisNovos = b.dados.perfis && typeof b.dados.perfis === 'object' && !Array.isArray(b.dados.perfis) ? b.dados.perfis : {};
+  const sons = b.sons && typeof b.sons === 'object' ? b.sons : {};
+  for (const [pid, p] of Object.entries(data.perfis)) if (p.som && !sons[pid]) await gravarSomEntrada(pid, null).catch(() => {});
+  const perfis = {};
+  for (const [pid, p] of Object.entries(perfisNovos)) {
+    if (!/^[A-Za-z0-9_-]{4,64}$/.test(pid) || !p || typeof p !== 'object') continue;
+    const x = sons[pid];
+    const somOk = x && /^audio\/(webm|ogg)$/.test(x.tipo) && typeof x.b64 === 'string' && x.b64.length <= SOM_MAX_B64 && /^[A-Za-z0-9+/]+={0,2}$/.test(x.b64) && x.v === p.som;
+    if (somOk) await gravarSomEntrada(pid, { tipo: x.tipo, b64: x.b64, v: x.v });
+    perfis[pid] = somOk ? p : (({ som, somVol, ...resto }) => resto)(p);
+  }
+  SONS_CACHE.clear();
+  // o resto dos dados
+  const { messages, ...resto } = b.dados;
+  Object.assign(data, { messages: {}, settings: { locked: false }, bans: [], mutes: [], lembretes: [], perfis: {}, nomesAntigos: {}, nomesLegados: [] });
+  aplicarDados({ ...resto, channels: canais, perfis, messages: {} });
+  sujo = true;
+  clearTimeout(saveTimer);
+  await gravar();
+  if (!USA_UPSTASH) { clearTimeout(MSGS.timerArquivo); await gravarArquivoDeMensagens(); }
+  MSGS.recentes = {};
+  MSGS.total = {};
+  await carregarMensagens();
+  const n = Object.values(b.mensagens).reduce((t, l) => t + (Array.isArray(l) ? l.filter((m) => m && m.id && !m.apagada).length : 0), 0);
+  return { canais: canais.length, perfis: Object.keys(perfis).length, mensagens: n };
+}
+
 async function api(req, res, url) {
   const rota = url.pathname.slice('/api/'.length);
   if ((req.method === 'GET' || req.method === 'HEAD') && rota === 'img') return proxyImagem(req, res, url);
@@ -2022,6 +2112,24 @@ async function api(req, res, url) {
   if (req.method === 'GET' && rota === 'events') return abrirEventos(req, res, url);
   if (req.method === 'GET' && rota === 'poll') return abrirPoll(req, res, url);
   if (req.method !== 'POST') return json(res, 405, { error: 'método não permitido' });
+
+  if (rota === 'backup-restaurar') {
+    // o arquivo pode ser grande: confere quem é (pelo cabeçalho) antes de receber
+    const u = usuarioDoToken(req.headers['x-token']);
+    if (!u || u.kicked || !u.admin) { req.resume(); return json(res, 403, { error: 'Só um admin pode restaurar um backup.' }); }
+    if (limiteDe(u, 'limBackup', 3, 10 * 60e3)) { req.resume(); return json(res, 429, { error: 'Espere uns minutos antes de tentar de novo.' }); }
+    let b;
+    try { b = await lerCorpo(req, BACKUP_MAX); } catch (e) { return json(res, 400, { error: e.message === 'corpo grande demais' ? 'O arquivo passa de 60 MB.' : 'O arquivo está corrompido (não é um JSON válido).' }); }
+    try {
+      const r = await restaurarBackup(b);
+      console.log(`! ${u.name} restaurou um backup (${r.canais} canais, ${r.perfis} perfis, ${r.mensagens} mensagens)`);
+      setTimeout(() => broadcast({ type: 'recarregar', texto: 'Um admin restaurou um backup. Recarregando…' }), 300);
+      return json(res, 200, { ok: true, ...r });
+    } catch (e) {
+      console.warn('Backup não restaurado:', e.message);
+      return json(res, 400, { error: e.message });
+    }
+  }
 
   let body;
   try {

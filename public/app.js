@@ -551,6 +551,9 @@
       case 'sb': return onSomTocado(m);
       case 'tinta': return onTinta(m);
       case 'emote': return onEmote(m);
+      case 'recarregar':
+        toast(m.texto || 'Recarregando…', 4000);
+        return setTimeout(() => location.reload(), 1500);
       case 'avisoAdmin':
         toast(m.texto, 10000);
         if (P.aberto && P.aba === 'problemas') carregarProblemas();
@@ -6296,12 +6299,60 @@
           : `<p>Mínimo de 6 caracteres. Você vai precisar dela para entrar como admin de novo.</p>
         <div class="ap-row"><input id="apAdminSenha" data-keep type="password" maxlength="100" placeholder="Nova senha de admin" autocomplete="new-password"><button class="btn sm primary" data-act="admin-senha">Trocar</button></div>`}</div>
       ${secaoTurn(st.turn)}
+      <div class="ap-section"><h4>Backup</h4>
+        <p>Baixa um arquivo com canais, perfis, configurações, todas as mensagens e os sons de entrada. Guarde só com você: ele tem os resumos das senhas.</p>
+        <div class="ap-row"><button class="btn sm primary" data-act="backup-baixar">Baixar backup</button>
+          <button class="btn sm danger" data-act="backup-restaurar">Restaurar um backup…</button></div></div>
       <div class="ap-section"><h4>Onde ficam os dados</h4>
         <p>${st.storage === 'upstash' ? 'No Upstash (banco na nuvem): canais, mensagens, banimentos e configurações sobrevivem a reinícios.' : 'No arquivo <b>data.json</b>, na pasta do servidor. Numa hospedagem grátis, esse arquivo some quando o serviço reinicia: configure o Upstash (veja o LEIA-ME).'}</p></div>
       ${secaoAparelhos(d)}
       <div class="ap-section"><h4>Modo admin</h4>
         <p>Sair do modo admin neste aparelho (ele também deixa de ser lembrado). Para voltar, use a senha de admin.</p>
         <button class="btn sm" data-act="sairadmin">Sair do modo admin</button></div>`;
+  }
+
+  // ----- backup: baixar e restaurar -----
+  function baixarBackup(obj, prefixo = 'caras-e-telas-backup') {
+    const d = new Date();
+    const p2 = (x) => String(x).padStart(2, '0');
+    const nome = `${prefixo}-${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.json`;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(obj)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60e3);
+  }
+  function escolherBackup() {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = '.json,application/json';
+    inp.onchange = async () => {
+      const f = inp.files?.[0];
+      if (!f) return;
+      if (f.size > 60 * 1024 * 1024) return toast('O arquivo passa de 60 MB.');
+      let texto, b;
+      try { texto = await f.text(); b = JSON.parse(texto); } catch { return toast('Esse arquivo não é um backup (não consegui ler).'); }
+      if (b?.formato !== 'caras-e-telas-backup' || !b.dados || !b.mensagens) return toast('Esse arquivo não é um backup do Caras E Telas.');
+      const n = Object.values(b.mensagens).reduce((t, l) => t + (Array.isArray(l) ? l.filter((m) => m && m.id && !m.apagada).length : 0), 0);
+      const quando = b.criado ? new Date(b.criado).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'data desconhecida';
+      abrirModal({
+        titulo: 'Restaurar backup', ok: 'Restaurar', perigo: true,
+        corpo: `<p>Backup de <b>${esc(quando)}</b>: ${(b.dados.channels || []).length} canais, ${Object.keys(b.dados.perfis || {}).length} perfis e ${n} mensagens.</p>
+          <p>Tudo o que está no servidor agora (mensagens, perfis, canais, configurações) é trocado pelo que está no arquivo, e todo mundo recarrega a página.</p>
+          <p>Antes, uma cópia do que está agora é baixada no seu computador, para dar para voltar atrás.</p>`,
+        aoConfirmar: async () => {
+          baixarBackup(await adm('backup'), 'caras-e-telas-antes-de-restaurar');
+          const r = await fetch('/api/backup-restaurar', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': S.token }, body: texto });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || `Não deu certo (erro ${r.status}).`);
+          toast(`Backup restaurado: ${j.mensagens} mensagens. Recarregando…`, 8000);
+        },
+      });
+    };
+    inp.click();
   }
 
   // Registro de conexões: quem entrou, de qual IP e aparelho, e as tentativas recusadas
@@ -6469,6 +6520,16 @@
           return feito(`${n} foi banido.${r.soAparelho ? ' (Só o navegador: o IP é o mesmo de outra pessoa online.)' : ''}`);
         }
         case 'unban': await adm('unban', { id: b.closest('[data-ban]').dataset.ban }); return feito('Banimento removido.');
+        case 'backup-baixar': {
+          b.disabled = true;
+          try {
+            const r = await adm('backup');
+            baixarBackup(r);
+            const n = Object.values(r.mensagens).reduce((t, l) => t + l.filter((m) => m && m.id && !m.apagada).length, 0);
+            return toast(`Backup baixado: ${n} mensagens, ${Object.keys(r.dados.perfis || {}).length} perfis.`, 6000);
+          } finally { b.disabled = false; }
+        }
+        case 'backup-restaurar': return escolherBackup();
         case 'turn-desligar': await adm('turn-desligar'); return feito('TURN desligado: as senhas foram canceladas.');
         case 'turn-ligar': {
           const r = await adm('turn-ligar');
