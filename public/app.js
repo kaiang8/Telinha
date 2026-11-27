@@ -41,6 +41,7 @@
     roleta: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17M6 6l12 12M18 6 6 18"/><circle cx="12" cy="12" r="2" fill="currentColor"/>',
     camera: '<rect x="2.5" y="6.5" width="13" height="11" rx="2.5"/><path d="m15.5 10.5 6-3.5v10l-6-3.5z"/>',
     cameraOff: '<rect x="2.5" y="6.5" width="13" height="11" rx="2.5"/><path d="m15.5 10.5 6-3.5v10l-6-3.5zM3 3l18 18"/>',
+    controle: '<path d="M7 8h10a4.5 4.5 0 0 1 4.3 5.8l-1 3.3a2.4 2.4 0 0 1-4.1.9L14.5 16h-5l-1.7 2a2.4 2.4 0 0 1-4.1-.9l-1-3.3A4.5 4.5 0 0 1 7 8z"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="16" cy="11.5" r=".6" fill="currentColor"/><circle cx="17.5" cy="13.5" r=".6" fill="currentColor"/>',
     lupa: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>',
     enquete: '<path d="M5 20v-8M12 20V4M19 20v-12"/><path d="M3 20.5h18"/>',
     pin: '<path d="M9 3.5h6l-.8 6.2 3.3 3.3H6.5l3.3-3.3z"/><path d="M12 13v7.5"/>',
@@ -592,6 +593,10 @@
     S.dmNaoLidas = new Set(S.dms.filter((d) => d.de && d.de !== S.myPid && d.ultima > (DM_VISTO[d.id] || 0)).map((d) => d.id));
     if (S.modo === 'dm' && !chan(S.view)) S.modo = 'servidor';
     if (chan(S.view)?.dm) setTimeout(() => abrirDm(S.view), 0); // reconectou: busca a conversa de novo
+    setTimeout(() => {
+      ligarJogando();
+      if (JG.mostrar && JG.atual) api('jogando', { nome: JG.atual }).catch(() => {}); // reconectou: o servidor esqueceu
+    }, 0);
     S.antigas = m.antigas || {}; // canal -> posição de onde começam as mais antigas (0: não tem)
     S.perfis = m.perfis || {};
     if (m.me?.pid) S.myPid = m.me.pid;
@@ -1359,6 +1364,37 @@
     if (S.modo === 'dm') renderSidebar(); else renderRailDm();
   }
 
+  // ----- Jogando agora (só no programa 1.4.6+): mostra para os outros o jogo aberto, se a pessoa deixar -----
+  const JG = { mostrar: salvo.mostrarJogo !== false, atual: null, ligado: false };
+  function ligarJogando() {
+    if (!PROGRAMA?.jogos) return;
+    if (!JG.ligado) {
+      JG.ligado = true;
+      PROGRAMA.aoJogo((nome) => {
+        JG.atual = nome;
+        if (JG.mostrar && S.token) api('jogando', { nome }).catch(() => {});
+      });
+    }
+    PROGRAMA.jogos(JG.mostrar).catch(() => {});
+    if (!JG.mostrar) { JG.atual = null; if (S.token) api('jogando', { nome: null }).catch(() => {}); }
+  }
+  function secaoPrivacidade() {
+    const onde = PROGRAMA?.jogos ? 'O programa confere a cada 20 segundos qual jogo está aberto (só jogos: nunca o nome de outras janelas).'
+      : PROGRAMA ? 'Feche e abra o programa para atualizar: a versão nova mostra o jogo que você está jogando.'
+        : 'Só funciona no programa para Windows (o navegador não consegue ver os jogos abertos).';
+    return `<div class="pf-secao" id="pfPrivacidade"><b>Privacidade</b>
+      <label class="av-op"><input type="checkbox" id="pvJogo"${JG.mostrar ? ' checked' : ''}> Mostrar para os outros o jogo que estou jogando</label>
+      <p class="muted small">${onde}</p></div>`;
+  }
+  function ligarPrivacidade() {
+    $('#pvJogo').addEventListener('change', () => {
+      JG.mostrar = $('#pvJogo').checked;
+      salvar({ mostrarJogo: JG.mostrar });
+      ligarJogando();
+      toast(JG.mostrar ? 'Os outros vão ver o jogo que você estiver jogando.' : 'Ninguém mais vê o que você está jogando.');
+    });
+  }
+
   // ----- Avisos: alguém entrou na sua sala, alguém te mencionou -----
   // No programa (1.4.4+): um cartão no canto da tela, por cima do jogo. No navegador: notificação
   // do sistema, se a pessoa deixou. Só quando você não está olhando para o Caras E Telas.
@@ -1820,6 +1856,7 @@
       let st = '';
       if (u.live) st = `<span class="live-badge">ao vivo</span><span class="ellipsis">${esc(nomeSala(u.sala))}</span>`;
       else if (u.sala) st = `<span class="ellipsis">Em ${esc(nomeSala(u.sala))}</span>`;
+      if (u.jogo) st = `<span class="mb-jogo ellipsis" title="Jogando ${esc(u.jogo)}">${icon('controle')} ${esc(u.jogo)}</span>${st ? `<span class="ellipsis mb-jogo-sala">${st}</span>` : ''}`;
       const eu = u.id === S.myId ? ' <span class="muted small">(você)</span>' : '';
       return linha(`u${u.id}`, `data-uid="${esc(u.id)}"${u.pid ? ` data-pid="${esc(u.pid)}"` : ''}`, avatar(u, 'dotted'),
         `<span style="color:${esc(u.color)}">${esc(u.name)}</span>${coroa(u)}${eu}`, st);
@@ -1892,7 +1929,7 @@
     const { u, p, nome, cor, eu } = pessoaDoMenu();
     if (!u && !p) return fecharMenuMembro();
     const item = (act, txt, cls = '') => `<button type="button" role="menuitem" class="mm-item${cls}" data-mm="${act}">${txt}</button>`;
-    const status = u ? (u.live ? `Transmitindo em ${esc(nomeSala(u.sala))}` : u.sala ? `Em ${esc(nomeSala(u.sala))}` : 'Online') : esc(offlineHa(p.visto));
+    const status = (u?.jogo ? `Jogando ${esc(u.jogo)} · ` : '') + (u ? (u.live ? `Transmitindo em ${esc(nomeSala(u.sala))}` : u.sala ? `Em ${esc(nomeSala(u.sala))}` : 'Online') : esc(offlineHa(p.visto)));
     let corpo;
     if (MM.form) corpo = formDoMenu(MM.form, { u, nome });
     else {
@@ -6362,6 +6399,7 @@
             <p class="muted small" id="seStatus" aria-live="polite"></p>
           </div></div>
         ${secaoAvisos()}
+        ${secaoPrivacidade()}
         <div class="pf-secao"><b>Entrar em outro aparelho</b>
           <p class="muted small">Gere um código e, no outro aparelho, clique em "Já tenho um nome" na tela de entrada. O código vale 15 minutos.</p>
           <button type="button" class="btn sm" id="pfCodigo">Gerar código</button><div class="pf-codigo" id="pfCodigoVer" hidden></div></div>
@@ -6374,6 +6412,7 @@
     });
     ligarSomDeEntrada();
     ligarAvisos();
+    ligarPrivacidade();
     $('#pfCodigo').onclick = async () => {
       try {
         const r = await api('perfil-codigo');

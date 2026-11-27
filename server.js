@@ -1131,6 +1131,7 @@ function publicUser(u) {
     ...(u.efeitos ? { efeitos: true } : {}),
     ...(u.camOk ? { camOk: true } : {}),
     ...(u.cam && u.sala ? { cam: true } : {}),
+    ...(u.jogo ? { jogo: u.jogo.nome, jogoDesde: u.jogo.desde } : {}),
     ...(u.pid ? { pid: u.pid } : {}),
     ...(u.live && u.caneta ? { caneta: u.caneta } : {}),
   };
@@ -2541,6 +2542,18 @@ async function api(req, res, url) {
         ts: Date.now(),
       });
       broadcast({ type: 'msg', msg: m });
+      return json(res, 200, { ok: true });
+    }
+
+    case 'jogando': {
+      // "jogando agora": o programa diz o jogo aberto (só de quem deixou mostrar); null = nenhum
+      if (limiteDe(u, 'limJogo', 12, 60e3)) return json(res, 429, { error: 'Calma, espere um pouco.' });
+      const nome = typeof body.nome === 'string' ? body.nome.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+      const antes = u.jogo?.nome || '';
+      if (nome !== antes) {
+        u.jogo = nome ? { nome, desde: Date.now() } : null;
+        broadcastPresenca();
+      }
       return json(res, 200, { ok: true });
     }
 

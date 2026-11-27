@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 let ouvinte = null;
 let ouvintePtt = null;
+let ouvinteJogo = null;
 
 function limparAtalhos(lista) {
   if (!Array.isArray(lista)) return [];
@@ -59,6 +60,14 @@ contextBridge.exposeInMainWorld('carasETelas', {
     nome: String(d.nome ?? '').slice(0, 32),
   } : null),
   tintaEstado: () => ipcRenderer.invoke('tinta-estado'),
+  // a partir da 1.4.6: "jogando agora" (só se a pessoa deixar; o programa diz o nome do jogo aberto)
+  jogos: (ligar) => ipcRenderer.invoke('jogos', ligar === true),
+  aoJogo: (fn) => {
+    if (typeof fn !== 'function') return;
+    if (ouvinteJogo) ipcRenderer.removeListener('jogo', ouvinteJogo);
+    ouvinteJogo = (_e, nome) => fn(typeof nome === 'string' ? nome.slice(0, 40) : null);
+    ipcRenderer.on('jogo', ouvinteJogo);
+  },
   // a partir da 1.4.5: a câmera é liberada para o site (antes, só o microfone)
   camera: true,
   // a partir da 1.4.4: aviso por cima do jogo (alguém entrou na sua sala, alguém te mencionou)

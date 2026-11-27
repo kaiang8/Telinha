@@ -199,4 +199,19 @@ t('aviso por cima do jogo: só o que a página pode mandar', () => {
   assert.equal(x.piscar, true);
 });
 
+t('jogando agora: reconhece o jogo pelo caminho e ignora o que não é jogo', () => {
+  const p = (caminho) => ({ exe: caminho.split('\\').pop(), caminho });
+  assert.equal(R.jogoAtual([p('C:\\Riot Games\\VALORANT\\live\\ShooterGame\\Binaries\\Win64\\VALORANT-Win64-Shipping.exe')]), 'VALORANT');
+  assert.equal(R.jogoAtual([p('D:\\SteamLibrary\\steamapps\\common\\Hollow Knight\\hollow_knight.exe')]), 'Hollow Knight');
+  assert.equal(R.jogoAtual([p('C:\\Program Files\\Epic Games\\Satisfactory\\FactoryGame.exe')]), 'Satisfactory');
+  assert.equal(R.jogoAtual([p('C:\\Program Files (x86)\\Steam\\steamapps\\common\\wallpaper_engine\\wallpaper64.exe')]), null);
+  assert.equal(R.jogoAtual([p('C:\\Riot Games\\Riot Client\\RiotClientServices.exe')]), null);
+  assert.equal(R.jogoAtual([p('D:\\SteamLibrary\\steamapps\\common\\Some Game\\UnityCrashHandler64.exe')]), null);
+  assert.equal(R.jogoAtual([p('C:\\Users\\x\\AppData\\Roaming\\.minecraft\\runtime\\java-runtime-gamma\\bin\\javaw.exe')]), 'Minecraft');
+  assert.equal(R.jogoAtual([p('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'), p('C:\\Windows\\notepad.exe')]), null);
+  assert.equal(R.jogoAtual([p('C:\\Program Files\\Google\\Chrome\\chrome.exe'), p('C:\\Games\\GTA5.exe')]), 'GTA V');
+  assert.equal(R.jogoAtual(null), null);
+  assert.equal(R.jogoAtual([{ exe: 42, caminho: null }]), null);
+});
+
 console.log(`\n${n} grupos de testes passaram.`);

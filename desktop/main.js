@@ -599,6 +599,33 @@ ipcMain.handle('aviso', async (e, d) => {
   return { ok: true, mostrado: true };
 });
 
+// ---------- Jogando agora ----------
+// Só roda se a pessoa deixou (opção no site). A cada 20 s o ajudante lista os programas com janela;
+// o nome do jogo (ou nada) vai para a página, que avisa o servidor quando muda.
+const JOGO = { ligado: false, timer: null, atual: null };
+async function conferirJogo() {
+  if (!JOGO.ligado || !janela || janela.isDestroyed()) return;
+  const lista = await ajudante.jogos();
+  const nome = lista ? R.jogoAtual(lista) : null;
+  if (nome !== JOGO.atual && janela && !janela.isDestroyed()) {
+    JOGO.atual = nome;
+    janela.webContents.send('jogo', nome);
+  }
+}
+ipcMain.handle('jogos', (e, ligar) => {
+  if (!pedidoConfiavel(e)) return { ok: false };
+  JOGO.ligado = ligar === true;
+  clearInterval(JOGO.timer);
+  JOGO.timer = null;
+  JOGO.atual = null;
+  if (JOGO.ligado) {
+    if (!ajudante.caminho()) return { ok: false, motivo: 'Falta o ajudante do programa. Reinstale o programa.' };
+    JOGO.timer = setInterval(() => conferirJogo().catch(() => {}), 20000);
+    conferirJogo().catch(() => {});
+  }
+  return { ok: true };
+});
+
 // ---------- Janela principal ----------
 async function siteRespondendo(ses) {
   const ctrl = new AbortController();
@@ -681,6 +708,7 @@ function criarJanela() {
     ajudante.soltarTecla();
     fecharTinta();
     fecharAviso();
+    clearInterval(JOGO.timer); JOGO.timer = null; JOGO.ligado = false;
   });
 
   const wc = janela.webContents;
@@ -977,6 +1005,8 @@ async function testeRapido() {
     r.camera = await midia('{ video: true }');
     // aviso por cima do jogo: a janelinha abre (o teste aparece mesmo com o programa na frente)
     r.aviso = await js(`window.carasETelas.aviso({ tipo: 'teste', nome: 'Teste', cor: '#3db3f0', texto: 'entrou na Sala 1' })`, true).catch((e) => ({ erro: String(e?.message || e) }));
+    r.jogos = await js(`window.carasETelas.jogos(true)`, true).catch((e) => ({ erro: String(e?.message || e) }));
+    await js(`window.carasETelas.jogos(false)`, true).catch(() => {});
     r.avisoRuim = await js(`window.carasETelas.aviso({ tipo: 'qualquer', nome: 'x' })`, true).catch((e) => ({ erro: String(e?.message || e) }));
     // saídas de áudio: a lista aparece e dá para trocar
     r.saidas = await js(`navigator.mediaDevices.enumerateDevices().then(async (ds) => {
@@ -1052,7 +1082,7 @@ async function testeRapido() {
       && r.janelaNova === 'bloqueada' && r.navegacaoExterna === 'bloqueada'
       && Array.isArray(r.atalhos?.ok) && !r.atalhos.ok.includes('ruim')
       && r.microfone === 'ok: audio' && r.camera === 'ok: video' && r.pttRuim?.ok === false
-      && r.aviso?.mostrado === true && r.avisoRuim?.ok === false
+      && r.aviso?.mostrado === true && r.avisoRuim?.ok === false && r.jogos?.ok === true
       // a caneta nunca pode entrar na transmissão (se o teste enxerga a tela, a camada tem que estar fora)
       // a caneta tem que aparecer no monitor e nunca entrar na transmissão
       && (r.caneta?.controle !== 'aparece na captura' || (r.caneta.camadaNoMonitor === 'desenhada no monitor'

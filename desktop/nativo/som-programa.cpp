@@ -14,6 +14,9 @@
 //   som-programa.exe --janela HWND
 //       Caneta: escreve onde a janela compartilhada está na tela (em pixels de verdade) cada vez
 //       que ela muda: {"x":..,"y":..,"w":..,"h":..,"min":false,"vis":true}, ou {"fechada":true}.
+//   som-programa.exe --jogos
+//       "Jogando agora": JSON no stdout com os programas que têm janela aberta e o caminho do .exe
+//       de cada um (o programa principal é quem decide se é um jogo). Não lê títulos de janela.
 //   som-programa.exe --segurar (--vk N | --scan N) [--ctrl] [--alt] [--shift]
 //       Apertar-para-falar: vigia UMA tecla (ou botão do mouse) e escreve "1" quando ela é
 //       apertada e "0" quando é solta. Não vê nenhuma outra tecla. --scan é a posição física
@@ -41,7 +44,7 @@
 #include <string>
 #include <vector>
 
-static const char* VERSAO = "3";
+static const char* VERSAO = "4";
 
 // ---------------------------------------------------------------- texto e JSON
 static std::string utf8(const std::wstring& w) {
@@ -305,6 +308,39 @@ static int listar(DWORD ignorar) {
 }
 
 // ---------------------------------------------------------------- --capturar
+// ---------------------------------------------------------------- --jogos
+static int jogos() {
+  Processos ps = listarProcessos();
+  std::vector<HWND> todas;
+  EnumWindows(juntarJanela, (LPARAM)&todas);
+  std::set<DWORD> comJanela;
+  for (HWND h : todas) {
+    if (!janelaDeVerdade(h)) continue;
+    DWORD dono = 0;
+    GetWindowThreadProcessId(h, &dono);
+    if (dono) comJanela.insert(dono);
+  }
+  const DWORD eu = GetCurrentProcessId();
+  std::string saida = "{\"versao\":";
+  saida += VERSAO;
+  saida += ",\"processos\":[";
+  bool primeiro = true;
+  for (DWORD pid : comJanela) {
+    if (pid <= 4 || pid == eu) continue;
+    auto it = ps.find(pid);
+    if (it == ps.end()) continue;
+    const std::wstring caminho = caminhoDo(pid);
+    if (caminho.empty()) continue;
+    if (!primeiro) saida += ",";
+    primeiro = false;
+    saida += "{\"exe\":" + jsonTexto(it->second.exe) + ",\"caminho\":" + jsonTexto(caminho) + "}";
+  }
+  saida += "]}\n";
+  fwrite(saida.data(), 1, saida.size(), stdout);
+  fflush(stdout);
+  return 0;
+}
+
 static volatile LONG g_parar = 0;
 
 static void status(const std::string& json) {
@@ -519,12 +555,14 @@ int wmain(int argc, wchar_t** argv) {
   _setmode(_fileno(stdout), _O_BINARY);
   if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED))) return 3;
   DWORD pid = 0, taxa = 48000, ignorar = 0, vk = 0, scan = 0, hwnd = 0;
+  bool modoJogos = false;
   bool modoListar = false, modoCapturar = false, modoSegurar = false, ctrl = false, alt = false, shift = false;
   for (int i = 1; i < argc; i++) {
     std::wstring a = argv[i];
     const wchar_t* prox = i + 1 < argc ? argv[i + 1] : nullptr;
     if (a == L"--versao") { printf("%s\n", VERSAO); return 0; }
     else if (a == L"--listar") modoListar = true;
+    else if (a == L"--jogos") modoJogos = true;
     else if (a == L"--ignorar" && numero(prox, ignorar, true)) i++; // 0 = não ignorar ninguém
     else if (a == L"--capturar" && numero(prox, pid)) { modoCapturar = true; i++; }
     else if (a == L"--taxa" && numero(prox, taxa)) i++;
@@ -539,6 +577,7 @@ int wmain(int argc, wchar_t** argv) {
   }
   if (taxa < 8000 || taxa > 192000) { status("{\"erro\":\"taxa\"}"); return 1; }
   if (modoListar) return listar(ignorar);
+  if (modoJogos) return jogos();
   if (modoCapturar) return capturar(pid, taxa);
   if (modoSegurar && (vk || scan)) return segurar(vk, scan, ctrl, alt, shift);
   if (hwnd) return vigiarJanela(hwnd);

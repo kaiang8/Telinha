@@ -223,6 +223,55 @@ function validarAviso(d) {
     piscar: d.piscar === true,
   };
 }
+// ---- "jogando agora": qual jogo está aberto, a partir do caminho dos programas com janela ----
+// Só pelo caminho do .exe (pastas das lojas de jogos) e por uma lista de jogos conhecidos: nunca
+// pelo título da janela (que poderia mostrar o que a pessoa está fazendo).
+const PASTAS_DE_JOGOS = [
+  /\\steamapps\\common\\([^\\]+)\\/i,
+  /\\Epic Games\\([^\\]+)\\/i,
+  /\\Riot Games\\([^\\]+)\\/i,
+  /\\XboxGames\\([^\\]+)\\/i,
+  /\\GOG Galaxy\\Games\\([^\\]+)\\/i,
+  /\\GOG Games\\([^\\]+)\\/i,
+  /\\Ubisoft Game Launcher\\games\\([^\\]+)\\/i,
+  /\\EA Games\\([^\\]+)\\/i,
+  /\\Origin Games\\([^\\]+)\\/i,
+  /\\Battle\.net\\Games\\([^\\]+)\\/i,
+];
+const JOGOS_CONHECIDOS = {
+  'valorant-win64-shipping.exe': 'VALORANT', 'league of legends.exe': 'League of Legends', 'cs2.exe': 'Counter-Strike 2',
+  'csgo.exe': 'Counter-Strike', 'gta5.exe': 'GTA V', 'gta5_enhanced.exe': 'GTA V', 'r5apex.exe': 'Apex Legends', 'r5apex_dx12.exe': 'Apex Legends',
+  'fortniteclient-win64-shipping.exe': 'Fortnite', 'robloxplayerbeta.exe': 'Roblox', 'overwatch.exe': 'Overwatch 2',
+  'rocketleague.exe': 'Rocket League', 'dota2.exe': 'Dota 2', 'eldenring.exe': 'Elden Ring', 'wow.exe': 'World of Warcraft',
+  'hearthstone.exe': 'Hearthstone', 'diablo iv.exe': 'Diablo IV', 'genshinimpact.exe': 'Genshin Impact', 'osu!.exe': 'osu!',
+  'terraria.exe': 'Terraria', 'among us.exe': 'Among Us', 'rainbowsix.exe': 'Rainbow Six Siege', 'tslgame.exe': 'PUBG',
+  'minecraft.windows.exe': 'Minecraft', 'cod.exe': 'Call of Duty', 'fc25.exe': 'EA SPORTS FC 25', 'fc26.exe': 'EA SPORTS FC 26',
+  'deadbydaylight-win64-shipping.exe': 'Dead by Daylight', 'stardew valley.exe': 'Stardew Valley', 'lethal company.exe': 'Lethal Company',
+  'repo.exe': 'R.E.P.O.', 'marvel-win64-shipping.exe': 'Marvel Rivals', 'helldivers2.exe': 'Helldivers 2',
+};
+// pastas que ficam dentro das lojas mas não são jogos (ferramentas, inicializadores, papel de parede)
+const NAO_JOGO = /^(wallpaper[ _]?engine|steamvr|soundpad|lossless scaling|steamworks shared|steam controller configs|riot client|launcher|epic online services|direct ?x|.*redist.*|common redistributables)$/i;
+const AJUDANTES = /crash|easyanticheat|battleye|eac_|launcher|unins|setup|redist|helper|reporter|updater|cefprocess|webhelper/i;
+function jogoAtual(lista) {
+  if (!Array.isArray(lista)) return null;
+  const nome = (t) => String(t).replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+  for (const p of lista) {
+    const exe = String(p?.exe || '').toLowerCase();
+    if (JOGOS_CONHECIDOS[exe]) return JOGOS_CONHECIDOS[exe];
+  }
+  for (const p of lista) {
+    const c = String(p?.caminho || '');
+    const exe = String(p?.exe || '');
+    // Minecraft Java roda no java que vem com o próprio launcher
+    if (/^javaw?\.exe$/i.test(exe) && /\\(\.minecraft|Minecraft Launcher)\\/i.test(c)) return 'Minecraft';
+    if (AJUDANTES.test(exe)) continue;
+    for (const re of PASTAS_DE_JOGOS) {
+      const m = re.exec(c);
+      if (m && !NAO_JOGO.test(m[1].trim())) return nome(m[1]) || null;
+    }
+  }
+  return null;
+}
 // fonte escolhida no seletor: a tela inteira (monitor) ou uma janela (pelo número dela)
 function fonteDaCaneta(fonte) {
   if (!fonte || typeof fonte.id !== 'string') return null;
@@ -265,7 +314,7 @@ function formatosDosPerfis(perfis) {
 }
 
 module.exports = {
-  validarTraco, validarAviso, fonteDaCaneta, acharMesmaFonte, formatosDosPerfis,
+  validarTraco, validarAviso, jogoAtual, fonteDaCaneta, acharMesmaFonte, formatosDosPerfis,
   teclaDoPtt, argumentosDoPtt,
   validarTema, cssDoTema,
   SITE_PADRAO, origemDe, siteValido, podeNavegar, podeAbrirFora, requisicaoPermitida,

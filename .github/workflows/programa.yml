@@ -53,6 +53,9 @@ jobs:
           $saida = & ./nativo/bin/som-programa.exe --listar --ignorar 0
           Write-Output $saida
           $null = $saida | ConvertFrom-Json
+          $jogos = & ./nativo/bin/som-programa.exe --jogos
+          Write-Output $jogos
+          $null = $jogos | ConvertFrom-Json
 
       - name: Montar o instalador
         run: npx electron-builder --win --x64 --publish never

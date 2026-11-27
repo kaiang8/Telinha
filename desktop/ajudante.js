@@ -202,4 +202,21 @@ function vigiarJanela(hwnd, aoMudar) {
   return { parar };
 }
 
-module.exports = { caminho, listar, capturar, parar, anexarPorta, vigiarTecla, soltarTecla, vigiarJanela };
+// "jogando agora": programas com janela e o caminho do .exe de cada um (ou null)
+function jogos() {
+  const exe = caminho();
+  if (!exe) return Promise.resolve(null);
+  return new Promise((ok) => {
+    execFile(exe, ['--jogos'], { windowsHide: true, timeout: 5000, maxBuffer: 2 * 1024 * 1024 }, (erro, saida) => {
+      if (erro) return ok(null);
+      try {
+        const d = JSON.parse(String(saida));
+        ok((Array.isArray(d.processos) ? d.processos : []).slice(0, 400)
+          .filter((p) => typeof p.exe === 'string' && typeof p.caminho === 'string')
+          .map((p) => ({ exe: p.exe.slice(0, 120), caminho: p.caminho.slice(0, 400) })));
+      } catch { ok(null); }
+    });
+  });
+}
+
+module.exports = { caminho, listar, jogos, capturar, parar, anexarPorta, vigiarTecla, soltarTecla, vigiarJanela };
