@@ -780,7 +780,7 @@ html:not([data-tema="escuro"]) .ap-name > span:first-child { filter: brightness(
 }
 @media (prefers-reduced-motion: reduce) {
   /* os emotes ficam de fora: são curtinhos, só aparecem quando alguém clica, e a graça é a animação */
-  :not(.emote-voa, .emote-voa *, .t-reacao *, .sticker, .sticker *, .logo-brilho), ::before, ::after { animation: none !important; transition: none !important; }
+  :not(.emote-voa, .emote-voa *, .t-reacao *, .sticker, .sticker *, .logo-ct, .logo-ct *), ::before, ::after { animation: none !important; transition: none !important; }
 }
 /* com vídeo na tela: sem desfoque. A placa de vídeo refazia o desfoque a cada quadro e o vídeo
    caía pela metade (inclusive a captura de quem transmite). Painéis mais opacos no lugar. */
@@ -1293,22 +1293,85 @@ html[data-tema="escuro"] .member.offline .name-line { opacity: .78; }
   /* duas transmissões: uma embaixo da outra (lado a lado ficariam pequenas) */
   .stage-grid.n2 { grid-template-columns: minmax(0, 1fr); }
 }
-/* ===== Logo no lugar do nome do servidor: dois riscos de brilho correm pelas letras ao passar o mouse ===== */
-#serverName:has(.logo-ct) { overflow: visible; }
-.logo-ct { position: relative; display: block; height: 34px; max-width: 100%; }
-.logo-ct img { display: block; height: 100%; width: auto; max-width: 100%; object-fit: contain; object-position: left center; user-select: none; }
-.logo-brilho {
-  position: absolute; inset: 0; pointer-events: none; opacity: 0;
-  -webkit-mask: url(logo-ct.png) left center / contain no-repeat; mask: url(logo-ct.png) left center / contain no-repeat;
+/* ===== Logo no lugar do nome do servidor =====
+   Camadas, de trás para a frente: nuvens passando da direita para a esquerda, a estrela (com vida
+   própria: pula quando a onda das letras passa embaixo dela, pisca, olha em volta e brilha ao passar
+   o mouse), os raios (estouram quando a estrela pousa), o contorno parado e cada letra mexendo sozinha.
+   Cada camada já vem no tamanho exato da tela (1x e 2x): o navegador não precisa encolher a imagem,
+   que era o que deixava serrilhado. Tudo com transform (a placa de vídeo anima sem refazer a página).
+   O ciclo da estrela e dos raios (4,8 s) é o dobro do das letras (2,4 s), para ficarem em sincronia. */
+.sidebar-header:has(.logo-ct) { height: auto; padding: 8px 8px 6px; justify-content: center; position: relative; }
+.sidebar-header:has(.logo-ct) .header-btns { position: absolute; top: 6px; right: 6px; }
+.sidebar-header:has(.logo-ct) .lock-badge { position: absolute; top: 8px; left: 10px; }
+#serverName:has(.logo-ct) { overflow: visible; flex: none; }
+.logo-ct { --w: 216px; position: relative; display: block; width: var(--w); height: 144px; user-select: none; }
+.logo-ct img { position: absolute; display: block; pointer-events: none; }
+.lc-letras { position: absolute; inset: 0; }
+/* nuvens */
+.lc-nuvens { position: absolute; left: 0; top: 0; width: 100%; height: 50%; overflow: hidden; pointer-events: none;
+  -webkit-mask: linear-gradient(90deg, transparent 0, #000 16%, #000 84%, transparent 100%); mask: linear-gradient(90deg, transparent 0, #000 16%, #000 84%, transparent 100%); }
+.lc-nuvem { position: absolute; left: var(--x); top: var(--y); width: var(--l); animation: lcPassa var(--t) linear infinite; animation-delay: var(--atraso); }
+.lc-nuvem img { position: static; width: 100%; height: auto; animation: lcBoia var(--b, 3s) ease-in-out infinite alternate; }
+/* posição parada (modo leve): uma de cada lado da estrela, como na arte */
+.lc-nuvem.n1 { --x: 30px; --y: 25px; --l: 69px; --t: 21s; --atraso: -6s; --b: 3.1s; }
+.lc-nuvem.n2 { --x: 138px; --y: 30px; --l: 54px; --t: 16s; --atraso: -13s; --b: 2.6s; }
+.lc-nuvem.n3 { --x: 216px; --y: 18px; --l: 75px; --t: 26s; --atraso: -2s; --b: 3.6s; }
+@keyframes lcPassa { from { transform: translateX(calc(var(--w, 216px) - var(--x))); } to { transform: translateX(calc(-84px - var(--x))); } }
+@keyframes lcBoia { from { transform: translateY(0); } to { transform: translateY(-2px); } }
+/* estrela */
+.lc-estrela { position: absolute; transform-origin: 50% 71.6%; animation: lcEstrela 4.8s infinite; }
+.lc-estrela .lc-corpo { left: 0; top: 0; width: 100%; height: 100%; }
+.lc-olhos { position: absolute; inset: 0; animation: lcOlha 9.6s ease-in-out infinite; }
+.lc-olho { transform-origin: 50% 55%; animation: lcPisca 5.3s infinite; }
+@keyframes lcEstrela {
+  0% { transform: translateY(0) rotate(-2deg) scale(1, 1); animation-timing-function: ease-in-out; }
+  9% { transform: translateY(0) rotate(0deg) scale(1.09, .88); animation-timing-function: ease-out; }
+  19% { transform: translateY(-1.5px) rotate(3deg) scale(.94, 1.12); animation-timing-function: ease-in; }
+  27% { transform: translateY(0) rotate(0deg) scale(1.1, .87); animation-timing-function: ease-out; }
+  33% { transform: translateY(0) rotate(-1deg) scale(.97, 1.04); animation-timing-function: ease-in-out; }
+  39% { transform: translateY(0) rotate(0deg) scale(1, 1); animation-timing-function: ease-in-out; }
+  61% { transform: translateY(0) rotate(2.5deg) scale(1, 1.02); animation-timing-function: ease-in-out; }
+  82% { transform: translateY(0) rotate(-2.5deg) scale(1, 1); animation-timing-function: ease-in-out; }
+  100% { transform: translateY(0) rotate(-2deg) scale(1, 1); }
+}
+}
+}
+@keyframes lcPisca { 0%, 89%, 93%, 100% { transform: scaleY(1); } 91% { transform: scaleY(.1); } }
+@keyframes lcOlha {
+  0%, 20% { transform: translate(0, 0); }
+  26%, 44% { transform: translate(1.6px, -.3px); }
+  52%, 70% { transform: translate(-1.6px, 0); }
+  77%, 100% { transform: translate(0, 0); }
+}
+.lc-brilho {
+  position: absolute; inset: 0; opacity: 0; pointer-events: none;
+  -webkit-mask: url(logo/estrela@2x.webp) center / 100% 100% no-repeat; mask: url(logo/estrela@2x.webp) center / 100% 100% no-repeat;
   background: linear-gradient(115deg, transparent 0 30%, rgba(255, 255, 255, .95) 33%, rgba(255, 255, 255, .95) 39%, transparent 42%,
     transparent 47%, rgba(255, 255, 255, .85) 49%, rgba(255, 255, 255, .85) 52%, transparent 54%) no-repeat;
   background-size: 300% 100%; background-position: 100% 0;
 }
-.sidebar-header:hover .logo-brilho { animation: brilhoLogo 1.8s ease-in-out infinite; }
+.sidebar-header:hover .lc-brilho { animation: brilhoLogo 1.8s ease-in-out infinite; }
 @keyframes brilhoLogo {
   0% { background-position: 100% 0; opacity: 1; }
   55% { background-position: 0% 0; opacity: 1; }
   56%, 100% { background-position: 0% 0; opacity: 0; }
+}
+/* raios: encolhem quando a estrela pousa e estouram para fora */
+.lc-raio { animation: lcRaio 4.8s infinite; }
+@keyframes lcRaio {
+  0%, 24% { transform: scale(1); opacity: .95; }
+  28% { transform: scale(.55); opacity: .55; animation-timing-function: ease-out; }
+  33% { transform: scale(1.22); opacity: 1; animation-timing-function: ease-in-out; }
+  40% { transform: scale(.96); opacity: 1; }
+  46%, 100% { transform: scale(1); opacity: .95; }
+}
+/* letras: cada uma sobe e desce no seu tempo (uma onda da esquerda para a direita); o contorno fica parado */
+.lc-letra { animation: lcLetra 2.4s ease-in-out infinite; }
+@keyframes lcLetra {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-2px) rotate(var(--r, 1deg)); }
+  50% { transform: translateY(0) rotate(0deg); }
+  75% { transform: translateY(1px) rotate(calc(var(--r, 1deg) * -1)); }
 }
 /* ===== Telinhas das boas-vindas (imagens): pulinho com balanço, cada uma no seu ritmo ===== */
 img.telinha { object-fit: contain; transform-origin: 50% 100%; animation: tlPulo 2.4s ease-in-out infinite; }
