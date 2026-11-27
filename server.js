@@ -2211,6 +2211,103 @@ async function proxyImagem(req, res, url) {
   }
 }
 
+// ---------- Prévia de links ----------
+// O servidor abre a página (o site de fora vê o Render, nunca quem está no chat), lê só o começo dela
+// e tira o título, a descrição e a imagem. Fica guardado na memória por 6 h (nada vai para o Upstash).
+const PREVIAS = new Map(); // url -> { em, dados }
+const PREVIAS_INDO = new Map(); // url -> promessa (a mesma página pedida por vários ao mesmo tempo)
+let previasEmAndamento = 0;
+const desfazerEntidades = (t) => String(t || '')
+  .replace(/&#(\d+);/g, (_, n) => { try { return String.fromCodePoint(Number(n)); } catch { return ''; } })
+  .replace(/&#x([0-9a-f]+);/gi, (_, n) => { try { return String.fromCodePoint(parseInt(n, 16)); } catch { return ''; } })
+  .replace(/&(amp|lt|gt|quot|apos|nbsp);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' })[e]);
+const limparTexto = (t, max) => desfazerEntidades(t).replace(/\s+/g, ' ').trim().slice(0, max);
+async function buscarComCuidado(alvo, { aceitar, max, prazoMs }) {
+  const ctrl = new AbortController();
+  const prazo = setTimeout(() => ctrl.abort(), prazoMs);
+  try {
+    let r = null;
+    for (let saltos = 0; saltos < 4; saltos++) {
+      if (!(await enderecoPublico(alvo))) return null;
+      r = await fetch(alvo, { redirect: 'manual', signal: ctrl.signal, headers: { 'User-Agent': 'CarasETelas/1.0 (previa de links)', Accept: aceitar, 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.6' } });
+      if (![301, 302, 303, 307, 308].includes(r.status)) break;
+      const prox = r.headers.get('location');
+      if (!prox) return null;
+      alvo = new URL(prox, alvo);
+      r = null;
+    }
+    if (!r || !r.ok) return null;
+    const tipo = String(r.headers.get('content-type') || '');
+    const partes = [];
+    let total = 0;
+    for await (const pedaco of r.body) {
+      partes.push(pedaco);
+      total += pedaco.length;
+      if (total >= max) { ctrl.abort(); break; }
+    }
+    return { url: alvo, tipo, corpo: Buffer.concat(partes).subarray(0, max) };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(prazo);
+  }
+}
+async function montarPrevia(endereco) {
+  const alvo = new URL(endereco);
+  const host = alvo.hostname.replace(/^www\.|^m\./, '');
+  // YouTube: o oEmbed oficial é mais confiável que a página
+  if (/^(youtube\.com|youtu\.be|music\.youtube\.com)$/.test(host)) {
+    const r = await buscarComCuidado(new URL(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(alvo.href)}`), { aceitar: 'application/json', max: 64 * 1024, prazoMs: 6000 });
+    if (r) {
+      try {
+        const j = JSON.parse(r.corpo.toString('utf8'));
+        const img = /^https:\/\/i\.ytimg\.com\//.test(j.thumbnail_url || '') ? j.thumbnail_url : '';
+        return { site: 'YouTube', titulo: limparTexto(j.title, 140), descricao: limparTexto(j.author_name, 120), imagem: img, video: true };
+      } catch { /* cai para a página */ }
+    }
+  }
+  const r = await buscarComCuidado(alvo, { aceitar: 'text/html,application/xhtml+xml;q=0.9', max: 400 * 1024, prazoMs: 6000 });
+  if (!r || !/text\/html|xhtml/i.test(r.tipo)) return null;
+  const charset = (/charset=([\w-]+)/i.exec(r.tipo) || /<meta[^>]+charset=["']?([\w-]+)/i.exec(r.corpo.toString('latin1')) || [])[1] || 'utf-8';
+  let html;
+  try { html = new TextDecoder(charset.toLowerCase()).decode(r.corpo); } catch { html = r.corpo.toString('utf8'); }
+  const cab = html.slice(0, 300 * 1024);
+  const meta = {};
+  for (const m of cab.matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = m[0];
+    const chave = (/(?:property|name|itemprop)\s*=\s*["']([^"']+)["']/i.exec(tag) || [])[1];
+    const valor = (/content\s*=\s*"([^"]*)"/i.exec(tag) || /content\s*=\s*'([^']*)'/i.exec(tag) || [])[1];
+    if (chave && valor !== undefined && !meta[chave.toLowerCase()]) meta[chave.toLowerCase()] = valor;
+  }
+  const titulo = limparTexto(meta['og:title'] || meta['twitter:title'] || (/<title[^>]*>([\s\S]*?)<\/title>/i.exec(cab) || [])[1], 140);
+  if (!titulo) return null;
+  let imagem = '';
+  try {
+    const i = meta['og:image:secure_url'] || meta['og:image'] || meta['twitter:image'] || meta['twitter:image:src'];
+    if (i) { const u = new URL(desfazerEntidades(i), r.url); if (/^https?:$/.test(u.protocol) && u.href.length < 1000) imagem = u.href; }
+  } catch { /* sem imagem */ }
+  return {
+    site: limparTexto(meta['og:site_name'] || r.url.hostname.replace(/^www\./, ''), 60),
+    titulo,
+    descricao: limparTexto(meta['og:description'] || meta['twitter:description'] || meta.description, 220),
+    imagem,
+  };
+}
+async function previaDe(endereco) {
+  const c = PREVIAS.get(endereco);
+  if (c && Date.now() - c.em < 6 * 3600e3) return c.dados;
+  if (PREVIAS_INDO.has(endereco)) return PREVIAS_INDO.get(endereco);
+  if (previasEmAndamento >= 6) { const e = new Error('ocupado'); e.status = 429; throw e; }
+  previasEmAndamento++;
+  const p = montarPrevia(endereco).catch(() => null).then((dados) => {
+    PREVIAS.set(endereco, { em: Date.now(), dados });
+    if (PREVIAS.size > 600) PREVIAS.delete(PREVIAS.keys().next().value);
+    return dados;
+  }).finally(() => { previasEmAndamento--; PREVIAS_INDO.delete(endereco); });
+  PREVIAS_INDO.set(endereco, p);
+  return p;
+}
+
 // ---------- GIFs (GIPHY) ----------
 // A chave fica na variável GIPHY_CHAVE do Render (nunca vai para a página). A chave grátis do GIPHY
 // aceita 100 buscas por hora: as buscas repetidas ficam guardadas 15 min e o servidor para antes do
@@ -2640,6 +2737,19 @@ async function api(req, res, url) {
         return json(res, 200, { gifs: await buscarGifs(q, pagina) });
       } catch (e) {
         return json(res, e.status || 502, { error: e.message || 'Não consegui buscar GIFs agora.' });
+      }
+    }
+
+    case 'previa': {
+      let alvo;
+      try { alvo = new URL(String(body.url || '')); } catch { return json(res, 400, { error: 'endereço inválido' }); }
+      if (!/^https?:$/.test(alvo.protocol) || alvo.href.length > 1000 || (alvo.port && !['80', '443'].includes(alvo.port))) return json(res, 400, { error: 'endereço inválido' });
+      alvo.hash = '';
+      if (limiteDe(u, 'limPrevia', 40, 60e3)) return json(res, 429, { error: 'Calma, espere um pouco.' });
+      try {
+        return json(res, 200, { previa: await previaDe(alvo.href) });
+      } catch (e) {
+        return json(res, e.status || 502, { error: 'Não consegui ver esse link agora.' });
       }
     }
 

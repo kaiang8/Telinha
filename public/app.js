@@ -915,7 +915,7 @@
     const texto = editando
       ? `<div class="m-text m-editor"><textarea class="m-edit" rows="1" maxlength="2000" aria-label="Editar mensagem">${esc(S.editando.rascunho)}</textarea>
           <div class="m-edit-dica">Enter salva · Esc cancela · Shift+Enter pula linha</div></div>`
-      : m.enquete ? enqueteHtml(m) : `<div class="m-text">${formatar(m.text)}</div>`;
+      : m.enquete ? enqueteHtml(m) : `<div class="m-text">${formatar(m.text)}</div>${previaHtml(m)}`;
     const editada = m.editada ? `<span class="m-editada" title="Editada ${esc(quando(new Date(m.editada)).toLowerCase())}">(editada)</span>` : '';
     if (agrupada) {
       return h + `<div class="msg${cls}${fixada ? ' fixada' : ''}" ${attrs}><span class="m-stamp">${hhmm(d)}</span>${editada ? `<div class="m-editada-linha">${editada}</div>` : ''}${texto}${acoes}</div>`;
@@ -1240,6 +1240,45 @@
     chance();
   }
   $('#roletaBtn').addEventListener('click', () => criarRoleta());
+
+  // ----- Prévia de links: título, descrição e imagem do primeiro link (o servidor busca) -----
+  const PV = { cache: new Map(), timer: null, semImagem: new Set() };
+  function linkParaPrevia(texto) {
+    const limpo = String(texto || '').replace(/\|\|[^\n]+?\|\|/g, ' ').replace(/`[^`\n]+`/g, ' ');
+    for (const m of limpo.matchAll(/https:\/\/[^\s<]+[^\s<.,:;!?)\]'"]/g)) {
+      const u = m[0];
+      if (/\.(png|jpe?g|gif|webp|avif|mp4|webm)(\?\S*)?$/i.test(u) || /(^|\.)giphy\.com\//i.test(u.replace(/^https:\/\//, ''))) continue;
+      return u;
+    }
+    return null;
+  }
+  function previaHtml(m) {
+    if (m.sistema || m.enquete) return '';
+    const u = linkParaPrevia(m.text);
+    if (!u) return '';
+    const c = PV.cache.get(u);
+    if (c === undefined) { buscarPrevia(u); return ''; }
+    if (!c || c === 'buscando') return '';
+    const img = c.imagem && !PV.semImagem.has(c.imagem) ? `<img class="lp-img${c.video ? ' video' : ''}" data-lp-img="${esc(c.imagem)}" src="/api/img?u=${encodeURIComponent(c.imagem)}&amp;t=${encodeURIComponent(S.token || '')}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '';
+    return `<a class="lp-card" href="${esc(u)}" target="_blank" rel="noopener noreferrer"><span class="lp-txt"><span class="lp-site">${esc(c.site || '')}</span>
+      <span class="lp-tit">${esc(c.titulo)}</span>${c.descricao ? `<span class="lp-desc">${esc(c.descricao)}</span>` : ''}</span>${img}</a>`;
+  }
+  // imagem da prévia que não carregou: some e não é pedida de novo
+  $('#messages').addEventListener('error', (e) => {
+    const img = e.target;
+    if (img?.matches?.('img.lp-img')) { PV.semImagem.add(img.dataset.lpImg); img.remove(); }
+  }, true);
+  async function buscarPrevia(u) {
+    PV.cache.set(u, 'buscando');
+    try {
+      const r = await api('previa', { url: u });
+      PV.cache.set(u, r.previa || null);
+      if (r.previa) { clearTimeout(PV.timer); PV.timer = setTimeout(() => rerenderMantendoScroll(), 120); }
+    } catch {
+      PV.cache.set(u, null);
+    }
+    if (PV.cache.size > 400) PV.cache.delete(PV.cache.keys().next().value);
+  }
 
   // ----- Enquetes: uma mensagem com opções; cada um vota pelo seu perfil -----
   function enqueteHtml(m) {

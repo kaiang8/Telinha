@@ -737,6 +737,11 @@ DICAS
     hora, 4 horas, hoje à meia-noite ou nunca). O recado aparece embaixo
     do seu nome na lista. Em Não perturbe, os seus avisos, notificações
     e o som de menção ficam desligados.
+  - Prévia de links: quando alguém manda um link (https), aparece
+    embaixo um cartão com o título, um resumo e a imagem da página; para
+    vídeos do YouTube, o título e a capa do vídeo. Quem abre a página é
+    o servidor, então o site de fora não vê o IP de ninguém. Links
+    dentro de spoiler não ganham prévia.
   - Spoiler: escreva o texto entre duas barras de cada lado, ||assim||,
     e ele aparece tampado até alguém clicar. Funciona também com links
     de imagem (a imagem fica borrada). Nos avisos, nas respostas e na
