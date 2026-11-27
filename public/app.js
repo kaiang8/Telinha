@@ -556,6 +556,7 @@
       case 'msg-edit': return onMsgEdit(m);
       case 'fixadas': return onFixadas(m);
       case 'enquete': return onEnquete(m);
+      case 'x1': return onX1(m);
       case 'clear': return onClear(m);
       case 'settings': return onSettings(m);
       case 'announce': return mostrarAviso(m);
@@ -726,6 +727,7 @@
     if (tm) tm.delete(msg.uid);
 
     if (msg.sistema === 'roleta') RL.chegou.set(msg.id, Date.now()); // as que chegam agora giram
+    if (msg.sistema === 'x1' && msg.x1?.b === S.myPid && msg.x1.a !== S.myPid) avisoDeX1(msg);
     if (/^dm-/.test(msg.ch)) chegouDm(msg);
     const deOutro = msg.uid !== S.myId;
     const visivel = msg.ch === S.view && !(chan(S.view)?.type === 'sala' && !S.showSalaChat);
@@ -785,7 +787,7 @@
   const TODOS = /(^|[^\p{L}\p{N}_])@(everyone|todos|here|galera)(?![\p{L}\p{N}_])/iu;
   function mencionaMe(m) {
     if (!m) return false;
-    if (m.sistema === 'roleta') return false;
+    if (m.sistema === 'roleta' || m.sistema === 'x1') return false;
     if (m.sistema === 'boasvindas') return !!S.myPid && m.alvo === S.myPid;
     if (m.uid === S.myId || (m.pid && m.pid === S.myPid)) return false; // as minhas não
     const t = String(m.text || '');
@@ -902,6 +904,7 @@
       + (fixada ? `<span class="m-pin" aria-label="Fixada por ${esc(fixada.por)}">${icon('pin')}</span>` : '');
     const attrs = `data-id="${esc(m.id)}"${Number.isInteger(m.pos) ? ` data-pos="${m.pos}"` : ''}${fixada ? ` title="Fixada por ${esc(fixada.por)}"` : ''}`;
     if (m.sistema === 'roleta' && m.roleta) return h + roletaHtml(m, cls, attrs, acoes);
+    if (m.sistema === 'x1' && m.x1) return h + x1Html(m, cls, attrs, acoes);
     if (m.sistema === 'boasvindas') {
       const p = S.perfis?.[m.alvo];
       const nome = `<span class="bv-nome" style="--cor:${esc(p?.cor || '#3db3f0')}">${esc(p?.nome || 'alguém')}</span>`;
@@ -955,8 +958,9 @@
       <p>Começo da sua conversa com ${esc(c.name)}.</p></div>`
       : `<div class="welcome"><div class="wicon">${icon(sala ? 'screen' : 'hash')}</div>
       <h2>${sala ? 'Chat da ' + esc(c.name) : 'Bem-vindo(a) a #' + esc(c.name) + '!'}</h2>
-      <p>${sala ? 'Converse aqui enquanto assistem juntos.' : c.roleta ? 'Na dúvida entre duas (ou vinte) opções? Crie uma roleta: todo mundo vê girar, e cada opção tem a mesma chance.' : `Este é o começo do canal #${esc(c.name)}.`}</p>
-      ${c.roleta ? `<button type="button" class="btn primary rl-criar" data-criar-roleta>${icon('roleta')} Criar roleta</button>` : ''}</div>`;
+      <p>${sala ? 'Converse aqui enquanto assistem juntos.' : c.x1 ? 'Decisão difícil? Resolve no pedra, papel e tesoura. Desafie alguém: cada um escolhe escondido, e o vencedor é anunciado aqui.' : c.roleta ? 'Na dúvida entre duas (ou vinte) opções? Crie uma roleta: todo mundo vê girar, e cada opção tem a mesma chance.' : `Este é o começo do canal #${esc(c.name)}.`}</p>
+      ${c.roleta ? `<button type="button" class="btn primary rl-criar" data-criar-roleta>${icon('roleta')} Criar roleta</button>` : ''}
+      ${c.x1 ? '<button type="button" class="btn primary rl-criar" data-x1-desafiar>✊ Desafiar alguém</button>' : ''}</div>`;
     lista.forEach((m, i) => { h += msgHtml(m, lista[i - 1]); });
     const box = $('#messages');
     box.innerHTML = h;
@@ -1045,6 +1049,20 @@
     const fx = e.target.closest('[data-fixar]');
     if (fx) return fixarMensagem(fx.dataset.fixar);
     if (e.target.closest('[data-criar-roleta]')) return criarRoleta();
+    if (e.target.closest('[data-x1-desafiar]')) return desafiarX1();
+    const x1b = e.target.closest('[data-x1]');
+    if (x1b) {
+      const el = x1b.closest('.msg');
+      const m = (S.messages[S.view] || []).find((x) => x.id === el?.dataset.id);
+      if (!m?.x1) return;
+      const acao = x1b.dataset.x1;
+      if (acao === 'revanche') return desafiarX1(m.x1.a === S.myPid ? m.x1.b : m.x1.a, m.x1.motivo);
+      const pedido = { channel: S.view, id: m.id, pos: m.pos };
+      const rota = acao === 'recusar' ? 'x1-recusar' : acao === 'cancelar' ? 'x1-cancelar' : 'x1-jogar';
+      if (rota === 'x1-jogar') pedido.jogada = acao;
+      x1b.closest('.x1-acoes')?.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+      return api(rota, pedido).catch((err) => { toast(err.message); rerenderMantendoScroll(); });
+    }
     const rl = e.target.closest('[data-girar-de-novo], [data-editar-roleta]');
     if (rl) {
       const m = (S.messages[S.view] || []).find((x) => x.id === rl.closest('.msg')?.dataset.id);
@@ -1240,6 +1258,97 @@
     chance();
   }
   $('#roletaBtn').addEventListener('click', () => criarRoleta());
+
+  // ----- X1 Otário?: pedra, papel e tesoura (as jogadas ficam escondidas no servidor) -----
+  const MAOS = { pedra: '✊', papel: '✋', tesoura: '✌️' };
+  const NOME_JOGADA = { pedra: 'pedra', papel: 'papel', tesoura: 'tesoura' };
+  const X1 = { revelou: new Map() }; // id -> quando o resultado chegou nesta página (anima a revelação)
+  const nomeP = (pid) => S.perfis?.[pid]?.nome || 'alguém';
+  const corP = (pid) => S.perfis?.[pid]?.cor || '#8a94a6';
+  function x1Html(m, cls, attrs, acoes) {
+    const d = m.x1;
+    const eu = d.a === S.myPid ? 'a' : d.b === S.myPid ? 'b' : null;
+    const aberto = d.estado === 'pendente' || d.estado === 'jogando';
+    const parado = aberto && Date.now() - (d.atualizado || d.criado) > 10 * 60e3;
+    const estado = parado ? 'expirado' : d.estado;
+    const ult = d.rodadas[d.rodadas.length - 1];
+    const fim = estado === 'fim';
+    const revelando = fim && !MODO_LEVE && X1.revelou.has(m.id) && Date.now() - X1.revelou.get(m.id) < 1400;
+    const lado = (k) => {
+      const pid = d[k];
+      let sit = '';
+      if (fim && ult) sit = `<span class="x1-mao ${revelando ? 'revela' : ''}" title="${NOME_JOGADA[ult[k]]}">${MAOS[ult[k]]}</span>`;
+      else if (aberto && !parado) sit = d.prontos?.[k] ? '<span class="x1-pronto">✓ escolheu</span>' : `<span class="x1-espera">${estado === 'pendente' && k === 'b' ? 'precisa aceitar' : 'escolhendo…'}</span>`;
+      const ganhou = fim && d.vencedor === pid;
+      return `<div class="x1-lado${ganhou ? ' ganhou' : ''}"><span class="x1-av" style="background:${esc(corP(pid))}">${esc(initial(nomeP(pid)))}</span>
+        <b style="color:${esc(corP(pid))}">${esc(nomeP(pid))}</b>${sit}</div>`;
+    };
+    const empates = d.rodadas.filter((r) => r.a === r.b);
+    const historico = empates.length ? `<div class="x1-hist muted small">${empates.length === 1 ? 'Deu empate uma vez' : `Deu empate ${empates.length} vezes`} (${empates.map((r) => MAOS[r.a]).join(' ')}).</div>` : '';
+    let rodape = '';
+    if (fim) {
+      const fig = STICKERS[d.figura] || STICKERS[0];
+      const frase = d.vencedor
+        ? `X1 entre <b>${esc(nomeP(d.a))}</b> e <b>${esc(nomeP(d.b))}</b>: quem ganhou foi <span class="rl-ganhou">${esc(nomeP(d.vencedor))}</span>!${ult ? ` <span class="muted small">(${NOME_JOGADA[ult[d.vencedor === d.a ? 'a' : 'b']]} ganha de ${NOME_JOGADA[ult[d.vencedor === d.a ? 'b' : 'a']]})</span>` : ''}`
+        : `X1 entre <b>${esc(nomeP(d.a))}</b> e <b>${esc(nomeP(d.b))}</b>: ${X1_MAX_RODADAS_TXT} empates seguidos, ninguém ganhou!`;
+      rodape = `<div class="rl-resultado${revelando ? ' esperando' : ''}"${revelando ? ' style="animation-delay:1.1s"' : ''}><div class="rl-telinha">${fig}</div><div class="rl-balao">${frase}</div></div>`
+        + (eu ? '<div class="x1-acoes"><button type="button" class="btn sm" data-x1="revanche">Revanche</button></div>' : '');
+    } else if (estado === 'recusado') rodape = `<p class="x1-fim muted">${esc(nomeP(d.b))} recusou o desafio.</p>`;
+    else if (estado === 'cancelado') rodape = `<p class="x1-fim muted">${esc(nomeP(d.a))} cancelou o desafio.</p>`;
+    else if (estado === 'expirado') rodape = '<p class="x1-fim muted">O desafio expirou.</p>';
+    else if (eu && !d.prontos?.[eu]) {
+      const titulo = estado === 'pendente' ? 'Aceite escolhendo a sua jogada:' : ult && ult.a === ult.b ? 'Empatou! Escolha de novo:' : 'Escolha a sua jogada:';
+      rodape = `<div class="x1-acoes"><span class="x1-dica">${titulo}</span>${['pedra', 'papel', 'tesoura'].map((j) => `<button type="button" class="btn sm x1-jogada" data-x1="${j}" title="${NOME_JOGADA[j]}"><span aria-hidden="true">${MAOS[j]}</span> ${NOME_JOGADA[j]}</button>`).join('')}
+        ${estado === 'pendente' && eu === 'b' ? '<button type="button" class="btn sm ghost" data-x1="recusar">Recusar</button>' : ''}</div>`;
+    } else if (eu === 'a' && estado === 'pendente') rodape = `<div class="x1-acoes"><span class="x1-dica">Esperando ${esc(nomeP(d.b))} aceitar…</span><button type="button" class="btn sm ghost" data-x1="cancelar">Cancelar</button></div>`;
+    else if (eu) rodape = `<p class="x1-fim muted">Esperando ${esc(nomeP(eu === 'a' ? d.b : d.a))} escolher…</p>`;
+    const sacode = revelando ? '<div class="x1-sacode" aria-hidden="true"><span>✊</span><span>✊</span></div>' : '';
+    const dt = new Date(m.ts);
+    return `<div class="msg x1-msg${cls}" ${attrs}>
+      <div class="x1-topo"><span class="m-name" style="color:${esc(corP(d.a))}">${esc(nomeP(d.a))}</span> desafiou <span class="m-name" style="color:${esc(corP(d.b))}">${esc(nomeP(d.b))}</span> para um X1
+        <span class="m-time" title="${esc(dt.toLocaleString('pt-BR'))}">${quando(dt)}</span></div>
+      ${d.motivo ? `<div class="x1-motivo">Valendo: <b>${esc(d.motivo)}</b></div>` : ''}
+      <div class="x1-arena">${sacode}${lado('a')}<span class="x1-vs">×</span>${lado('b')}</div>
+      ${historico}${rodape}${acoes}</div>`;
+  }
+  const X1_MAX_RODADAS_TXT = 10;
+  function onX1(m) {
+    const x = (S.messages[m.channel] || []).find((y) => y.id === m.id);
+    if (!x) return;
+    if (m.x1.estado === 'fim' && x.x1?.estado !== 'fim') X1.revelou.set(m.id, Date.now());
+    x.x1 = m.x1;
+    if (m.channel === S.view) {
+      rerenderMantendoScroll();
+      if (X1.revelou.has(m.id)) setTimeout(() => { if (S.view === m.channel) rerenderMantendoScroll(); }, 1450);
+    }
+  }
+  function avisoDeX1(msg) {
+    const a = autorDe(msg);
+    if (statusDe(S.myPid)?.tipo !== 'np') blip('msg');
+    if (msg.ch !== S.view) S.mencoes.add(msg.ch);
+    avisar('mencao', { nome: a.name, cor: a.color, texto: `te desafiou para um X1${msg.x1.motivo ? `: ${msg.x1.motivo}` : ''}`, ch: msg.ch });
+  }
+  function desafiarX1(alvo, motivo = '') {
+    const c = S.channels.find((x) => x.x1);
+    if (!c) return toast('O canal X1 Otário? foi apagado. Um admin pode recriá-lo.');
+    const online = S.users.filter((u) => u.pid && u.pid !== S.myPid && u.joined !== false);
+    const vistos = new Set();
+    const pessoas = online.filter((u) => !vistos.has(u.pid) && vistos.add(u.pid)).sort((x, y) => x.name.localeCompare(y.name, 'pt-BR'));
+    if (!pessoas.length) return toast('Não tem mais ninguém online para desafiar agora.');
+    if (S.view !== c.id) selecionarCanal(c.id);
+    abrirModal({
+      titulo: 'Desafiar para um X1', ok: 'Desafiar',
+      corpo: `<label class="field"><span>Quem você desafia</span><select name="alvo" class="x1-sel">${pessoas.map((u) => `<option value="${esc(u.pid)}"${u.pid === alvo ? ' selected' : ''}>${esc(u.name)}</option>`).join('')}</select></label>
+        <label class="field"><span>Valendo o quê? (opcional)</span><input type="text" name="motivo" maxlength="80" value="${esc(motivo)}" placeholder="Quem paga o lanche" autocomplete="off"></label>
+        <div class="field"><span>A sua jogada (fica escondida até o outro escolher)</span>
+          <div class="x1-escolha">${['pedra', 'papel', 'tesoura'].map((j, i) => `<label><input type="radio" name="jogada" value="${j}" required${i === 0 ? '' : ''}><span><b aria-hidden="true">${MAOS[j]}</b>${NOME_JOGADA[j]}</span></label>`).join('')}</div></div>`,
+      aoConfirmar: async (fd) => {
+        if (!fd.get('jogada')) throw new Error('Escolha pedra, papel ou tesoura.');
+        await api('x1-desafiar', { channel: c.id, alvo: fd.get('alvo'), motivo: fd.get('motivo'), jogada: fd.get('jogada') });
+      },
+    });
+  }
+  $('#x1Btn').addEventListener('click', () => desafiarX1());
 
   // ----- Prévia de links: título, descrição e imagem do primeiro link (o servidor busca) -----
   const PV = { cache: new Map(), timer: null, semImagem: new Set() };
@@ -1876,6 +1985,7 @@
     $('#toggleMembersBtn').classList.toggle('active', S.showMembers);
     if (S.fixadasDe !== S.view) { S.fixadasDe = S.view; $('#fixadasPanel').hidden = true; }
     $('#roletaBtn').hidden = !chan(S.view)?.roleta;
+    $('#x1Btn').hidden = !chan(S.view)?.x1;
     $('#enqueteBtn').hidden = !!chan(S.view)?.dm;
     atualizarBotaoFixadas();
 
@@ -2006,6 +2116,7 @@
       if (eu) itens.push(item('perfil', 'Mudar meu nome ou cor'));
       else {
         if (u?.pid || MM.pid) itens.push(item('dm', 'Mandar mensagem privada'));
+        if (u?.pid && S.channels.some((c) => c.x1)) itens.push(item('x1', 'Desafiar para um X1'));
         itens.push(item('mencionar', 'Mencionar no chat'));
       }
       if (u && !eu && S.sala && u.sala === S.sala) itens.push(item('volume', 'Volume da voz e dos sons'));
@@ -2087,6 +2198,7 @@
     if (act === 'voltar') { MM.form = null; desenharMenuMembro(); MM.el.querySelector('button')?.focus(); return; }
     if (act === 'fechar') return fecharMenuMembro(true);
     if (act === 'mencionar') { fecharMenuMembro(); return mencionarNoChat(nome); }
+    if (act === 'x1') { const pid = pessoaDoMenu().u?.pid; fecharMenuMembro(); return pid && desafiarX1(pid); }
     if (act === 'dm') { const pid = MM.pid || pessoaDoMenu().u?.pid; fecharMenuMembro(); return pid && abrirDm(idDaDm(pid), pid); }
     if (act === 'perfil') { fecharMenuMembro(); return $('#meInfo').click(); }
     if (act === 'volume') {
@@ -6170,6 +6282,7 @@
     $('#enqueteBtn').innerHTML = icon('enquete');
     renderRailDm();
     $('#roletaBtn').innerHTML = icon('roleta');
+    $('#x1Btn').innerHTML = '<span class="x1-ico" aria-hidden="true">✊</span>';
     $('#gifBtn').innerHTML = '<span class="gf-txt">GIF</span>';
     $('#buscaBtn').innerHTML = icon('lupa');
 

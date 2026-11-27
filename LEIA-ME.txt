@@ -746,6 +746,13 @@ DICAS
     e ele aparece tampado até alguém clicar. Funciona também com links
     de imagem (a imagem fica borrada). Nos avisos, nas respostas e na
     busca aparece só [spoiler].
+  - X1 Otário?: no canal #X1 Otário?, clique em "Desafiar alguém" (ou no
+    nome da pessoa na lista → "Desafiar para um X1"). Escolha quem
+    (precisa estar online), o que está valendo e a sua jogada. A pessoa
+    aceita escolhendo a dela, ou recusa. Ninguém vê a jogada do outro
+    antes do fim: o servidor só mostra as duas juntas. Deu empate, jogam
+    de novo. O vencedor é anunciado no canal, com botão de revanche.
+    Desafio sem resposta expira em 10 minutos.
   - Mensagens privadas: o ícone de conversa no alto da barra da esquerda
     (acima do CT) abre a aba das conversas privadas. Para começar uma,
     clique no + dessa aba ou no nome da pessoa na lista de membros →

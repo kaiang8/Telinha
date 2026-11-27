@@ -1380,6 +1380,50 @@ function criarCanalDaRoleta() {
   data.settings.roletaCriada = true;
   salvar();
 }
+// ---------- X1 Otário?: pedra, papel e tesoura entre duas pessoas ----------
+// Criado uma vez só, como a roleta. As jogadas ficam só aqui no servidor (na memória) e só aparecem
+// para todos quando os dois escolheram; empate vira outra rodada. Se o servidor reiniciar no meio,
+// o desafio expira (as jogadas escondidas se perderam).
+function criarCanalDoX1() {
+  if (!podeSalvar || data.settings.x1Criado) return;
+  if (!data.channels.some((c) => c.x1)) {
+    const depois = Math.max(data.channels.findIndex((c) => c.roleta), data.channels.map((c) => c.type).lastIndexOf('text'));
+    let id = 'x1';
+    for (let n = 2; data.channels.some((c) => c.id === id); n++) id = `x1-${n}`;
+    data.channels.splice(depois + 1, 0, { id, name: 'X1 Otário?', type: 'text', x1: true });
+  }
+  data.settings.x1Criado = true;
+  salvar();
+}
+const JOGADAS = ['pedra', 'papel', 'tesoura'];
+const VENCE = { pedra: 'tesoura', papel: 'pedra', tesoura: 'papel' };
+const X1_PRAZO = 10 * 60e3;
+const X1_MAX_RODADAS = 10;
+const X1_SEGREDOS = new Map(); // id do duelo -> { a, b, timer } (as jogadas da rodada, escondidas)
+function x1Publicar(c, m) {
+  regravarMensagem(c.id, m, semPos(m));
+  broadcast({ type: 'x1', channel: c.id, id: m.id, x1: m.x1 });
+}
+function x1Encerrar(c, m, estado) {
+  const seg = X1_SEGREDOS.get(m.id);
+  if (seg) clearTimeout(seg.timer);
+  X1_SEGREDOS.delete(m.id);
+  m.x1.estado = estado;
+  m.x1.prontos = { a: false, b: false };
+  m.x1.atualizado = Date.now();
+  x1Publicar(c, m);
+}
+function x1Vigiar(c, m) {
+  const seg = X1_SEGREDOS.get(m.id);
+  if (!seg) return;
+  clearTimeout(seg.timer);
+  seg.timer = setTimeout(async () => {
+    try {
+      const atual = await acharMensagem(c.id, m.id, m.pos);
+      if (atual?.x1 && (atual.x1.estado === 'pendente' || atual.x1.estado === 'jogando')) x1Encerrar(c, atual, 'expirado');
+    } catch { /* tenta de novo quando alguém mexer */ }
+  }, X1_PRAZO);
+}
 // O sorteio é feito aqui (todo mundo vê o mesmo resultado, ninguém escolhe quem ganha)
 function limparItensDaRoleta(lista) {
   const vistos = new Set();
@@ -2740,6 +2784,86 @@ async function api(req, res, url) {
       }
     }
 
+    case 'x1-desafiar': {
+      const c = canal(body.channel);
+      if (!c || !c.x1) return json(res, 404, { error: 'O X1 fica no canal X1 Otário?' });
+      if (!u.pid) return json(res, 400, { error: 'Entre de novo para ter um nome guardado' });
+      const ate = silencioDe(u);
+      if (ate) return json(res, 403, { error: 'Você está silenciado por um admin', muted: ate });
+      if (limiteDe(u, 'limX1', 6, 60e3)) return json(res, 429, { error: 'Calma, espere um pouco para desafiar de novo.' });
+      const alvo = String(body.alvo || '');
+      const jogada = String(body.jogada || '');
+      if (!JOGADAS.includes(jogada)) return json(res, 400, { error: 'Escolha pedra, papel ou tesoura' });
+      if (alvo === u.pid || !data.perfis[alvo]) return json(res, 400, { error: 'Escolha quem você quer desafiar' });
+      const oponente = [...users.values()].find((x) => x.pid === alvo && x.joined && !x.kicked);
+      if (!oponente) return json(res, 400, { error: `${data.perfis[alvo].nome} não está online agora.` });
+      const abertos = [...X1_SEGREDOS.values()].filter((x) => x.desafiante === u.pid).length;
+      if (abertos >= 3) return json(res, 400, { error: 'Você já tem 3 desafios abertos. Espere eles terminarem.' });
+      const motivo = String(body.motivo || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+      const agora = Date.now();
+      const m = guardarMensagem({
+        id: crypto.randomBytes(8).toString('hex'),
+        ch: c.id, uid: u.id, pid: u.pid, name: u.name, color: u.color, admin: !!u.admin,
+        sistema: 'x1',
+        x1: { a: u.pid, b: alvo, motivo, estado: 'pendente', rodadas: [], vencedor: null, prontos: { a: true, b: false }, criado: agora, atualizado: agora, figura: crypto.randomInt(3) },
+        text: `X1: ${u.name} × ${data.perfis[alvo].nome}${motivo ? ` (${motivo})` : ''}`,
+        ts: agora,
+      });
+      X1_SEGREDOS.set(m.id, { a: jogada, b: null, desafiante: u.pid, timer: null });
+      x1Vigiar(c, m);
+      broadcast({ type: 'msg', msg: m });
+      return json(res, 200, { ok: true });
+    }
+
+    case 'x1-jogar':
+    case 'x1-recusar':
+    case 'x1-cancelar': {
+      const c = canal(body.channel);
+      if (!c || !c.x1) return json(res, 404, { error: 'Desafio não encontrado' });
+      if (limiteDe(u, 'limX1Jogo', 20, 30e3)) return json(res, 429, { error: 'Calma, espere um pouco.' });
+      let m;
+      try { m = await acharMensagem(c.id, String(body.id || ''), Number(body.pos)); } catch { return json(res, 503, { error: 'Não consegui agora. Tente de novo.' }); }
+      const d = m?.x1;
+      if (!d) return json(res, 404, { error: 'Desafio não encontrado' });
+      const lado = u.pid && u.pid === d.a ? 'a' : u.pid && u.pid === d.b ? 'b' : null;
+      if (!lado) return json(res, 403, { error: 'Esse X1 não é seu' });
+      if (d.estado !== 'pendente' && d.estado !== 'jogando') return json(res, 400, { error: 'Esse X1 já terminou' });
+      const seg = X1_SEGREDOS.get(m.id);
+      if (!seg) { x1Encerrar(c, m, 'expirado'); return json(res, 400, { error: 'Esse desafio expirou (o servidor reiniciou). Desafie de novo.' }); }
+      if (rota === 'x1-recusar') {
+        if (lado !== 'b' || d.estado !== 'pendente') return json(res, 400, { error: 'Não dá para recusar agora' });
+        x1Encerrar(c, m, 'recusado');
+        return json(res, 200, { ok: true });
+      }
+      if (rota === 'x1-cancelar') {
+        if (lado !== 'a' || d.estado !== 'pendente') return json(res, 400, { error: 'Não dá para cancelar agora' });
+        x1Encerrar(c, m, 'cancelado');
+        return json(res, 200, { ok: true });
+      }
+      const jogada = String(body.jogada || '');
+      if (!JOGADAS.includes(jogada)) return json(res, 400, { error: 'Escolha pedra, papel ou tesoura' });
+      if (seg[lado]) return json(res, 400, { error: 'Você já escolheu nesta rodada' });
+      seg[lado] = jogada;
+      d.estado = 'jogando';
+      d.prontos = { a: !!seg.a, b: !!seg.b };
+      d.atualizado = Date.now();
+      if (seg.a && seg.b) {
+        d.rodadas.push({ a: seg.a, b: seg.b });
+        if (seg.a === seg.b) {
+          seg.a = null; seg.b = null;
+          d.prontos = { a: false, b: false };
+          if (d.rodadas.length >= X1_MAX_RODADAS) { d.vencedor = null; x1Encerrar(c, m, 'fim'); return json(res, 200, { ok: true }); }
+        } else {
+          d.vencedor = VENCE[seg.a] === seg.b ? d.a : d.b;
+          x1Encerrar(c, m, 'fim');
+          return json(res, 200, { ok: true });
+        }
+      }
+      x1Vigiar(c, m);
+      x1Publicar(c, m);
+      return json(res, 200, { ok: true });
+    }
+
     case 'previa': {
       let alvo;
       try { alvo = new URL(String(body.url || '')); } catch { return json(res, 400, { error: 'endereço inválido' }); }
@@ -3295,6 +3419,7 @@ async function iniciar() {
   }
   await carregarDados();
   criarCanalDaRoleta();
+  criarCanalDoX1();
   for (const pid of Object.keys(data.perfis)) agendarFimDoStatus(pid);
   await carregarMensagens();
   await carregarRegistro();
