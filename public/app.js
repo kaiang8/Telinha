@@ -15,6 +15,7 @@
     olho: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
     olhoOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/><path d="M4 4l16 16"/>',
     full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    tema: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="currentColor" stroke="none"/>',
     pessoa: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.2-3.8 4-5.6 7.5-5.6s6.3 1.8 7.5 5.6"/>',
     replay: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/>',
     baixar: '<path d="M12 4v10.5"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19.5h14"/>',
@@ -141,7 +142,18 @@
   const userById = (id) => S.users.find((u) => u.id === id);
   const initial = (name) => (Array.from(String(name || '?').trim())[0] || '?');
   const coroa = (u) => (u.admin ? `<span class="crown" title="Admin">${icon('crown')}</span>` : '');
-  const avatar = (u, extra = '') => `<div class="avatar ${extra}" style="background:${esc(u.color)}">${esc(initial(u.name))}${extra.includes('dotted') ? '<span class="dot"></span>' : ''}</div>`;
+  // avatar: a foto ou o GIF da pessoa (se tiver) por cima da letra; o.animar = GIF se mexendo (cartão)
+  const avatar = (u, extra = '', o = {}) => {
+    const dot = extra.includes('dotted') ? '<span class="dot"></span>' : '';
+    const e = o.estilo !== undefined ? o.estilo : (u.pid && S.perfis?.[u.pid]?.estilo) || null;
+    if (e?.av && u.pid) {
+      const mexe = o.animar && !document.body.classList.contains('leve');
+      const gif = e.avp ? urlImgPerfil(u.pid, 'av', e.av) : '';
+      const src = e.avp && !mexe ? urlImgPerfil(u.pid, 'avp', e.avp) : urlImgPerfil(u.pid, 'av', e.av);
+      return `<div class="avatar com-foto ${extra}" style="background:${esc(u.color)}">${esc(initial(u.name))}<img src="${src}" alt="" decoding="async" draggable="false"${gif && !mexe ? ` data-gif="${gif}"` : ''}>${dot}</div>`;
+    }
+    return `<div class="avatar ${extra}" style="background:${esc(u.color)}">${esc(initial(u.name))}${dot}</div>`;
+  };
 
   const ACOES = {}; // ações montadas na inicialização e usadas em outros lugares (ex.: sair do servidor)
   function toast(msg, ms = 3500, acao = null) {
@@ -620,6 +632,7 @@
     }, 0);
     S.antigas = m.antigas || {}; // canal -> posição de onde começam as mais antigas (0: não tem)
     S.perfis = m.perfis || {};
+    garantirFontes();
     if (m.me?.pid) S.myPid = m.me.pid;
     S.iceServers = m.iceServers || [];
     S.users = m.users;
@@ -900,7 +913,7 @@
   // Nome e cor de quem mandou: os atuais do perfil (trocou de nome, as mensagens antigas acompanham)
   function autorDe(m) {
     const p = m.pid && S.perfis?.[m.pid];
-    return p ? { name: p.nome, color: p.cor } : { name: m.name, color: m.color };
+    return p ? { name: p.nome, color: p.cor, pid: m.pid } : { name: m.name, color: m.color };
   }
   const mesmoAutor = (a, b) => (a.pid && b.pid ? a.pid === b.pid : a.uid === b.uid);
   function msgHtml(m, prev) {
@@ -943,7 +956,7 @@
     if (agrupada) {
       return h + `<div class="msg${cls}${fixada ? ' fixada' : ''}" ${attrs}><span class="m-stamp">${hhmm(d)}</span>${editada ? `<div class="m-editada-linha">${editada}</div>` : ''}${texto}${acoes}</div>`;
     }
-    return h + `<div class="msg head${cls}${fixada ? ' fixada' : ''}${m.resp ? ' com-resp' : ''}" ${attrs}>${m.resp ? citacaoHtml(m) : ''}${avatar(autor)}<div class="m-head"><span class="m-name" style="color:${esc(autor.color)}">${esc(autor.name)}</span>${coroa(m)}<span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span>${editada}</div>${texto}${acoes}</div>`;
+    return h + `<div class="msg head${cls}${fixada ? ' fixada' : ''}${m.resp ? ' com-resp' : ''}" ${attrs}>${m.resp ? citacaoHtml(m) : ''}${avatar(autor)}<div class="m-head">${nomeHtml(autor.pid, autor.name, autor.color, 'm-name')}${coroa(m)}<span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span>${editada}</div>${texto}${acoes}</div>`;
   }
 
   // ---------- Jogo mais jogado do mês (anúncio no #geral, na virada do mês) ----------
@@ -1262,7 +1275,7 @@
         <div class="rl-disco${girando ? ' girando' : ''}" style="--final:${final.toFixed(1)}deg;transform:rotate(${final.toFixed(1)}deg)${girando ? `;animation-delay:-${passou}ms` : ''}">${rodaSvg(r.itens)}</div>
         <span class="rl-ponteiro"></span></div>
       <div class="rl-info">
-        <div class="rl-por"><span class="m-name" style="color:${esc(autor.color)}">${esc(autor.name)}</span> girou a roleta
+        <div class="rl-por">${nomeHtml(autor.pid, autor.name, autor.color, 'm-name')} girou a roleta
           <span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span></div>
         <div class="rl-titulo">${esc(r.titulo)}</div>
         <div class="rl-opcoes muted small">${r.itens.length} opções, ${String(Math.round(1000 / r.itens.length) / 10).replace('.', ',')}% de chance cada</div>
@@ -1345,7 +1358,7 @@
     const sacode = revelando ? '<div class="x1-sacode" aria-hidden="true"><span>✊</span><span>✊</span></div>' : '';
     const dt = new Date(m.ts);
     return `<div class="msg x1-msg${cls}" ${attrs}>
-      <div class="x1-topo"><span class="m-name" style="color:${esc(corP(d.a))}">${esc(nomeP(d.a))}</span> desafiou <span class="m-name" style="color:${esc(corP(d.b))}">${esc(nomeP(d.b))}</span> para um X1
+      <div class="x1-topo">${nomeHtml(d.a, nomeP(d.a), corP(d.a), 'm-name')} desafiou ${nomeHtml(d.b, nomeP(d.b), corP(d.b), 'm-name')} para um X1
         <span class="m-time" title="${esc(dt.toLocaleString('pt-BR'))}">${quando(dt)}</span></div>
       ${d.motivo ? `<div class="x1-motivo">Valendo: <b>${esc(d.motivo)}</b></div>` : ''}
       <div class="x1-arena">${sacode}${lado('a')}<span class="x1-vs">×</span>${lado('b')}</div>
@@ -1717,10 +1730,10 @@
       const termos = q.split(/\s+/).filter(Boolean).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
       const marca = new RegExp(`(${termos.join('|')})`, 'gi');
       res.innerHTML = r.resultados.length ? r.resultados.map((m) => {
-        const autor = m.pid && S.perfis?.[m.pid] ? { name: S.perfis[m.pid].nome, color: S.perfis[m.pid].cor } : { name: m.name, color: m.color };
+        const autor = m.pid && S.perfis?.[m.pid] ? { name: S.perfis[m.pid].nome, color: S.perfis[m.pid].cor, pid: m.pid } : { name: m.name, color: m.color };
         const texto = esc(semSpoiler(textoComNomes(m.text)).replace(/\s+/g, ' ').slice(0, 220)).replace(marca, '<mark>$1</mark>');
         return `<button type="button" class="fx-item bu-item" data-bu-ch="${esc(m.ch)}" data-bu-id="${esc(m.id)}" data-bu-pos="${m.pos}">
-          <span class="fx-cab"><span class="m-name" style="color:${esc(autor.color || '#8a94a6')}">${esc(autor.name || 'alguém')}</span>
+          <span class="fx-cab">${nomeHtml(autor.pid, autor.name || 'alguém', autor.color || '#8a94a6', 'm-name')}
             <span class="m-time">${onde ? '' : `${esc(nomeCanal(m.ch))} · `}${esc(new Date(m.ts).toLocaleDateString('pt-BR'))}</span></span>
           <span class="fx-texto">${m.enquete ? `${icon('enquete')} ` : ''}${texto}</span></button>`;
       }).join('') + (r.resultados.length >= 50 ? '<p class="muted small fx-vazio">Mostrando as 50 mais recentes. Use mais palavras para achar outras.</p>' : '')
@@ -1782,9 +1795,9 @@
     $('#fixadasPanel').innerHTML = `<div class="fx-topo"><b>Fixadas em ${esc(nomeCanal(S.view))}</b>
         <button class="icon-btn small" data-fx-fechar title="Fechar (Esc)" aria-label="Fechar">${icon('close')}</button></div>
       ${l.length ? l.map((f) => {
-        const autor = f.pid && S.perfis?.[f.pid] ? { name: S.perfis[f.pid].nome, color: S.perfis[f.pid].cor } : { name: f.nome, color: f.cor };
+        const autor = f.pid && S.perfis?.[f.pid] ? { name: S.perfis[f.pid].nome, color: S.perfis[f.pid].cor, pid: f.pid } : { name: f.nome, color: f.cor };
         return `<div class="fx-item" data-fx="${esc(f.id)}" data-fx-pos="${Number.isInteger(f.pos) ? f.pos : ''}">
-          <div class="fx-cab"><span class="m-name" style="color:${esc(autor.color || '#8a94a6')}">${esc(autor.name || 'alguém')}</span>
+          <div class="fx-cab">${nomeHtml(autor.pid, autor.name || 'alguém', autor.color || '#8a94a6', 'm-name')}
             <span class="m-time">${esc(new Date(f.ts).toLocaleDateString('pt-BR'))}</span></div>
           <div class="fx-texto">${formatar(f.texto)}</div>
           <div class="fx-rodape"><span class="muted small">Fixada por ${esc(f.por)}</span>
@@ -1996,7 +2009,7 @@
       const cls = [c.id === S.view && 'active', S.unread.has(c.id) && 'unread'].filter(Boolean).join(' ');
       h += `<div class="channel ${cls}" data-ch="${esc(c.id)}">${icon('screen')}<span class="ch-name">${esc(c.name)}</span>${aoVivo ? '<span class="live-badge">ao vivo</span>' : ''}${del(c)}</div>`;
       if (membros.length) {
-        h += '<div class="sala-members">' + membros.map((u) => `<div class="sala-member"${u.id !== S.myId ? ` data-pessoa="${esc(u.id)}" title="Volume da voz de ${esc(u.name)}"` : ''}>${avatarVoz(u)}<span class="ellipsis">${esc(u.name)}</span>${coroa(u)}${vozIcones(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('') + '</div>';
+        h += '<div class="sala-members">' + membros.map((u) => `<div class="sala-member"${u.id !== S.myId ? ` data-pessoa="${esc(u.id)}" title="Volume da voz de ${esc(u.name)}"` : ''}>${avatarVoz(u)}${nomeHtml(u.pid, u.name, u.color, 'ellipsis', { semCor: true })}${coroa(u)}${vozIcones(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('') + '</div>';
       }
     }
     $('#channels').innerHTML = h;
@@ -2077,10 +2090,10 @@
       else if (stt) st = `<span class="mb-status ellipsis" title="${esc(textoDoStatus(stt))}">${esc(textoDoStatus(stt))}</span>${st ? `<span class="ellipsis mb-jogo-sala">${st}</span>` : ''}`;
       const eu = u.id === S.myId ? ' <span class="muted small">(você)</span>' : '';
       return linha(`u${u.id}`, `data-uid="${esc(u.id)}"${u.pid ? ` data-pid="${esc(u.pid)}"` : ''}`, avatar(u, `dotted${stt?.tipo ? ` st-${stt.tipo}` : ''}`),
-        `<span style="color:${esc(u.color)}">${esc(u.name)}</span>${coroa(u)}${eu}`, st);
+        `${nomeHtml(u.pid, u.name, u.color)}${coroa(u)}${eu}`, st);
     }).join('') + (off.length ? `<h3 class="mb-off">${off.length} offline</h3>` + off.map((p) => linha(`p${p.pid}`,
-      `data-pid="${esc(p.pid)}"${p.visto ? ` title="Visto por último ${esc(quandoCurto(p.visto))}"` : ''}`, avatar({ name: p.nome, color: p.cor }),
-      `<span style="color:${esc(p.cor)}">${esc(p.nome)}</span>`, `<span class="mb-visto">${esc(offlineHa(p.visto))}</span>`, ' offline')).join('') : '');
+      `data-pid="${esc(p.pid)}"${p.visto ? ` title="Visto por último ${esc(quandoCurto(p.visto))}"` : ''}`, avatar({ name: p.nome, color: p.cor, pid: p.pid }),
+      nomeHtml(p.pid, p.nome, p.cor), `<span class="mb-visto">${esc(offlineHa(p.visto))}</span>`, ' offline')).join('') : '');
     if (focado) box.querySelector(`[data-chave="${CSS.escape(focado)}"]`)?.focus({ preventScroll: true });
     if (MM.el && !MM.form) desenharMenuMembro(true); // a pessoa pode ter entrado ou saído com o menu aberto
   }
@@ -2177,7 +2190,15 @@
       }
       corpo = itens.join('');
     }
-    el.innerHTML = `<div class="mm-topo">${avatar({ name: nome, color: cor }, u ? 'dotted' : 'mm-off')}<div class="mm-quem"><strong class="ellipsis" style="color:${esc(cor)}">${esc(nome)}</strong><span class="ellipsis">${status}</span></div></div>${corpo}`;
+    const pidCartao = MM.pid || u?.pid || '';
+    const estCartao = (pidCartao && S.perfis?.[pidCartao]?.estilo) || null;
+    el.innerHTML = `${cartaoHtml({ pid: pidCartao, nome, cor, estilo: estCartao, online: !!u, sub: status })}${corpo}`;
+    const tema = temaDoCartao(estCartao);
+    el.classList.toggle('pc-tema', !!tema.cls);
+    el.classList.toggle('pc-claro', tema.cls.includes('pc-claro'));
+    el.classList.toggle('pc-escuro', tema.cls.includes('pc-escuro'));
+    el.classList.toggle('pc-off', !u);
+    el.style.background = estCartao?.cartao ? `linear-gradient(180deg, ${estCartao.cartao[0]}, ${estCartao.cartao[1]})` : '';
     posicionarMenuMembro();
     if (focoAntes) (el.querySelector(`[data-mm="${CSS.escape(focoAntes)}"]`) || el.querySelector('button'))?.focus();
   }
@@ -2318,7 +2339,7 @@
   function renderPaineis() {
     const me = { name: S.myName, color: S.myColor };
     $('#meAvatar').outerHTML = avatar(me, 'dotted').replace('class="avatar', 'id="meAvatar" class="avatar');
-    $('#meName').textContent = S.myName;
+    $('#meName').innerHTML = nomeHtml(S.myPid, S.myName, S.myColor, '', { semCor: true });
     const meuSt = statusDe(S.myPid);
     $('#meStatus').textContent = S.live ? 'Transmitindo' : S.sala ? `Em ${nomeSala(S.sala)}` : meuSt ? textoDoStatus(meuSt) : S.isAdmin ? 'Online · Admin' : 'Online';
 
@@ -2372,7 +2393,7 @@
     if (!c || c.type !== 'sala') return;
     const naSala = S.sala === c.id;
     const pessoas = S.users.filter((u) => u.sala === c.id);
-    $('#stagePeople').innerHTML = pessoas.map((u) => `<div class="person-chip"${u.id !== S.myId ? ` data-pessoa="${esc(u.id)}" title="Volume da voz de ${esc(u.name)}"` : ''}>${avatarVoz(u)}<span>${esc(u.name)}${u.id === S.myId ? ' (você)' : ''}</span>${coroa(u)}${vozIcones(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('');
+    $('#stagePeople').innerHTML = pessoas.map((u) => `<div class="person-chip"${u.id !== S.myId ? ` data-pessoa="${esc(u.id)}" title="Volume da voz de ${esc(u.name)}"` : ''}>${avatarVoz(u)}<span>${nomeHtml(u.pid, u.name, u.color, '', { semCor: true })}${u.id === S.myId ? ' (você)' : ''}</span>${coroa(u)}${vozIcones(u)}${u.live ? '<span class="live-badge">ao vivo</span>' : ''}</div>`).join('');
 
     const vivos = naSala ? pessoas.filter((u) => u.live) : [];
     renderCameras();
@@ -6451,15 +6472,301 @@
     });
   }
 
+  // ================= Visual do perfil: fonte, efeito e cores do nome, foto ou GIF, faixa e moldura =================
+  // As fontes vêm do Google Fonts e só são baixadas as que alguém está usando (todas só ao abrir o editor).
+  const FONTES_NOME = {
+    padrao: { nome: 'Padrão' },
+    gotica: { nome: 'Gótica', g: 'Pirata+One' },
+    pixel: { nome: 'Pixel', g: 'Pixelify+Sans:wght@600' },
+    bloco: { nome: 'Bloco', g: 'Bungee' },
+    script: { nome: 'Cursiva', g: 'Pacifico' },
+    lobster: { nome: 'Letreiro', g: 'Lobster' },
+    marcador: { nome: 'Marcador', g: 'Permanent+Marker' },
+    futurista: { nome: 'Futurista', g: 'Orbitron:wght@700' },
+    terror: { nome: 'Terror', g: 'Creepster' },
+    redonda: { nome: 'Redonda', g: 'Fredoka:wght@600' },
+    quadrinhos: { nome: 'Quadrinhos', g: 'Bangers' },
+    classica: { nome: 'Clássica', g: 'Cinzel:wght@700' },
+    retro: { nome: 'Retrô', g: 'Righteous' },
+  };
+  // duas: usa a segunda cor; anim: se mexe (para no modo leve); semCor: ignora as cores
+  const EFEITOS_NOME = {
+    solido: { nome: 'Sólido' },
+    degrade: { nome: 'Degradê', duas: true },
+    neon: { nome: 'Neon' },
+    contorno: { nome: 'Contorno', duas: true },
+    '3d': { nome: '3D', duas: true },
+    bala: { nome: 'Bala de goma' },
+    brilho: { nome: 'Brilho', duas: true, anim: true },
+    arcoiris: { nome: 'Arco-íris', anim: true, semCor: true },
+  };
+  const COR2_PADRAO = { degrade: '#ffd23f', contorno: '#ffffff', '3d': '#1b2433', brilho: '#ffffff' };
+  // Molduras desenhadas aqui (originais), em volta do avatar redondo do cartão (caixa de 120, avatar de raio 40)
+  const ESTRELA = 'M0 -8C1 -2.2 2.2 -1 8 0C2.2 1 1 2.2 0 8C-1 2.2 -2.2 1 -8 0C-2.2 -1 -1 -2.2 0 -8Z';
+  const CHAMA = 'M0 0C-7 -5 -7 -13 -1 -21C0 -14 5 -13 4 -6C7 -9 8 -12 7 -15C12 -8 10 -1 0 0Z';
+  const NUVEM = 'M0 0a9 9 0 0 1 6-15a12 12 0 0 1 22-4a9 9 0 0 1 13 8a7 7 0 0 1-2 11Z';
+  const MOLDURAS = {
+    estrelas: { nome: 'Estrelas', svg: `<defs><linearGradient id="mfOuro" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff4b0"/><stop offset=".5" stop-color="#ffc83d"/><stop offset="1" stop-color="#ee8a00"/></linearGradient></defs>
+      <circle cx="60" cy="60" r="42.5" fill="none" stroke="url(#mfOuro)" stroke-width="3.5"/>
+      ${[[18, 26, 1], [101, 22, 0.8], [106, 88, 0.6], [13, 92, 0.7], [62, 9, 0.9]].map(([x, y, e], i) => `<path class="mf-pisca" style="animation-delay:${i * 0.45}s" transform="translate(${x} ${y}) scale(${e})" d="${ESTRELA}" fill="url(#mfOuro)" stroke="#c77800" stroke-width=".8"/>`).join('')}` },
+    nuvens: { nome: 'Nuvens', svg: `<g class="mf-flutua" fill="#fff" stroke="#a9d3f2" stroke-width="2.2" stroke-linejoin="round">
+      <path transform="translate(2 101)" d="${NUVEM}"/><path transform="translate(72 105) scale(1.05)" d="${NUVEM}"/></g>
+      <g class="mf-flutua mf-atrasa" fill="#fff" stroke="#a9d3f2" stroke-width="2.2"><path transform="translate(80 26) scale(.7)" d="${NUVEM}"/></g>` },
+    coroa: { nome: 'Coroa', svg: `<defs><linearGradient id="mfCoroa" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff1a0"/><stop offset=".55" stop-color="#ffbf2e"/><stop offset="1" stop-color="#d98200"/></linearGradient></defs>
+      <g transform="translate(40 20) rotate(-18)"><path d="M-19 8L-23 -11L-9 -2L0 -17L9 -2L23 -11L19 8Z" fill="url(#mfCoroa)" stroke="#a86200" stroke-width="1.6" stroke-linejoin="round"/>
+      <rect x="-19" y="6" width="38" height="6" rx="2" fill="#f2a516" stroke="#a86200" stroke-width="1.4"/>
+      <circle cx="0" cy="1" r="3" fill="#e5484d"/><circle cx="-11" cy="4" r="2.2" fill="#3db3f0"/><circle cx="11" cy="4" r="2.2" fill="#3fbf6f"/></g>` },
+    chamas: { nome: 'Chamas', svg: `<defs><linearGradient id="mfFogo" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#e5341d"/><stop offset=".55" stop-color="#ff8a1f"/><stop offset="1" stop-color="#ffe25c"/></linearGradient></defs>
+      ${[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((a, i) => `<g transform="rotate(${a} 60 60) translate(60 21)"><path class="mf-chama" style="animation-delay:${(i % 4) * 0.18}s" transform="scale(${i % 2 ? 0.75 : 1})" d="${CHAMA}" fill="url(#mfFogo)"/></g>`).join('')}` },
+    gato: { nome: 'Gatinho', svg: `<g stroke="#3b3f4c" stroke-width="2" stroke-linejoin="round"><path d="M22 36L28 5L52 23Z" fill="#5a6070"/><path d="M98 36L92 5L68 23Z" fill="#5a6070"/></g>
+      <path d="M28 30L31 14L44 24Z" fill="#ff9fbc"/><path d="M92 30L89 14L76 24Z" fill="#ff9fbc"/>
+      <g stroke="#5a6070" stroke-width="2" stroke-linecap="round"><path d="M4 66L20 70M3 76L19 76M6 86L20 81"/><path d="M116 66L100 70M117 76L101 76M114 86L100 81"/></g>` },
+    fone: { nome: 'Fone gamer', svg: `<path d="M17 64A43 43 0 0 1 103 64" fill="none" stroke="#2b2f3a" stroke-width="8" stroke-linecap="round"/>
+      <path class="mf-luz" d="M21 60A39 39 0 0 1 99 60" fill="none" stroke="#3db3f0" stroke-width="2"/>
+      <rect x="5" y="52" width="17" height="30" rx="7" fill="#2b2f3a"/><rect x="98" y="52" width="17" height="30" rx="7" fill="#2b2f3a"/>
+      <rect class="mf-luz" x="9" y="58" width="4" height="18" rx="2" fill="#3db3f0"/><rect class="mf-luz" x="107" y="58" width="4" height="18" rx="2" fill="#3db3f0"/>
+      <path d="M13 82Q16 104 38 104" fill="none" stroke="#2b2f3a" stroke-width="4" stroke-linecap="round"/><circle class="mf-luz" cx="40" cy="104" r="4" fill="#ff4d6d"/>` },
+  };
+  const molduraSvg = (id, cls = 'pc-moldura') => (MOLDURAS[id] ? `<svg class="${cls}" viewBox="0 0 120 120" aria-hidden="true">${MOLDURAS[id].svg}</svg>` : '');
+  const urlImgPerfil = (pid, t, v) => `/perfil-img/${encodeURIComponent(pid)}/${t}?v=${encodeURIComponent(v)}`;
+  const leve = () => document.body.classList.contains('leve');
+
+  const FONTES_BAIXADAS = new Set();
+  function garantirFontes(todas = false) {
+    const quero = todas ? Object.keys(FONTES_NOME) : Object.values(S.perfis || {}).map((p) => p?.estilo?.fonte).filter(Boolean);
+    const novas = [...new Set(quero)].filter((f) => FONTES_NOME[f]?.g && !FONTES_BAIXADAS.has(f));
+    if (!novas.length) return;
+    novas.forEach((f) => FONTES_BAIXADAS.add(f));
+    const l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = `https://fonts.googleapis.com/css2?${novas.map((f) => `family=${FONTES_NOME[f].g}`).join('&')}&display=swap`;
+    document.head.appendChild(l);
+  }
+  // O nome com fonte, efeito e cores (sem estilo: só a cor, como sempre foi)
+  function nomeHtml(pid, nome, cor, cls = '', o = {}) {
+    const e = o.estilo !== undefined ? o.estilo : (pid && S.perfis?.[pid]?.estilo) || null;
+    if (!e || !(e.fonte || e.efeito || e.cores)) return `<span${cls ? ` class="${cls}"` : ''}${o.semCor ? '' : ` style="color:${esc(cor)}"`}>${esc(nome)}</span>`;
+    const ef = e.efeito || 'solido';
+    const c1 = e.cores?.[0] || cor;
+    const c2 = e.cores?.[1] || COR2_PADRAO[ef] || c1;
+    return `<span class="${cls} nm fn-${esc(e.fonte || 'padrao')} ef-${esc(ef)}" style="--c1:${esc(c1)};--c2:${esc(c2)}">${esc(nome)}</span>`;
+  }
+  // GIF do avatar: na lista e no chat fica parado; mexe enquanto o mouse está em cima da linha
+  const ANIM = { linha: null };
+  function animarLinha(linha, ligar) {
+    for (const img of linha.querySelectorAll('img[data-gif]')) {
+      if (ligar) { img.dataset.capa ||= img.getAttribute('src'); img.src = img.dataset.gif; }
+      else if (img.dataset.capa) img.src = img.dataset.capa;
+    }
+  }
+  document.addEventListener('pointerover', (e) => {
+    const linha = leve() ? null : e.target.closest?.('.msg, .member, .sala-member, .person-chip, .user-panel, .mm-item-pessoa');
+    if (linha === ANIM.linha) return;
+    if (ANIM.linha?.isConnected) animarLinha(ANIM.linha, false);
+    ANIM.linha = linha;
+    if (linha) animarLinha(linha, true);
+  });
+  // imagem que não carregou (trocada ou apagada): volta para a letra
+  document.addEventListener('error', (e) => {
+    const img = e.target;
+    if (img?.tagName === 'IMG' && img.parentElement?.classList.contains('com-foto')) { img.parentElement.classList.remove('com-foto'); img.remove(); }
+    else if (img?.tagName === 'IMG' && img.closest('.pc-faixa')) img.remove();
+  }, true);
+
+  // Cartão de perfil (no menu da pessoa e na prévia do editor)
+  function corClara(hex) {
+    const n = parseInt(String(hex).slice(1), 16);
+    if (Number.isNaN(n)) return false;
+    const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    return 0.299 * r + 0.587 * g + 0.114 * b > 160;
+  }
+  function temaDoCartao(e) {
+    if (!e?.cartao) return { cls: '', estilo: '' };
+    const [a, b] = e.cartao;
+    const claro = corClara(a) && corClara(b) ? true : !corClara(a) && !corClara(b) ? false : corClara(b);
+    return { cls: ` pc-tema ${claro ? 'pc-claro' : 'pc-escuro'}`, estilo: `background:linear-gradient(180deg, ${esc(a)}, ${esc(b)})` };
+  }
+  function cartaoHtml({ pid, nome, cor, estilo, online, sub, previa }) {
+    const e = estilo || {};
+    const anima = !leve();
+    const faixa = e.fx ? `<img src="${urlImgPerfil(pid, e.fxp && !anima ? 'fxp' : 'fx', e.fx)}" alt="">` : '';
+    const fundoFaixa = e.cartao ? `background:linear-gradient(135deg, ${esc(e.cartao[0])}, ${esc(e.cartao[1])})` : `background:linear-gradient(135deg, ${esc(cor)}, color-mix(in srgb, ${esc(cor)} 45%, #1b2433))`;
+    return `<div class="pc${previa ? ' pc-previa' : ''}">
+      <div class="pc-faixa" style="${fundoFaixa}">${faixa}</div>
+      <div class="pc-av">${avatar({ pid, name: nome, color: cor }, `pc-avatar${online ? ' dotted' : ''}`, { estilo: e, animar: true })}${molduraSvg(e.moldura)}</div>
+      <div class="pc-corpo"><div class="pc-nome ellipsis">${nomeHtml(pid, nome, cor, '', { estilo: e })}</div>${sub ? `<div class="pc-sub ellipsis">${sub}</div>` : ''}</div>
+    </div>`;
+  }
+
+  // ----- Editor (Configurações → Visual do perfil) -----
+  function estiloDoForm(fd) {
+    const efeito = String(fd.get('estEfeito') || 'solido');
+    const c1 = String(fd.get('estCor1') || S.myColor);
+    const c2 = String(fd.get('estCor2') || COR2_PADRAO[efeito] || c1);
+    return {
+      fonte: String(fd.get('estFonte') || 'padrao'),
+      efeito,
+      cores: EFEITOS_NOME[efeito]?.duas ? [c1, c2] : [c1],
+      cartao: fd.get('estCartaoLigar') ? [String(fd.get('estCartao1')), String(fd.get('estCartao2'))] : null,
+      moldura: String(fd.get('estMoldura') || '') || null,
+    };
+  }
+  function estiloSemImagens(e) {
+    const { av, avp, fx, fxp, ...resto } = e || {};
+    return { fonte: resto.fonte || 'padrao', efeito: resto.efeito || 'solido', cores: resto.cores || null, cartao: resto.cartao || null, moldura: resto.moldura || null };
+  }
+  async function salvarEstiloDoForm(fd) {
+    if (!S.myPid || fd.get('estFonte') === null) return;
+    const novo = estiloDoForm(fd);
+    const atual = estiloSemImagens(S.perfis?.[S.myPid]?.estilo);
+    // as cores só contam se mudaram de verdade (a cor 1 começa igual à sua cor)
+    const igual = novo.fonte === atual.fonte && novo.efeito === atual.efeito && novo.moldura === atual.moldura
+      && JSON.stringify(novo.cartao) === JSON.stringify(atual.cartao)
+      && JSON.stringify(novo.cores) === JSON.stringify(atual.cores || (novo.efeito === 'solido' && novo.cores[0] === S.myColor ? novo.cores : null));
+    if (igual) return;
+    const r = await api('estilo', novo);
+    (S.perfis[S.myPid] ||= {}).estilo = r.estilo || undefined;
+    toast('Visual do perfil salvo.');
+  }
+  function lerArquivoComoDataUrl(blob) {
+    return new Promise((ok, erro) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => erro(new Error('Não consegui ler o arquivo.')); r.readAsDataURL(blob); });
+  }
+  // recorta no meio (como "cobrir") e vira WebP leve (JPEG se o navegador não fizer WebP)
+  async function imagemRecortada(arquivo, w, h, q) {
+    let bmp;
+    try { bmp = await createImageBitmap(arquivo); } catch { throw new Error('Não consegui abrir essa imagem. Use PNG, JPG, WebP ou GIF.'); }
+    const cv = document.createElement('canvas');
+    cv.width = w;
+    cv.height = h;
+    const s = Math.max(w / bmp.width, h / bmp.height);
+    cv.getContext('2d').drawImage(bmp, (w - bmp.width * s) / 2, (h - bmp.height * s) / 2, bmp.width * s, bmp.height * s);
+    bmp.close?.();
+    let blob = await new Promise((ok) => cv.toBlob(ok, 'image/webp', q));
+    if (!blob || blob.type !== 'image/webp') blob = await new Promise((ok) => cv.toBlob(ok, 'image/jpeg', q));
+    return lerArquivoComoDataUrl(blob);
+  }
+  async function prepararImagemDoPerfil(tipo, arquivo) {
+    const av = tipo === 'av';
+    if (arquivo.type === 'image/gif') {
+      const max = av ? 1024 * 1024 : 2 * 1024 * 1024;
+      if (arquivo.size > max) throw new Error(`O GIF pode ter até ${av ? '1 MB' : '2 MB'} (esse tem ${(arquivo.size / 1048576).toFixed(1).replace('.', ',')} MB). Diminua ele num site de GIFs, ou use uma foto.`);
+      return { dados: await lerArquivoComoDataUrl(arquivo), capa: await imagemRecortada(arquivo, av ? 128 : 480, av ? 128 : 192, 0.82) };
+    }
+    if (!/^image\//.test(arquivo.type)) throw new Error('Escolha uma imagem (PNG, JPG, WebP) ou um GIF.');
+    return { dados: await imagemRecortada(arquivo, av ? 256 : 960, av ? 256 : 384, 0.86) };
+  }
+  function montarAbaVisual(p) {
+    if (!S.myPid) { p.innerHTML = tituloCfg('visual') + '<p class="cfg-dica">Entre de novo para ter um nome guardado.</p>'; return; }
+    garantirFontes(true);
+    const e = S.perfis?.[S.myPid]?.estilo || {};
+    const at = estiloSemImagens(e);
+    const c1 = at.cores?.[0] || S.myColor;
+    const c2 = at.cores?.[1] || COR2_PADRAO[at.efeito] || '#ffd23f';
+    const radio = (nome, valor, marcado, miolo, titulo) => `<label class="vis-op" title="${esc(titulo)}"><input type="radio" name="${nome}" value="${esc(valor)}"${marcado ? ' checked' : ''}><span>${miolo}</span></label>`;
+    p.innerHTML = tituloCfg('visual') + `<div class="vis">
+      <div class="vis-ctrl">
+        <div class="vis-bloco"><b>Fonte do nome</b><div class="vis-grade vis-fontes">${Object.entries(FONTES_NOME).map(([id, f]) => radio('estFonte', id, at.fonte === id, `<span class="fn-${id}">Aa</span><small>${esc(f.nome)}</small>`, f.nome)).join('')}</div></div>
+        <div class="vis-bloco"><b>Efeito</b><div class="vis-grade vis-efeitos">${Object.entries(EFEITOS_NOME).map(([id, x]) => radio('estEfeito', id, at.efeito === id, `<span class="nm ef-${id}" style="--c1:${esc(c1)};--c2:${esc(c2)}">${esc(x.nome)}</span>${x.anim ? '<small>animado</small>' : ''}`, x.nome)).join('')}</div></div>
+        <div class="vis-bloco"><b>Cores do nome</b><div class="vis-cores"><label><input type="color" name="estCor1" value="${esc(c1)}"> Cor</label>
+          <label id="visCor2"><input type="color" name="estCor2" value="${esc(c2)}"> Segunda cor</label></div>
+          <p class="cfg-dica" id="visCorDica"></p></div>
+        <div class="vis-bloco"><b>Foto ou GIF</b><p class="cfg-dica">Uma foto (vira quadradinha e leve sozinha) ou um GIF de até 1 MB. No chat e na lista, o GIF se mexe quando passam o mouse; no cartão, sempre.</p>
+          <div class="se-botoes"><button type="button" class="btn sm" data-vis-enviar="av">${e.av ? 'Trocar' : 'Escolher'} foto ou GIF</button>${e.av ? '<button type="button" class="btn sm ghost" data-vis-tirar="av">Tirar</button>' : ''}</div></div>
+        <div class="vis-bloco"><b>Faixa do cartão</b><p class="cfg-dica">A imagem no topo do seu cartão. Uma foto ou um GIF de até 2 MB.</p>
+          <div class="se-botoes"><button type="button" class="btn sm" data-vis-enviar="fx">${e.fx ? 'Trocar' : 'Escolher'} faixa</button>${e.fx ? '<button type="button" class="btn sm ghost" data-vis-tirar="fx">Tirar</button>' : ''}</div></div>
+        <div class="vis-bloco"><b>Cores do cartão</b><label class="av-op"><input type="checkbox" name="estCartaoLigar"${at.cartao ? ' checked' : ''}> Usar cores próprias (degradê de cima para baixo)</label>
+          <div class="vis-cores" id="visCartao"><label><input type="color" name="estCartao1" value="${esc(at.cartao?.[0] || '#3b2a6b')}"> Em cima</label><label><input type="color" name="estCartao2" value="${esc(at.cartao?.[1] || '#16324f')}"> Embaixo</label></div></div>
+        <div class="vis-bloco"><b>Moldura do avatar</b><div class="vis-grade vis-molduras">${radio('estMoldura', '', !at.moldura, '<span class="vis-sem">Nenhuma</span>', 'Sem moldura')}${Object.entries(MOLDURAS).map(([id, m]) => radio('estMoldura', id, at.moldura === id, `<span class="vis-mold"><i></i>${molduraSvg(id, 'vis-mold-svg')}</span><small>${esc(m.nome)}</small>`, m.nome)).join('')}</div></div>
+        <button type="button" class="btn sm ghost" id="visPadrao">Voltar o nome ao padrão</button>
+        <input type="file" id="visArquivo" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+      </div>
+      <div class="vis-previa"><span class="ap-rotulo">Prévia</span><div id="visCartaoPrevia"></div><div class="vis-msg" id="visMsg"></div>
+        <p class="cfg-dica">Salva quando você clicar em <b>Pronto</b>. A foto e a faixa já valem na hora.</p></div>
+    </div>`;
+    const form = $('#modalForm');
+    const raiz = p.querySelector('.vis'); // os ouvintes ficam nela: montar de novo não repete nenhum
+    const previa = () => {
+      const fd = new FormData(form);
+      const est = { ...(S.perfis?.[S.myPid]?.estilo || {}), ...estiloDoForm(fd) };
+      if (!est.cartao) delete est.cartao;
+      if (!est.moldura) delete est.moldura;
+      const ef = EFEITOS_NOME[est.efeito] || {};
+      $('#visCor2').hidden = !ef.duas;
+      $('#visCartao').hidden = !fd.get('estCartaoLigar');
+      $('#visCorDica').textContent = ef.semCor ? 'O arco-íris usa as cores dele.' : ef.anim ? 'Efeito animado: no modo leve ele fica parado.' : '';
+      const st = statusDe(S.myPid);
+      const sub = st ? textoDoStatus(st) : 'Online';
+      const tema = temaDoCartao(est);
+      const caixa = $('#visCartaoPrevia');
+      caixa.className = tema.cls.trim();
+      caixa.style.background = est.cartao ? `linear-gradient(180deg, ${est.cartao[0]}, ${est.cartao[1]})` : '';
+      caixa.innerHTML = cartaoHtml({ pid: S.myPid, nome: String(fd.get('nome') || S.myName), cor: String(fd.get('cor') || S.myColor), estilo: est, online: true, sub: esc(sub), previa: true });
+      $('#visMsg').innerHTML = `${avatar({ pid: S.myPid, name: S.myName, color: S.myColor }, '', { estilo: est })}<div><div>${nomeHtml(S.myPid, String(fd.get('nome') || S.myName), String(fd.get('cor') || S.myColor), 'm-name', { estilo: est })} <span class="m-time">agora</span></div><div>Será que alguém lê isso?</div></div>`;
+      for (const s of p.querySelectorAll('.vis-efeitos .nm')) { s.style.setProperty('--c1', est.cores[0]); s.style.setProperty('--c2', est.cores[1] || COR2_PADRAO[s.className.match(/ef-(\S+)/)?.[1]] || est.cores[0]); }
+    };
+    raiz.addEventListener('input', previa);
+    raiz.addEventListener('change', previa);
+    $('#visPadrao').addEventListener('click', () => {
+      p.querySelector('input[name=estFonte][value=padrao]').checked = true;
+      p.querySelector('input[name=estEfeito][value=solido]').checked = true;
+      p.querySelector('input[name=estCor1]').value = S.myColor;
+      previa();
+    });
+    let enviandoPara = null;
+    const arq = $('#visArquivo');
+    raiz.addEventListener('click', async (ev) => {
+      const env = ev.target.closest('[data-vis-enviar]');
+      const tirar = ev.target.closest('[data-vis-tirar]');
+      if (env) { enviandoPara = env.dataset.visEnviar; arq.value = ''; arq.click(); return; }
+      if (!tirar) return;
+      tirar.disabled = true;
+      try {
+        await api('imagem-perfil', { tipo: tirar.dataset.visTirar, remover: true });
+        const est = S.perfis[S.myPid].estilo || {};
+        delete est[tirar.dataset.visTirar];
+        delete est[`${tirar.dataset.visTirar}p`];
+        montarAbaVisual(p);
+      } catch (err) { toast(err.message); tirar.disabled = false; }
+    });
+    arq.addEventListener('change', async () => {
+      const f = arq.files?.[0];
+      if (!f || !enviandoPara) return;
+      const tipo = enviandoPara;
+      const botao = p.querySelector(`[data-vis-enviar="${tipo}"]`);
+      botao.disabled = true;
+      botao.textContent = 'Enviando…';
+      try {
+        const corpo = await prepararImagemDoPerfil(tipo, f);
+        const r = await api('imagem-perfil', { tipo, ...corpo });
+        const est = ((S.perfis[S.myPid] ||= {}).estilo ||= {});
+        est[tipo] = r.v;
+        if (r.gif) est[`${tipo}p`] = r.v;
+        else delete est[`${tipo}p`];
+        // guarda o que já foi escolhido no resto do editor e monta de novo
+        const fd = new FormData(form);
+        montarAbaVisual(p);
+        for (const [k, v] of fd) { const i = p.querySelector(`[name="${k}"]`); if (i?.type === 'radio') { const r2 = p.querySelector(`[name="${k}"][value="${CSS.escape(v)}"]`); if (r2) r2.checked = true; } else if (i?.type === 'checkbox') i.checked = true; else if (i && i.type !== 'file') i.value = v; }
+        previa();
+        toast(tipo === 'av' ? 'Foto do perfil trocada.' : 'Faixa do cartão trocada.');
+      } catch (err) {
+        toast(err.message, 7000);
+        botao.disabled = false;
+        botao.textContent = tipo === 'av' ? 'Escolher foto ou GIF' : 'Escolher faixa';
+      }
+    });
+    previa();
+  }
+
   // ================= Configurações: tudo numa janela, separado por assunto =================
   // Cada aba reaproveita o que já existia. As que têm controles fixos da página (os ajustes da
   // transmissão, o volume dos sons) pegam esses controles emprestados e devolvem ao fechar.
   const CFG_ABAS = [
     ['perfil', 'Perfil', 'pessoa'],
+    ['visual', 'Visual do perfil', 'paleta'],
     ['voz', 'Voz e áudio', 'mic'],
     ['transmissao', 'Transmissão', 'screen'],
     ['sons', 'Sons', 'vol'],
-    ['aparencia', 'Aparência', 'paleta'],
+    ['aparencia', 'Aparência', 'tema'],
     ['avisos', 'Avisos e privacidade', 'shield'],
     ['conta', 'Conta e aparelhos', 'link'],
   ];
@@ -6519,6 +6826,7 @@
     mostrarAbaCfg(aba);
   }
   const MONTAR_ABA = {
+    visual: (p) => montarAbaVisual(p),
     voz: (p) => montarAudio(p),
     transmissao: (p) => montarAbaTransmissao(p),
     sons: (p) => montarAbaSons(p),
@@ -6555,6 +6863,7 @@
     ligarSomDeEntrada();
   }
   async function salvarPerfilDoForm(fd) {
+    await salvarEstiloDoForm(fd);
     if (!S.myPid || fd.get('nome') === null) return;
     const nome = String(fd.get('nome') || '').trim();
     if (!nome) { mostrarAbaCfg('perfil'); throw new Error('Escolha um apelido.'); }
@@ -6802,6 +7111,7 @@
   const NV_MUDOU = [
     { v: '1.4.7', data: '27/11', nome: 'Lances e disputas', itens: [
       { t: 'Tela mais organizada: todas as configurações numa janela só, com abas (a engrenagem embaixo, ao lado do seu nome). Microfone e fone ficam ali também.' },
+      { t: 'Visual do perfil: fonte, efeito e cores do nome (até em degradê e animados), foto ou GIF no avatar, faixa e cores do cartão e molduras. Em Configurações → Visual do perfil.' },
       { t: 'Transmissão melhor: 1440p e 4K a 60 fps, cada um recebe no formato que a placa de vídeo dele toca, prioridade Nitidez ou Fluidez, e o canto da tela diz por que a imagem caiu.' },
       { t: 'Clique no seu nome para trocar o status rápido. Novidades e Relatar um problema ficam no "?" da barra da esquerda.' },
       { t: 'Replay: ligue numa transmissão e salve os últimos 30 s (Alt+L). O vídeo vai para Vídeos\\Caras E Telas, no seu computador.', p: true },
@@ -6839,7 +7149,7 @@
   const NV_RECURSOS = [
     { icone: 'chat', titulo: 'Conversar', itens: ['Canais de texto', 'Respostas, reações e menções', 'Editar e apagar as suas mensagens', 'Imagens e GIFs', 'Mensagens privadas', 'Buscar, fixar e enquetes', 'Spoiler e prévia de links'] },
     { icone: 'screen', titulo: 'Salas de tela', itens: ['Compartilhar a tela em grupo', 'Assistir junto', 'Câmera (no programa)', 'Voz e apertar-pra-falar', 'Caneta por cima da tela', 'Soundboard e som de entrada', 'Replay: salvar os últimos 30 s'] },
-    { icone: 'controle', titulo: 'No dia a dia', itens: ['Avisos quando te chamam', 'Jogando agora (no programa)', 'Roleta de sorteio e X1 Otário?', 'Status: ausente e não perturbe', 'Jogo mais jogado do mês', 'Modo leve', 'Temas e cores'] },
+    { icone: 'controle', titulo: 'No dia a dia', itens: ['Avisos quando te chamam', 'Jogando agora (no programa)', 'Roleta de sorteio e X1 Otário?', 'Status: ausente e não perturbe', 'Jogo mais jogado do mês', 'Modo leve', 'Temas e cores', 'Visual do perfil: nome, foto/GIF e cartão'] },
   ];
   const NV = { aba: 'mudou', abertos: new Set([0]) };
   const versaoAtualNv = () => NV_MUDOU[0].v;
@@ -7238,7 +7548,8 @@
   }
   function onPerfil(m) {
     if (typeof m.id !== 'string' || typeof m.nome !== 'string') return;
-    (S.perfis ||= {})[m.id] = { ...S.perfis[m.id], nome: m.nome, cor: m.cor, ...(m.visto !== undefined ? { visto: m.visto } : {}), fora: !!m.fora, som: m.som || 0, somVol: m.somVol || 1, status: m.status || null };
+    (S.perfis ||= {})[m.id] = { ...S.perfis[m.id], nome: m.nome, cor: m.cor, ...(m.visto !== undefined ? { visto: m.visto } : {}), fora: !!m.fora, som: m.som || 0, somVol: m.somVol || 1, status: m.status || null, estilo: m.estilo || null };
+    garantirFontes();
     // o volume da voz e dos sons de cada pessoa fica guardado pelo nome: acompanha a troca
     if (m.antes && m.antes !== m.nome) {
       for (const [obj, chave] of [[VOLUMES_VOZ, 'volVoz'], [VOLUMES_EFEITOS, 'volEfeitos']]) {

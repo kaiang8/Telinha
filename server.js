@@ -959,6 +959,144 @@ async function definirSomEntrada(pid, audio) {
   return { ok: true, som: v };
 }
 
+// ---------- Visual do perfil: estilo do nome, avatar (foto ou GIF), faixa do cartão ----------
+// O estilo (fonte, efeito, cores, cores do cartão, moldura) vai no perfil. As imagens ficam cada uma
+// numa chave própria (como o som de entrada) e o perfil guarda só a versão, que vai no endereço:
+// o navegador guarda cada versão para sempre e só baixa de novo quando a pessoa troca.
+// GIF do avatar e da faixa ganham uma "capa" parada (WebP pequeno): a lista e o chat mostram a capa,
+// e o GIF só é baixado quando alguém passa o mouse ou abre o cartão.
+const FONTES_NOME = ['padrao', 'gotica', 'pixel', 'bloco', 'script', 'lobster', 'marcador', 'futurista', 'terror', 'redonda', 'quadrinhos', 'classica', 'retro'];
+const EFEITOS_NOME = ['solido', 'degrade', 'neon', 'contorno', '3d', 'bala', 'brilho', 'arcoiris'];
+const MOLDURAS = ['estrelas', 'nuvens', 'coroa', 'chamas', 'gato', 'fone'];
+const COR_HEX = /^#[0-9a-f]{6}$/i;
+const IMG_LIMITES = { av: 1024 * 1024, avp: 80 * 1024, fx: 2 * 1024 * 1024, fxp: 160 * 1024 };
+const ARQUIVO_IMGS = DATA_FILE.replace(/\.json$/i, '') + '-imagens.json';
+const IMGS_CACHE = new Map(); // `${pid}:${tipo}` -> { tipo, buf, v } (as mais usadas ficam na memória)
+const IMGS_LENDO = new Map();
+const IMGS_CACHE_MAX = 40 * 1024 * 1024;
+let imgsCacheBytes = 0;
+let imgsArquivo = null;
+const chaveImg = (pid, t) => `${CHAVE_UPSTASH}:img:${pid}:${t}`;
+async function arquivoDeImagens() {
+  if (!imgsArquivo) {
+    const raw = await fs.promises.readFile(ARQUIVO_IMGS, 'utf8').catch((e) => (e.code === 'ENOENT' ? '{}' : Promise.reject(e)));
+    imgsArquivo = JSON.parse(raw);
+  }
+  return imgsArquivo;
+}
+function tirarDoCache(k) {
+  const velho = IMGS_CACHE.get(k);
+  if (velho) { imgsCacheBytes -= velho.buf.length; IMGS_CACHE.delete(k); }
+}
+function guardarImgNoCache(k, s) {
+  tirarDoCache(k);
+  IMGS_CACHE.set(k, s);
+  imgsCacheBytes += s.buf.length;
+  for (const [kk, x] of IMGS_CACHE) {
+    if (imgsCacheBytes <= IMGS_CACHE_MAX) break;
+    IMGS_CACHE.delete(kk);
+    imgsCacheBytes -= x.buf.length;
+  }
+}
+async function lerImagemDoPerfil(pid, t, v) {
+  const atual = data.perfis[pid]?.estilo?.[t];
+  if (!atual || (v && v !== atual)) return null;
+  const k = `${pid}:${t}`;
+  const c = IMGS_CACHE.get(k);
+  if (c && c.v === atual) { IMGS_CACHE.delete(k); IMGS_CACHE.set(k, c); return c; }
+  if (IMGS_LENDO.has(k)) return IMGS_LENDO.get(k);
+  const p = (async () => {
+    const raw = USA_UPSTASH ? await upstash(['GET', chaveImg(pid, t)]) : (await arquivoDeImagens())[k];
+    const x = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!x?.b64 || x.v !== atual) return null;
+    const s = { tipo: x.tipo, buf: Buffer.from(x.b64, 'base64'), v: x.v };
+    guardarImgNoCache(k, s);
+    return s;
+  })().finally(() => IMGS_LENDO.delete(k));
+  IMGS_LENDO.set(k, p);
+  return p;
+}
+async function gravarImagemDoPerfil(pid, t, valor) {
+  const k = `${pid}:${t}`;
+  tirarDoCache(k);
+  if (USA_UPSTASH) {
+    await upstash(valor ? ['SET', chaveImg(pid, t), JSON.stringify(valor)] : ['DEL', chaveImg(pid, t)]);
+    return;
+  }
+  const a = await arquivoDeImagens();
+  if (valor) a[k] = valor;
+  else delete a[k];
+  await fs.promises.writeFile(ARQUIVO_IMGS + '.tmp', JSON.stringify(a));
+  await fs.promises.rename(ARQUIVO_IMGS + '.tmp', ARQUIVO_IMGS);
+}
+// O tipo sai do começo do arquivo (não do que o navegador disse): GIF, WebP ou JPEG
+function tipoDaImagem(buf) {
+  if (buf.length < 16) return null;
+  const cab = buf.toString('latin1', 0, 6);
+  if (cab === 'GIF87a' || cab === 'GIF89a') {
+    const w = buf.readUInt16LE(6);
+    const h = buf.readUInt16LE(8);
+    return w && h && w <= 2048 && h <= 2048 ? 'image/gif' : null;
+  }
+  if (buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP') return 'image/webp';
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  return null;
+}
+function bytesDaImagem(dataUrl, max) {
+  const m = /^data:image\/(?:gif|webp|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/.exec(String(dataUrl || ''));
+  if (!m || m[1].length > Math.ceil(max / 3) * 4 + 4) return null;
+  const buf = Buffer.from(m[1], 'base64');
+  const tipo = buf.length <= max ? tipoDaImagem(buf) : null;
+  return tipo ? { tipo, buf, b64: m[1] } : null;
+}
+// t = 'av' (avatar) ou 'fx' (faixa); capa = a primeira imagem do GIF, parada
+async function definirImagemDoPerfil(pid, t, dados, capa) {
+  const p = data.perfis[pid];
+  if (!p) return { status: 404, erro: 'Esse nome não existe mais' };
+  const tc = `${t}p`;
+  if (!dados) {
+    if (p.estilo?.[t]) {
+      delete p.estilo[t];
+      delete p.estilo[tc];
+      if (!Object.keys(p.estilo).length) delete p.estilo;
+      salvar();
+      avisarPerfil(pid);
+      await gravarImagemDoPerfil(pid, t, null);
+      await gravarImagemDoPerfil(pid, tc, null);
+    }
+    return { ok: true };
+  }
+  const img = bytesDaImagem(dados, IMG_LIMITES[t]);
+  if (!img) return { status: 413, erro: t === 'av' ? 'Use uma foto, ou um GIF de até 1 MB.' : 'Use uma foto, ou um GIF de até 2 MB.' };
+  let c = null;
+  if (img.tipo === 'image/gif') {
+    c = bytesDaImagem(capa, IMG_LIMITES[tc]);
+    if (!c || c.tipo === 'image/gif') return { status: 400, erro: 'Faltou a capa parada do GIF. Tente de novo.' };
+  }
+  // grava antes as imagens e só depois troca a versão no perfil (ninguém pede uma versão que não existe)
+  const v = crypto.randomBytes(5).toString('hex');
+  await gravarImagemDoPerfil(pid, t, { tipo: img.tipo, b64: img.b64, v });
+  await gravarImagemDoPerfil(pid, tc, c ? { tipo: c.tipo, b64: c.b64, v } : null);
+  p.estilo ||= {};
+  p.estilo[t] = v;
+  if (c) p.estilo[tc] = v;
+  else delete p.estilo[tc];
+  salvar();
+  avisarPerfil(pid);
+  return { ok: true, v, gif: !!c };
+}
+function limparEstilo(b, atual = {}) {
+  const e = {};
+  for (const t of Object.keys(IMG_LIMITES)) if (typeof atual[t] === 'string' && /^[0-9a-f]{10}$/.test(atual[t])) e[t] = atual[t];
+  if (FONTES_NOME.includes(b?.fonte) && b.fonte !== 'padrao') e.fonte = b.fonte;
+  if (EFEITOS_NOME.includes(b?.efeito) && b.efeito !== 'solido') e.efeito = b.efeito;
+  const cores = Array.isArray(b?.cores) ? b.cores.map(String).filter((c) => COR_HEX.test(c)).slice(0, 2).map((c) => c.toLowerCase()) : [];
+  if (cores.length) e.cores = cores;
+  if (Array.isArray(b?.cartao) && b.cartao.length === 2 && b.cartao.every((c) => COR_HEX.test(String(c)))) e.cartao = b.cartao.map((c) => String(c).toLowerCase());
+  if (MOLDURAS.includes(b?.moldura)) e.moldura = b.moldura;
+  return e;
+}
+
 // ---------- Registro de conexões (só admins veem) ----------
 // Quem entrou, de qual IP e com qual navegador, e as tentativas recusadas. Fica num pedaço por
 // dia (veja "diario"), por pelo menos 30 dias, sem limite de quantidade.
@@ -1315,7 +1453,7 @@ function agendarFimDoStatus(pid) {
 function perfilPublico(id) {
   const p = data.perfis[id];
   const fora = p.oculto || data.bans.some((b) => b.pid === id);
-  return { nome: p.nome, cor: p.cor, visto: p.visto || p.criado || 0, ...(fora ? { fora: true } : {}), ...(p.som ? { som: p.som, ...(p.somVol && p.somVol !== 1 ? { somVol: p.somVol } : {}) } : {}), ...(statusValido(p) ? { status: p.status } : {}) };
+  return { nome: p.nome, cor: p.cor, visto: p.visto || p.criado || 0, ...(fora ? { fora: true } : {}), ...(p.som ? { som: p.som, ...(p.somVol && p.somVol !== 1 ? { somVol: p.somVol } : {}) } : {}), ...(statusValido(p) ? { status: p.status } : {}), ...(p.estilo && Object.keys(p.estilo).length ? { estilo: p.estilo } : {}) };
 }
 function perfisPublicos() {
   const o = {};
@@ -2481,8 +2619,19 @@ async function montarBackup() {
     if (!p.som) continue;
     try { const x = await lerSomGuardado(pid); if (x) sons[pid] = x; } catch { /* sem esse som, o resto vai */ }
   }
+  const imagens = {}; // avatar e faixa de cada um
+  for (const [pid, p] of Object.entries(data.perfis)) {
+    for (const t of Object.keys(IMG_LIMITES)) {
+      if (!p.estilo?.[t]) continue;
+      try {
+        const raw = USA_UPSTASH ? await upstash(['GET', chaveImg(pid, t)]) : (await arquivoDeImagens())[`${pid}:${t}`];
+        const x = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (x?.b64) (imagens[pid] ||= {})[t] = x;
+      } catch { /* sem essa imagem, o resto vai */ }
+    }
+  }
   const { messages, dms, ...dados } = data; // as conversas privadas não vão para o backup
-  return { formato: BACKUP_FORMATO, versao: 1, criado: Date.now(), dados, mensagens, sons };
+  return { formato: BACKUP_FORMATO, versao: 1, criado: Date.now(), dados, mensagens, sons, imagens };
 }
 async function restaurarBackup(b) {
   if (!b || b.formato !== BACKUP_FORMATO || !b.dados || typeof b.dados !== 'object' || !b.mensagens || typeof b.mensagens !== 'object') {
@@ -2507,6 +2656,11 @@ async function restaurarBackup(b) {
   const perfisNovos = b.dados.perfis && typeof b.dados.perfis === 'object' && !Array.isArray(b.dados.perfis) ? b.dados.perfis : {};
   const sons = b.sons && typeof b.sons === 'object' ? b.sons : {};
   for (const [pid, p] of Object.entries(data.perfis)) if (p.som && !sons[pid]) await gravarSomEntrada(pid, null).catch(() => {});
+  // imagens do perfil: as de agora saem; as do backup voltam (se baterem com a versão do perfil)
+  const imagens = b.imagens && typeof b.imagens === 'object' ? b.imagens : {};
+  for (const [pid, p] of Object.entries(data.perfis)) {
+    for (const t of Object.keys(IMG_LIMITES)) if (p.estilo?.[t]) await gravarImagemDoPerfil(pid, t, null).catch(() => {});
+  }
   const perfis = {};
   for (const [pid, p] of Object.entries(perfisNovos)) {
     if (!/^[A-Za-z0-9_-]{4,64}$/.test(pid) || !p || typeof p !== 'object') continue;
@@ -2514,8 +2668,22 @@ async function restaurarBackup(b) {
     const somOk = x && /^audio\/(webm|ogg)$/.test(x.tipo) && typeof x.b64 === 'string' && x.b64.length <= SOM_MAX_B64 && /^[A-Za-z0-9+/]+={0,2}$/.test(x.b64) && x.v === p.som;
     if (somOk) await gravarSomEntrada(pid, { tipo: x.tipo, b64: x.b64, v: x.v });
     perfis[pid] = somOk ? p : (({ som, somVol, ...resto }) => resto)(p);
+    if (p.estilo && typeof p.estilo === 'object') {
+      const est = limparEstilo(p.estilo, {});
+      for (const t of Object.keys(IMG_LIMITES)) {
+        const x = imagens[pid]?.[t];
+        const ok = x && x.v === p.estilo[t] && typeof x.b64 === 'string' && /^[A-Za-z0-9+/]+={0,2}$/.test(x.b64)
+          && x.b64.length <= Math.ceil(IMG_LIMITES[t] / 3) * 4 + 4 && tipoDaImagem(Buffer.from(x.b64, 'base64')) === x.tipo;
+        if (ok) { await gravarImagemDoPerfil(pid, t, { tipo: x.tipo, b64: x.b64, v: x.v }); est[t] = x.v; }
+      }
+      perfis[pid] = { ...perfis[pid] };
+      if (Object.keys(est).length) perfis[pid].estilo = est;
+      else delete perfis[pid].estilo;
+    }
   }
   SONS_CACHE.clear();
+  IMGS_CACHE.clear();
+  imgsCacheBytes = 0;
   // o resto dos dados
   const { messages, dms, ...resto } = b.dados;
   const dmsAgora = data.dms;
@@ -2563,7 +2731,7 @@ async function api(req, res, url) {
 
   let body;
   try {
-    body = await lerCorpo(req, rota === 'som-entrada' ? 260 * 1024 : MAX_BODY); // o som vai inteiro no corpo
+    body = await lerCorpo(req, rota === 'som-entrada' ? 260 * 1024 : rota === 'imagem-perfil' ? 3200 * 1024 : MAX_BODY); // o som e as imagens vão inteiros no corpo
   } catch (e) {
     return json(res, 400, { error: e.message });
   }
@@ -3109,6 +3277,35 @@ async function api(req, res, url) {
       }
     }
 
+    case 'estilo': {
+      // fonte, efeito e cores do nome, cores do cartão e moldura (as imagens têm rota própria)
+      if (!u.pid || !data.perfis[u.pid]) return json(res, 400, { error: 'Entre de novo para ter um nome guardado' });
+      if (limiteDe(u, 'limEstilo', 30, 10 * 60e3)) return json(res, 429, { error: 'Muitas trocas seguidas. Espere uns minutos.' });
+      const p = data.perfis[u.pid];
+      const novo = limparEstilo(body, p.estilo || {});
+      if (Object.keys(novo).length) p.estilo = novo;
+      else delete p.estilo;
+      salvar();
+      avisarPerfil(u.pid);
+      return json(res, 200, { ok: true, estilo: p.estilo || null });
+    }
+
+    case 'imagem-perfil': {
+      // avatar ou faixa: { tipo: 'av' | 'fx', dados, capa } ou { tipo, remover: true }
+      if (!u.pid || !data.perfis[u.pid]) return json(res, 400, { error: 'Entre de novo para ter um nome guardado' });
+      const t = body.tipo === 'fx' ? 'fx' : body.tipo === 'av' ? 'av' : null;
+      if (!t) return json(res, 400, { error: 'Imagem inválida' });
+      if (limiteDe(u, 'limImagem', 12, 10 * 60e3)) return json(res, 429, { error: 'Muitas trocas seguidas. Espere uns minutos.' });
+      try {
+        const r = await definirImagemDoPerfil(u.pid, t, body.remover ? null : body.dados, body.capa);
+        if (r.erro) return json(res, r.status, { error: r.erro });
+        return json(res, 200, r);
+      } catch (e) {
+        console.warn('Não consegui guardar a imagem do perfil:', e.message);
+        return json(res, 500, { error: 'Não consegui guardar a imagem agora. Tente de novo.' });
+      }
+    }
+
     case 'perfil-codigo':
       // código para entrar com o mesmo nome em outro aparelho
       if (!u.pid || !data.perfis[u.pid]) return json(res, 400, { error: 'Entre de novo para ter um nome guardado' });
@@ -3425,7 +3622,19 @@ const server = http.createServer((req, res) => {
     return json(res, 400, { error: 'endereço inválido' });
   }
   const p = url.pathname;
-  medirResposta(res, p === '/api/img' ? 'imagens' : p === '/api/events' || p === '/api/poll' ? 'tempoReal' : p.startsWith('/api/') ? 'api' : 'pagina');
+  medirResposta(res, p === '/api/img' || p.startsWith('/perfil-img/') ? 'imagens' : p === '/api/events' || p === '/api/poll' ? 'tempoReal' : p.startsWith('/api/') ? 'api' : 'pagina');
+  const imgPedido = /^\/perfil-img\/([A-Za-z0-9_-]{4,64})\/(av|avp|fx|fxp)$/.exec(url.pathname);
+  if (imgPedido && (req.method === 'GET' || req.method === 'HEAD')) {
+    lerImagemDoPerfil(imgPedido[1], imgPedido[2], url.searchParams.get('v') || '').then((s) => {
+      if (!s) { res.writeHead(404, { 'Cache-Control': 'no-store' }); return res.end(); }
+      res.writeHead(200, {
+        'Content-Type': s.tipo, 'Content-Length': s.buf.length, 'Cache-Control': 'public, max-age=31536000, immutable',
+        'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox",
+      });
+      res.end(req.method === 'HEAD' ? undefined : s.buf);
+    }).catch(() => { if (!res.headersSent) { res.writeHead(500); res.end(); } });
+    return;
+  }
   const somPedido = /^\/som-entrada\/([A-Za-z0-9_-]{4,64})$/.exec(url.pathname);
   if (somPedido && (req.method === 'GET' || req.method === 'HEAD')) {
     lerSomEntrada(somPedido[1]).then((s) => {

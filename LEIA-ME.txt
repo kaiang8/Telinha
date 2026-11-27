@@ -773,6 +773,23 @@ DICAS
     e ele aparece tampado até alguém clicar. Funciona também com links
     de imagem (a imagem fica borrada). Nos avisos, nas respostas e na
     busca aparece só [spoiler].
+  - Visual do perfil: em Configurações → Visual do perfil, cada um
+    escolhe a fonte do nome (13 opções), o efeito (Sólido, Degradê,
+    Neon, Contorno, 3D, Bala de goma, e os animados Brilho e Arco-íris),
+    as cores (uma ou duas, para o degradê), uma foto ou GIF no avatar, a
+    faixa do cartão (foto ou GIF), as cores do cartão (degradê de cima
+    para baixo) e uma moldura em volta do avatar no cartão (Estrelas,
+    Nuvens, Coroa, Chamas, Gatinho, Fone gamer). A prévia mostra tudo na
+    hora; o nome, as cores e a moldura salvam no "Pronto", e a foto e a
+    faixa já valem ao enviar. O nome estilizado aparece no chat, na
+    lista de membros, nas salas e no cartão (clique no nome de alguém
+    para abrir). Limites: GIF de até 1 MB no avatar e 2 MB na faixa;
+    fotos viram WebP leve sozinhas. No chat e na lista, o GIF fica
+    parado e só se mexe quando passam o mouse (no cartão, sempre); no
+    modo leve, nada se mexe. As fontes vêm do Google Fonts, e cada
+    aparelho só baixa as que alguém está usando. As imagens ficam no
+    Upstash (cada uma numa chave própria) e entram no backup do painel
+    de admin.
   - Replay (lances): na barra de baixo de uma transmissão, clique no
     botão de replay. Ele passa a guardar os últimos 30 s daquela tela
     (aparece "replay" em cima). Para salvar, clique de novo no botão ou
