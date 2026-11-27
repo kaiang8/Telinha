@@ -583,6 +583,23 @@ DICAS
     Qualidade e o "Seu upload". Enquanto você transmite, o botão
     "Transmissão", embaixo da sala, abre direto essa aba (lá também fica
     o volume do som que você está mandando).
+  - Qualidade e prioridade: em Configurações → Transmissão, a Qualidade
+    vai de 720p a 4K a 60 fps (1440p60 e 4K60 pedem internet boa; no
+    programa ainda tem "1080p · 120 fps", experimental: a captura de
+    tela costuma parar em 60, e a sua tela mostra quantos quadros ela
+    pegou). A Prioridade diz o que segurar quando a internet ou o
+    computador apertam: Equilíbrio (recomendado), Nitidez (segura a
+    resolução e baixa os quadros) ou Fluidez (segura os quadros e baixa
+    a resolução). Cada pessoa recebe no formato de vídeo que a placa
+    dela toca (AV1, VP9 ou H.264); se mesmo assim o computador dela
+    engasgar, troca sozinho por um mais leve. Upload por pessoa, mais ou
+    menos: 1080p60 de 8 a 12 Mbps, 1440p60 de 14 a 20, 4K60 de 25 a 35
+    (multiplique pelo número de pessoas assistindo). Quem assiste vê no
+    canto da transmissão a resolução, os fps, o formato e, quando cai, o
+    motivo: seu PC, conexão perdendo pacotes, internet ou PC de quem
+    transmite, ou a captura abaixo da meta. Para ficar mais fluido: cabo
+    de rede, jogo em "janela sem bordas" e o jogo com fps limitado, para
+    sobrar placa de vídeo para a transmissão.
   - Qualidade da imagem: se o computador de quem transmite codifica
     vídeo na placa (AV1, VP9 ou H.264), a transmissão usa esse formato:
     imagem melhor com a mesma internet e sem pesar no jogo. Cada pessoa

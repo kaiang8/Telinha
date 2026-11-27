@@ -1706,3 +1706,6 @@ body.leve .t-replay::before { animation: none; }
   .stage-controls > .btn:not(#shareBtn):not(#joinBtn) .rot { display: none; }
   .stage-controls > .btn:not(#shareBtn):not(#joinBtn) { padding: 0 11px; }
 }
+
+/* aviso no canto da transmissão: por que a imagem caiu */
+.t-qual.alerta { background: rgba(176, 96, 0, .82); border-color: rgba(255, 190, 90, .7); color: #fff; }

@@ -63,9 +63,13 @@
   const CORES = ['#ffb23f', '#ff9a76', '#ff6b81', '#f78fd3', '#c39bff', '#9fa8ff', '#6cc6ff', '#4fe0d0', '#43d9a3', '#c3e86b'];
 
   const QUALIDADES = {
-    '720p30': { label: '720p · 30 fps', w: 1280, h: 720, fps: 30, br: 2500000, hint: 'motion' },
-    '1080p30': { label: '1080p · 30 fps', w: 1920, h: 1080, fps: 30, br: 4500000, hint: 'motion' },
-    '1080p60': { label: '1080p · 60 fps (jogos)', w: 1920, h: 1080, fps: 60, br: 8000000, hint: 'motion' },
+    '720p30': { label: '720p · 30 fps', w: 1280, h: 720, fps: 30, br: 3000000, hint: 'motion' },
+    '1080p30': { label: '1080p · 30 fps', w: 1920, h: 1080, fps: 30, br: 6000000, hint: 'motion' },
+    '1080p60': { label: '1080p · 60 fps (jogos)', w: 1920, h: 1080, fps: 60, br: 12000000, hint: 'motion' },
+    '1440p60': { label: '1440p · 60 fps (jogos, internet boa)', w: 2560, h: 1440, fps: 60, br: 20000000, hint: 'motion' },
+    '2160p60': { label: '4K · 60 fps (internet muito boa)', w: 3840, h: 2160, fps: 60, br: 35000000, hint: 'motion' },
+    // a captura de tela costuma parar em 60 fps: a sua tela mostra quantos quadros ela pegou de verdade
+    '1080p120': { label: '1080p · 120 fps (experimental, só no programa)', w: 1920, h: 1080, fps: 120, br: 18000000, hint: 'motion', programa: true },
     texto: { label: 'Texto nítido · 15 fps', w: 1920, h: 1080, fps: 15, br: 3000000, hint: 'detail' },
   };
 
@@ -87,7 +91,8 @@
     token: null, myId: null, myName: '', myColor: CORES[0], password: '',
     serverName: MARCA, channels: [], messages: {}, users: [], iceServers: [],
     view: salvo.view || null, sala: null, live: false, localStream: null,
-    quality: QUALIDADES[salvo.quality] ? salvo.quality : '1080p30',
+    quality: QUALIDADES[salvo.quality] && (!QUALIDADES[salvo.quality].programa || window.carasETelas?.programa) ? salvo.quality : '1080p30',
+    prioridade: ['equilibrio', 'nitidez', 'fluidez'].includes(salvo.prioridade) ? salvo.prioridade : 'equilibrio',
     // somV 2: todo mundo volta uma vez para o modo sem eco (o "PC inteiro" ficou salvo em muitos navegadores)
     som: salvo.somV === 2 && ['janela', 'pc', 'nenhum'].includes(salvo.som) ? salvo.som : 'janela',
     upload: ['auto', '5', '10', '20', '50', '100'].includes(String(salvo.upload)) ? String(salvo.upload) : 'auto',
@@ -3417,7 +3422,7 @@
   // ================= Upload: divide a internet de quem transmite =================
   // Cada pessoa assistindo recebe uma cópia do vídeo. Aqui o site reparte o upload
   // entre elas e baixa a resolução quando a fatia de cada um fica pequena.
-  const UPLOADS = [['auto', 'Automático'], ['5', 'Até 5 Mbps'], ['10', 'Até 10 Mbps'], ['20', 'Até 20 Mbps'], ['50', 'Até 50 Mbps'], ['100', '100 Mbps ou mais']];
+  const UPLOADS = [['auto', 'Automático'], ['5', 'Até 5 Mbps'], ['10', 'Até 10 Mbps'], ['20', 'Até 20 Mbps'], ['50', 'Até 50 Mbps'], ['100', 'Até 100 Mbps'], ['200', 'Até 200 Mbps'], ['500', '500 Mbps ou mais']];
   const POR_MIN = 300e3; // nunca abaixo disso por pessoa
   const AUDIO_BPS = 100e3; // o som também ocupa um pouco
   const ORC = { total: 8e6, congest: 0, folga: 0, espera: 0, porPessoa: 0, fila: Promise.resolve() };
@@ -3430,7 +3435,35 @@
     const n = Math.max(1, S.out.size);
     return Math.max(POR_MIN, Math.min(q.br, orcamentoTotal() / n - AUDIO_BPS));
   }
-  const alturaPara = (bps) => (bps >= 2.5e6 ? 1080 : bps >= 1.2e6 ? 720 : bps >= 0.6e6 ? 540 : 360);
+  // Quantos bits cada pixel de cada quadro precisa para um jogo ficar bonito. Os formatos mais
+  // novos (AV1, VP9) gastam menos que o H.264 e o VP8 para a mesma imagem.
+  const BPP = { AV1: 0.045, VP9: 0.05, H264: 0.065, VP8: 0.075 };
+  const ALTURAS = [2160, 1440, 1080, 900, 720, 540, 360];
+  const DEGRADACAO = { equilibrio: 'balanced', nitidez: 'maintain-resolution', fluidez: 'maintain-framerate' };
+  // Escolhe a resolução e os quadros que cabem na fatia de cada pessoa. Para subir de novo, pede
+  // 15% de folga (assim não fica trocando de resolução a cada pequena variação da internet).
+  function planoDeEnvio(fatia, q, fonte, codec, atual) {
+    const hFonte = Math.min(fonte.h || q.h, q.h * 1.05) || q.h;
+    const aspecto = fonte.w && fonte.h ? fonte.w / fonte.h : 16 / 9;
+    const k = (BPP[codec] || 0.06) * (S.prioridade === 'equilibrio' ? 0.8 : 1);
+    const custo = (h, f) => k * h * h * aspecto * f;
+    const cabe = (h, f) => custo(h, f) <= fatia / (atual && (h > atual.h || f > atual.fps) ? 1.15 : 1);
+    const alturas = [hFonte, ...ALTURAS.filter((h) => h < hFonte - 8)];
+    if (S.prioridade === 'nitidez') {
+      // segura a resolução e baixa os quadros (até 30); se nem assim couber, aí baixa a resolução
+      for (const h of alturas) {
+        const porQuadro = k * h * h * aspecto;
+        let f = Math.min(q.fps, Math.floor(fatia / (atual && h > atual.h ? 1.15 : 1) / porQuadro));
+        // na mesma resolução, só sobe os quadros com folga (senão fica como está)
+        if (atual && h === atual.h && f > atual.fps) f = Math.max(atual.fps, Math.min(q.fps, Math.floor(fatia / 1.15 / porQuadro)));
+        if (f >= Math.min(30, q.fps)) return { h, fps: f };
+      }
+      return { h: alturas[alturas.length - 1], fps: Math.min(30, q.fps) };
+    }
+    // fluidez e equilíbrio: segura os quadros e baixa a resolução
+    for (const h of alturas) if (cabe(h, q.fps)) return { h, fps: q.fps };
+    return { h: alturas[alturas.length - 1], fps: q.fps };
+  }
   const mbps = (bps) => (bps / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: bps < 1e6 ? 2 : 1 });
 
   async function aplicarOrcamentoAgora() {
@@ -3439,24 +3472,38 @@
     const fatia = fatiaPorPessoa();
     ORC.porPessoa = fatia;
     const vt = S.localStream.getVideoTracks()[0];
-    const altura = vt?.getSettings?.().height || q.h;
-    let escala = 1;
-    let fps = q.fps;
-    if (q.hint === 'detail') fps = fatia < 0.8e6 ? 5 : fatia < 1.5e6 ? 10 : q.fps; // texto: mantém a nitidez, baixa os quadros
-    else escala = Math.max(1, altura / alturaPara(fatia)); // movimento: baixa a resolução
-    escala = Math.round(escala * 100) / 100;
+    const conf = vt?.getSettings?.() || {};
+    const fonte = { w: conf.width || q.w, h: conf.height || q.h };
     for (const c of S.out.values()) {
+      let escala = 1;
+      let fps = q.fps;
+      if (q.hint === 'detail') fps = fatia < 0.8e6 ? 5 : fatia < 1.5e6 ? 10 : q.fps; // texto: mantém a nitidez, baixa os quadros
+      else {
+        c.plano = planoDeEnvio(fatia, q, fonte, c.codec || c.codecPedido || '', c.plano);
+        escala = Math.max(1, fonte.h / c.plano.h);
+        fps = c.plano.fps;
+      }
+      escala = Math.round(escala * 100) / 100;
+      const deg = q.hint === 'detail' ? 'maintain-resolution' : DEGRADACAO[S.prioridade];
       for (const s of c.pc.getSenders()) {
         if (!s.track || s.track.kind !== 'video') continue;
         try {
           const p = s.getParameters();
           if (!p.encodings || !p.encodings.length) continue; // ainda conectando: aplica depois
           const e = p.encodings[0];
-          if (e.maxBitrate === Math.round(fatia) && e.maxFramerate === fps && (e.scaleResolutionDownBy || 1) === escala) continue;
+          if (e.maxBitrate === Math.round(fatia) && e.maxFramerate === fps && (e.scaleResolutionDownBy || 1) === escala && (c.semDeg || p.degradationPreference === deg)) continue;
           e.maxBitrate = Math.round(fatia);
           e.maxFramerate = fps;
           e.scaleResolutionDownBy = escala;
-          await s.setParameters(p);
+          if (!c.semDeg) p.degradationPreference = deg;
+          try {
+            await s.setParameters(p);
+          } catch (err) {
+            if (c.semDeg) throw err;
+            c.semDeg = true; // navegador que não deixa escolher a prioridade: segue sem ela
+            delete p.degradationPreference;
+            await s.setParameters(p);
+          }
         } catch (err) {
           console.warn('Não consegui ajustar o envio', err);
         }
@@ -3476,19 +3523,23 @@
     const q = QUALIDADES[S.quality];
     if (!sinais.length) return false;
     const fatia = ORC.porPessoa || fatiaPorPessoa();
-    const apertado = sinais.some((x) => (x.bwe && x.bwe < fatia * 0.8) || x.perda > 0.08);
+    // Corta pouco quando aperta um pouco (15%) e muito só quando aperta muito (30%): o vai e vem
+    // de resolução fica bem menor. Sobe 10% de cada vez, ou 20% quando claramente sobra internet.
+    const severo = sinais.some((x) => (x.bwe && x.bwe < fatia * 0.5) || x.perda > 0.2);
+    const apertado = severo || sinais.some((x) => (x.bwe && x.bwe < fatia * 0.8) || x.perda > 0.08);
     const sobra = sinais.every((x) => (!x.bwe || x.bwe >= fatia * 1.1) && x.perda < 0.02);
+    const sobraMuito = sobra && sinais.every((x) => x.bwe >= fatia * 1.5);
     if (apertado) { ORC.congest++; ORC.folga = 0; } else if (sobra) { ORC.folga++; ORC.congest = 0; } else { ORC.congest = 0; ORC.folga = 0; }
     if (ORC.espera > 0) ORC.espera--;
-    if (ORC.congest >= 2) {
-      ORC.total = Math.max(n * (POR_MIN + AUDIO_BPS), ORC.total * 0.75);
+    if (severo || ORC.congest >= 2) {
+      ORC.total = Math.max(n * (POR_MIN + AUDIO_BPS), ORC.total * (severo ? 0.7 : 0.85));
       ORC.congest = 0;
-      ORC.espera = 5; // espera ~10 s antes de tentar subir de novo
+      ORC.espera = 6; // espera ~12 s antes de tentar subir de novo
       return true;
     }
     const teto = n * (q.br + AUDIO_BPS);
-    if (ORC.folga >= 5 && ORC.espera === 0 && ORC.total < teto) {
-      ORC.total = Math.min(teto, ORC.total * 1.15);
+    if (ORC.folga >= 4 && ORC.espera === 0 && ORC.total < teto) {
+      ORC.total = Math.min(teto, ORC.total * (sobraMuito ? 1.2 : 1.1));
       ORC.folga = 0;
       return true;
     }
@@ -3558,6 +3609,10 @@
     const pc = new RTCPeerConnection({ iceServers: S.iceServers });
     const c = { pc, pending: antiga ? antiga.pending : [], stream: null, state: 'connecting', sess: null, gaveUp: false };
     S.inc.set(sid, c);
+    try {
+      const info = pc.createDataChannel('info', { negotiated: true, id: 7, ordered: false, maxRetransmits: 0 });
+      info.onmessage = (e) => { try { const d = JSON.parse(e.data); if (d && typeof d === 'object') c.deQuem = { ...d, t: Date.now() }; } catch { /* ignora */ } };
+    } catch { /* navegador sem canal de dados: fica sem o motivo de quem transmite */ }
     pc.ontrack = (e) => {
       if (S.inc.get(sid) !== c) return;
       if (e.streams[0]) c.stream = e.streams[0];
@@ -3586,7 +3641,12 @@
   function assistir(sid) {
     const c = novaInc(sid);
     c.pending = [];
-    sinal(sid, { k: 'watch' });
+    // junto com o pedido vai o que a placa de vídeo daqui toca (para quem transmite escolher o formato)
+    decodificacao().then((dec) => {
+      const d = { ...dec };
+      for (const r of DECOD.ruins) d[r] = 'nao';
+      if (S.inc.get(sid) === c) sinal(sid, { k: 'watch', dec: d });
+    });
     atualizarTile(sid);
   }
 
@@ -3627,7 +3687,7 @@
   async function onSignal(from, d) {
     if (!d || typeof d !== 'object') return;
     try {
-      if (d.k === 'watch') await pedidoParaAssistir(from);
+      if (d.k === 'watch') await pedidoParaAssistir(from, d.dec);
       else if (d.k === 'offer') await recebeuOferta(from, d);
       else if (d.k === 'answer') await recebeuResposta(from, d);
       else if (d.k === 'restart') { if (quemQueroAssistir().has(from)) { S.tries.set(from, 0); assistir(from); } }
@@ -3643,7 +3703,7 @@
   }
 
   // --- lado de quem transmite ---
-  async function pedidoParaAssistir(vid) {
+  async function pedidoParaAssistir(vid, dec) {
     if (!S.live || !S.localStream) return;
     fecharOut(vid);
     const pc = new RTCPeerConnection({ iceServers: S.iceServers });
@@ -3651,7 +3711,11 @@
     S.out.set(vid, c);
     const fonte = S.sendStream || S.localStream;
     for (const t of fonte.getTracks()) pc.addTrack(t, fonte);
-    aplicarCodec(pc, await escolherCodec()); // formato de vídeo pela placa, se tiver
+    // canal pequeno, direto entre os dois (não passa pelo servidor): diz para quem assiste por que a imagem caiu
+    try { c.info = pc.createDataChannel('info', { negotiated: true, id: 7, ordered: false, maxRetransmits: 0 }); } catch { c.info = null; }
+    const mime = await codecPara(dec); // formato que a sua placa manda e a placa de quem assiste toca
+    c.codecPedido = mime ? nomeCodec(mime) : '';
+    aplicarCodec(pc, mime);
     if (S.out.get(vid) !== c) return;
     pc.onicecandidate = (e) => {
       if (e.candidate) sinal(vid, { k: 'ice', to: 'viewer', sess: c.sess, c: e.candidate.toJSON() });
@@ -3701,7 +3765,7 @@
   async function recebeuResposta(vid, d) {
     const c = S.out.get(vid);
     if (!c || d.sess !== c.sess) return;
-    const kbps = Math.round(Math.min(ORC.porPessoa || fatiaPorPessoa(), 2.5e6) / 1000);
+    const kbps = Math.round(Math.min(ORC.porPessoa || fatiaPorPessoa(), 5e6) / 1000);
     try {
       await c.pc.setRemoteDescription({ type: d.sdp.type, sdp: partidaForte(d.sdp.sdp, kbps) });
     } catch {
@@ -4015,6 +4079,33 @@
   if (navigator.mediaDevices?.getDisplayMedia) escolherCodec();
 
   const nomeCodec = (mime) => String(mime || '').replace(/^video\//i, '').toUpperCase();
+  // O que a placa de vídeo daqui consegue tocar (sem usar o processador). Calculado uma vez.
+  const DECOD = { promessa: null, ruins: new Set() }; // ruins: formatos que travaram aqui mesmo com o navegador dizendo que dava
+  function decodificacao() {
+    DECOD.promessa ||= (async () => {
+      const r = {};
+      if (!navigator.mediaCapabilities?.decodingInfo) return r;
+      const nota = { placa: 3, processador: 2, nao: 1 };
+      for (const [nome, , tipo] of CANDIDATOS_CODEC) {
+        let x = null;
+        try { x = await navigator.mediaCapabilities.decodingInfo({ type: 'webrtc', video: { contentType: tipo, width: 1920, height: 1080, bitrate: 8000000, framerate: 60 } }); } catch { x = null; }
+        const v = x?.supported ? (x.powerEfficient ? 'placa' : 'processador') : 'nao';
+        if (!r[nome] || nota[v] > nota[r[nome]]) r[nome] = v;
+      }
+      return r;
+    })().catch(() => ({}));
+    return DECOD.promessa;
+  }
+  // Para cada pessoa: primeiro um formato que as duas placas cuidam; senão, um leve que quem
+  // assiste toca no processador (nunca o AV1, que pesa muito sem placa); senão, o padrão.
+  async function codecPara(dec) {
+    const meu = await escolherCodec();
+    if (CODEC.semPlaca) return null;
+    if (!dec || typeof dec !== 'object' || !Object.keys(dec).length) return meu; // página antiga de quem assiste
+    let m = CANDIDATOS_CODEC.find(([nome]) => CODEC.testes[nome] === 'pela placa' && dec[nome] === 'placa');
+    if (!m) m = CANDIDATOS_CODEC.find(([nome]) => nome !== 'AV1' && CODEC.testes[nome] === 'pela placa' && dec[nome] === 'processador');
+    return m ? m[1] : null;
+  }
   const media = (soma, n) => (n ? soma / n : 0);
   const QTX = { sessao: null, avisou: false, seguidos: 0 };
   function novaSessaoEnvio() {
@@ -4041,8 +4132,9 @@
         if (r.frameHeight) alturas.push(r.frameHeight);
         if (r.framesPerSecond) fpss.push(r.framesPerSecond);
         motivos.push(r.qualityLimitationReason || 'none');
+        c.motivo = r.qualityLimitationReason || 'none';
         const cod = r.codecId ? st.get(r.codecId) : null;
-        if (cod?.mimeType) s.codec = nomeCodec(cod.mimeType);
+        if (cod?.mimeType) s.codec = c.codec = nomeCodec(cod.mimeType);
         if (typeof r.powerEfficientEncoder === 'boolean') s.hardware = r.powerEfficientEncoder;
         else if (r.encoderImplementation) s.hardware = /MediaFoundation|External|Accelerat|NVENC|QSV|AMF|VideoToolbox|VAAPI/i.test(r.encoderImplementation);
         if (c.antes && r.timestamp > c.antes.t) bpss.push(((r.bytesSent - c.antes.b) * 8) / ((r.timestamp - c.antes.t) / 1000));
@@ -4065,6 +4157,13 @@
     const captura = capturas.length ? Math.round(Math.max(...capturas)) : null;
     if (captura !== null) { s.somaCaptura += captura; s.nCaptura++; }
     s.ultimo = { altura, fps, motivo, captura };
+    const meta = QUALIDADES[S.quality]?.fps || 0;
+    for (const c of S.out.values()) {
+      if (c.info?.readyState !== 'open') continue;
+      // nos primeiros 20 s o navegador ainda está subindo a velocidade: isso não é internet ruim
+      const m = c.motivo === 'bandwidth' && Date.now() - (c.desde || 0) < 20000 ? 'none' : c.motivo || 'none';
+      try { c.info.send(JSON.stringify({ m, cap: captura, meta })); } catch { /* ok */ }
+    }
     // A placa de vídeo não dá conta: a captura manda bem mais quadros do que ela monta, sem
     // limite de internet. Passa a montar no processador (e lembra disso neste computador).
     QTX.placaLenta = s.hardware === true && captura >= 20 && fps < captura * 0.6 && motivo === 'none' ? (QTX.placaLenta || 0) + 1 : 0;
@@ -4074,8 +4173,8 @@
     if (QTX.seguidos >= 10 && !QTX.avisou) {
       QTX.avisou = true;
       toast(motivo === 'cpu'
-        ? 'O computador está pesado (jogo e transmissão juntos), então a imagem foi reduzida. Em Ajustes, tente "1080p · 30 fps" ou "720p".'
-        : 'A sua internet não está dando conta de mandar para todo mundo, então a imagem foi reduzida. Em Ajustes, escolha 720p ou informe o seu upload.', 12000);
+        ? 'O computador está pesado (jogo e transmissão juntos), então a imagem foi reduzida. Deixe o jogo em janela sem bordas e limite os fps dele, ou em Configurações → Transmissão escolha "1080p · 30 fps".'
+        : 'A sua internet não está dando conta de mandar para todo mundo, então a imagem foi reduzida. Use cabo de rede, ou em Configurações → Transmissão informe o seu upload ou escolha uma qualidade menor.', 12000);
     }
     atualizarTile(S.myId);
   }
@@ -4126,8 +4225,23 @@
       try { st = await c.pc.getStats(); } catch { continue; }
       st.forEach((r) => {
         if (r.type !== 'inbound-rtp' || r.kind !== 'video') return;
-        const q = (c.qual ||= { inicio: Date.now(), de: userById(sid)?.name || '?', n: 0, somaAltura: 0, minAltura: 0, maxAltura: 0, somaFps: 0, perdidos: 0, recebidos: 0, travadas: 0, codec: '' });
+        const q = (c.qual ||= { inicio: Date.now(), de: userById(sid)?.name || '?', n: 0, somaAltura: 0, minAltura: 0, maxAltura: 0, somaFps: 0, perdidos: 0, recebidos: 0, travadas: 0, codec: '', decQuadros: 0, decDescartados: 0, decPlaca: null });
         const ant = c.qualAntes;
+        const dPerd = ant ? Math.max(0, (r.packetsLost || 0) - ant.perdidos) : 0;
+        const dRec = ant ? Math.max(0, (r.packetsReceived || 0) - ant.recebidos) : 0;
+        c.perdaAgora = dRec + dPerd > 0 ? dPerd / (dRec + dPerd) : 0;
+        // o seu computador está dando conta de tocar? (tempo para montar cada quadro e quadros jogados fora)
+        const dec = { quadros: r.framesDecoded || 0, tempo: r.totalDecodeTime || 0, descartados: r.framesDropped || 0 };
+        if (c.decAntes) {
+          const nq = Math.max(0, dec.quadros - c.decAntes.quadros);
+          const desc = Math.max(0, dec.descartados - c.decAntes.descartados);
+          c.saudeDec = { ms: nq ? ((dec.tempo - c.decAntes.tempo) / nq) * 1000 : 0, descPct: nq + desc ? desc / (nq + desc) : 0 };
+          q.decQuadros += nq;
+          q.decDescartados += desc;
+        }
+        c.decAntes = dec;
+        if (typeof r.powerEfficientDecoder === 'boolean') q.decPlaca = r.powerEfficientDecoder;
+        else if (r.decoderImplementation) q.decPlaca = !/libvpx|dav1d|libaom|ffmpeg|openh264|software/i.test(r.decoderImplementation);
         if (ant) {
           q.perdidos += Math.max(0, (r.packetsLost || 0) - ant.perdidos);
           q.recebidos += Math.max(0, (r.packetsReceived || 0) - ant.recebidos);
@@ -4148,11 +4262,50 @@
       });
       const t = S.tiles.get(sid);
       const etiqueta = t?.el.querySelector('.t-qual');
+      const motivo = c.qualAgora ? motivoDaImagem(c) : '';
+      if (motivo === 'decod' && c.motivoSeguido >= 5) trocarFormatoPesado(sid, c);
       if (etiqueta && c.qualAgora) {
-        etiqueta.textContent = `${c.qualAgora.altura}p · ${c.qualAgora.fps} fps${c.qualAgora.codec ? ` · ${c.qualAgora.codec}` : ''}`;
+        etiqueta.textContent = `${c.qualAgora.altura}p · ${c.qualAgora.fps} fps${c.qualAgora.codec ? ` · ${c.qualAgora.codec}` : ''}${motivo ? ` · ⚠ ${MOTIVOS_DA_IMAGEM[motivo].curto}` : ''}`;
+        etiqueta.title = motivo ? MOTIVOS_DA_IMAGEM[motivo].longo : 'Resolução, quadros por segundo e formato que estão chegando';
+        etiqueta.classList.toggle('alerta', !!motivo);
         etiqueta.hidden = false;
       }
     }
+  }
+  // Por que a imagem caiu, visto por quem assiste (aparece no canto da transmissão)
+  const MOTIVOS_DA_IMAGEM = {
+    decod: { curto: 'seu PC (sem a placa de vídeo)', longo: 'A sua placa de vídeo não toca este formato, então o processador está tocando e perdendo quadros. Se continuar, o formato troca sozinho por um mais leve.' },
+    pesado: { curto: 'seu PC está pesado', longo: 'O seu computador está perdendo quadros para tocar a transmissão. Feche o que não precisa ou ligue o modo leve (Configurações → Aparência).' },
+    perda: { curto: 'conexão perdendo pacotes', longo: 'Pacotes estão se perdendo no caminho (a internet de um dos dois, muitas vezes o Wi-Fi). Cabo de rede costuma resolver.' },
+    banda: { curto: 'internet de quem transmite', longo: 'A internet de quem transmite está no limite. Com cabo de rede, ou informando o upload certo em Configurações → Transmissão, melhora.' },
+    cpu: { curto: 'PC de quem transmite', longo: 'O computador de quem transmite está pesado (jogo e transmissão juntos). Deixar o jogo em janela sem bordas e limitar os fps dele ajuda.' },
+    captura: { curto: 'captura abaixo da meta', longo: 'A captura do jogo está entregando menos quadros do que a meta: o jogo está usando a placa de vídeo de quem transmite no máximo.' },
+  };
+  function motivoDaImagem(c) {
+    const a = c.qualAgora;
+    const sd = c.saudeDec;
+    let m = '';
+    if (sd && a?.fps >= 10 && (sd.descPct > 0.05 || sd.ms > (1000 / Math.max(30, a.fps)) * 0.75)) m = c.qual?.decPlaca === false ? 'decod' : 'pesado';
+    else if (c.perdaAgora > 0.03) m = 'perda';
+    else if (c.deQuem && Date.now() - c.deQuem.t < 10000) {
+      if (c.deQuem.m === 'bandwidth') m = 'banda';
+      else if (c.deQuem.m === 'cpu') m = 'cpu';
+      else if (c.deQuem.cap && c.deQuem.meta && c.deQuem.cap < c.deQuem.meta * 0.8) m = 'captura';
+    }
+    // só aparece depois de repetir (uma oscilação de 3 s não acende o aviso)
+    c.motivoSeguido = m && m === c.motivoAntes ? (c.motivoSeguido || 1) + 1 : m ? 1 : 0;
+    c.motivoAntes = m;
+    return c.motivoSeguido >= 2 ? m : '';
+  }
+  // A placa daqui não deu conta do formato (o navegador disse que dava): pede de novo sem ele
+  function trocarFormatoPesado(sid, c) {
+    const nome = c.qualAgora?.codec === 'H264' ? 'H.264' : c.qualAgora?.codec;
+    if (!nome || nome === 'H.264' || DECOD.ruins.has(nome)) return;
+    DECOD.ruins.add(nome);
+    c.motivoSeguido = 0;
+    toast(`O seu computador estava com dificuldade para tocar o formato ${nome}: troquei para um mais leve. A imagem pisca por um instante.`, 8000);
+    S.tries.set(sid, 0);
+    assistir(sid);
   }
   function resumoRecebimento(c) {
     const q = c?.qual;
@@ -4162,6 +4315,7 @@
       alturaMedia: Math.round(media(q.somaAltura, q.n)), alturaMin: q.minAltura, alturaMax: q.maxAltura, fpsMedio: Math.round(media(q.somaFps, q.n)),
       perdaPct: q.recebidos + q.perdidos > 0 ? Math.round((q.perdidos / (q.recebidos + q.perdidos)) * 1000) / 10 : 0,
       travadas: q.travadas, codec: q.codec, programa: !!PROGRAMA,
+      decodPlaca: q.decPlaca, descartadosPct: q.decQuadros + q.decDescartados > 0 ? Math.round((q.decDescartados / (q.decQuadros + q.decDescartados)) * 1000) / 10 : 0,
     };
   }
   function enviarResumo(r, saindo) {
@@ -4226,7 +4380,7 @@
     }
     const travou = x.travadas >= Math.max(3, x.duracao / 30); // mais de uma travada a cada 30 s, com imagem se mexendo
     const baixa = x.alturaMedia && x.alturaMax && x.alturaMedia < x.alturaMax * 0.8;
-    const ruim = x.perdaPct >= 2 || travou || baixa;
+    const ruim = x.perdaPct >= 2 || x.descartadosPct >= 3 || travou || baixa;
     // o resumo de quem transmitiu, no mesmo horário
     const env = (lista || []).find((y) => y.papel === 'envio' && y.nome === x.de && Math.abs(y.t - x.t) < 15 * 60e3);
     const envLimitado = env && (env.cpuPct >= 25 || env.bandaPct >= 25);
@@ -4234,7 +4388,8 @@
     return `<div class="ap-qual${ruim ? ' ruim' : ''}">
       <div><b>${esc(x.nome)}</b> assistiu ${esc(x.de)} por ${min} min <span class="muted small">· ${esc(quandoCurto(x.t))}</span></div>
       <div class="muted small">Recebeu em média ${x.alturaMedia}p a ${x.fpsMedio} fps (menor: ${x.alturaMin}p) · ${esc(x.codec || '?')} · ${String(x.perdaPct).replace('.', ',')}% de perda · ${x.travadas} ${x.travadas === 1 ? 'travada' : 'travadas'}${x.programa ? ' · programa' : ' · navegador'}</div>
-      <div class="ap-qual-causa">${x.perdaPct >= 2 ? 'A internet de quem assiste (ou o caminho até ela) perdeu pacotes: a imagem pixela e trava.'
+      <div class="ap-qual-causa">${x.descartadosPct >= 3 ? `O computador de quem assistiu perdeu ${String(x.descartadosPct).replace('.', ',')}% dos quadros ao tocar o vídeo${x.decodPlaca === false ? ', tocando sem a placa de vídeo (ela não toca esse formato)' : ''}.`
+        : x.perdaPct >= 2 ? 'A internet de quem assiste (ou o caminho até ela) perdeu pacotes: a imagem pixela e trava.'
         : travou && envLimitado ? `A imagem travou ${x.travadas} vezes (uma a cada ${cada} s): o computador ou a internet de quem transmitiu ficou no limite (veja o resumo dele).`
         : travou ? `A imagem travou ${x.travadas} vezes (uma a cada ${cada} s), sem perder pacotes${env ? ' e sem o computador ou a internet de quem transmitiu no limite' : ''}. O mais provável é o próprio jogo dar umas engasgadas (a captura só manda imagem nova quando a tela muda) ou o computador de quem assiste estar ocupado na hora.`
           : baixa ? 'Imagem abaixo do normal em parte do tempo: veja o resumo de quem transmitiu no mesmo horário.' : 'Recebeu bem.'}</div>
@@ -6410,7 +6565,7 @@
     toast(r.nome !== S.myName ? `Pronto: agora você é "${r.nome}".` : 'Salvo.');
   }
   function montarAbaTransmissao(p) {
-    p.innerHTML = tituloCfg('transmissao') + `<p class="cfg-dica">O som, a qualidade e o upload valem para a próxima vez que você compartilhar a tela (o som só muda antes de começar).</p>
+    p.innerHTML = tituloCfg('transmissao') + `<p class="cfg-dica">A qualidade, a prioridade e o upload mudam na hora, até no meio da transmissão. O som só dá para trocar antes de começar.</p>
       <div class="pf-secao" id="cfgTxAjustes"></div>
       <div class="pf-secao" id="cfgTxVol"><b>Volume enviado</b>
         <p class="muted small" id="cfgTxVolDica">Enquanto você transmite com som, aqui dá para baixar ou aumentar o volume que todo mundo ouve.</p></div>
@@ -6647,6 +6802,7 @@
   const NV_MUDOU = [
     { v: '1.4.7', data: '27/11', nome: 'Lances e disputas', itens: [
       { t: 'Tela mais organizada: todas as configurações numa janela só, com abas (a engrenagem embaixo, ao lado do seu nome). Microfone e fone ficam ali também.' },
+      { t: 'Transmissão melhor: 1440p e 4K a 60 fps, cada um recebe no formato que a placa de vídeo dele toca, prioridade Nitidez ou Fluidez, e o canto da tela diz por que a imagem caiu.' },
       { t: 'Clique no seu nome para trocar o status rápido. Novidades e Relatar um problema ficam no "?" da barra da esquerda.' },
       { t: 'Replay: ligue numa transmissão e salve os últimos 30 s (Alt+L). O vídeo vai para Vídeos\\Caras E Telas, no seu computador.', p: true },
       { t: 'Canal #X1 Otário?: desafie alguém no pedra, papel e tesoura pra decidir uma disputa. O vencedor é anunciado no canal.' },
@@ -6807,12 +6963,20 @@
     });
 
     const sel = $('#qualitySelect');
-    sel.innerHTML = Object.entries(QUALIDADES).map(([k, q]) => `<option value="${k}">${q.label}</option>`).join('');
+    sel.innerHTML = Object.entries(QUALIDADES).filter(([, q]) => !q.programa || PROGRAMA).map(([k, q]) => `<option value="${k}">${q.label}</option>`).join('');
     sel.value = S.quality;
     sel.addEventListener('change', () => {
       S.quality = sel.value;
       salvar({ quality: S.quality });
       aplicarQualidade();
+    });
+    const pri = $('#prioridadeSelect');
+    pri.value = S.prioridade;
+    pri.addEventListener('change', () => {
+      S.prioridade = pri.value;
+      salvar({ prioridade: S.prioridade });
+      for (const c of S.out.values()) c.plano = null; // recalcula do zero
+      aplicarOrcamento();
     });
 
     $('#adminBtn').innerHTML = icon('shield');

@@ -3240,7 +3240,10 @@ async function api(req, res, url) {
           fim: ['voce', 'captura', 'pagina', 'sala', 'sala-apagada', 'conexao', 'admin', 'expulso', 'erro'].includes(body.fim) ? body.fim : '',
         });
       } else {
-        Object.assign(r, { de: textoLimpo(body.de, 32), perdaPct: num(body.perdaPct, 100), travadas: num(body.travadas, 100000) });
+        Object.assign(r, {
+          de: textoLimpo(body.de, 32), perdaPct: num(body.perdaPct, 100), travadas: num(body.travadas, 100000),
+          decodPlaca: typeof body.decodPlaca === 'boolean' ? body.decodPlaca : null, descartadosPct: num(body.descartadosPct, 100),
+        });
       }
       QUALIDADE.adicionar(r);
       return json(res, 200, { ok: true });
