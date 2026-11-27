@@ -1344,6 +1344,32 @@ function converterMencoes(texto) {
   return out;
 }
 
+// ---------- Roleta: um canal de texto onde dá para sortear entre opções ----------
+// Criado uma vez só (se um admin apagar, não volta sozinho). Um canal que já se chame "roleta" vira ele.
+function criarCanalDaRoleta() {
+  if (!podeSalvar || data.settings.roletaCriada) return;
+  if (!data.channels.some((c) => c.roleta)) {
+    const ja = data.channels.find((c) => c.type === 'text' && (c.id === 'roleta' || nomeNormal(c.name) === 'roleta'));
+    if (ja) ja.roleta = true;
+    else {
+      const ultimoTexto = data.channels.map((c) => c.type).lastIndexOf('text');
+      let id = 'roleta';
+      for (let n = 2; data.channels.some((c) => c.id === id); n++) id = `roleta-${n}`;
+      data.channels.splice(ultimoTexto + 1, 0, { id, name: 'roleta', type: 'text', roleta: true });
+    }
+  }
+  data.settings.roletaCriada = true;
+  salvar();
+}
+// O sorteio é feito aqui (todo mundo vê o mesmo resultado, ninguém escolhe quem ganha)
+function limparItensDaRoleta(lista) {
+  const vistos = new Set();
+  return (Array.isArray(lista) ? lista : [])
+    .map((x) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, 40))
+    .filter((x) => x && !vistos.has(x.toLowerCase()) && vistos.add(x.toLowerCase()))
+    .slice(0, 20);
+}
+
 // ---------- Boas-vindas: quem entra pela primeira vez é recebido no #geral ----------
 function boasVindas(pid) {
   const c = canal('geral') || data.channels.find((x) => x.type === 'text');
@@ -2424,6 +2450,35 @@ async function api(req, res, url) {
       return json(res, 200, { ok: true });
     }
 
+    case 'roleta': {
+      const c = canal(body.channel);
+      if (!c || !c.roleta) return json(res, 404, { error: 'A roleta fica no canal #roleta' });
+      if (!u.pid) return json(res, 400, { error: 'Entre de novo para ter um nome guardado' });
+      const ate = silencioDe(u);
+      if (ate) return json(res, 403, { error: 'Você está silenciado por um admin', muted: ate });
+      if (limiteDe(u, 'limRoleta', 6, 60e3)) return json(res, 429, { error: 'Calma, espere um pouco para girar de novo.' });
+      const titulo = String(body.titulo || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+      const itens = limparItensDaRoleta(body.itens);
+      if (!titulo) return json(res, 400, { error: 'Dê um nome para o sorteio' });
+      if (itens.length < 2) return json(res, 400, { error: 'Coloque pelo menos duas opções diferentes' });
+      const vencedor = crypto.randomInt(itens.length); // chances iguais para cada opção
+      const m = guardarMensagem({
+        id: crypto.randomBytes(8).toString('hex'),
+        ch: c.id,
+        uid: u.id,
+        pid: u.pid,
+        name: u.name,
+        color: u.color,
+        admin: !!u.admin,
+        sistema: 'roleta',
+        roleta: { titulo, itens, vencedor, figura: crypto.randomInt(3), ajuste: crypto.randomInt(15, 86) / 100 },
+        text: `${titulo}: ${itens[vencedor]}`,
+        ts: Date.now(),
+      });
+      broadcast({ type: 'msg', msg: m });
+      return json(res, 200, { ok: true });
+    }
+
     case 'buscar': {
       // procura nos canais de texto (todos, ou só um)
       const q = String(body.q || '').trim().slice(0, 100);
@@ -2916,6 +2971,7 @@ async function iniciar() {
     console.warn('  Envie esses arquivos para o GitHub, senão o site não abre.\n');
   }
   await carregarDados();
+  criarCanalDaRoleta();
   await carregarMensagens();
   await carregarRegistro();
   await TRAFEGO.carregar();

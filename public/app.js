@@ -38,6 +38,7 @@
     retry: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
     shield: '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>',
     crown: '<path d="M3.5 8.5 8 12l4-6.5 4 6.5 4.5-3.5-1.8 10H5.3z" fill="currentColor" stroke-width="1.5"/>',
+    roleta: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17M6 6l12 12M18 6 6 18"/><circle cx="12" cy="12" r="2" fill="currentColor"/>',
     camera: '<rect x="2.5" y="6.5" width="13" height="11" rx="2.5"/><path d="m15.5 10.5 6-3.5v10l-6-3.5z"/>',
     cameraOff: '<rect x="2.5" y="6.5" width="13" height="11" rx="2.5"/><path d="m15.5 10.5 6-3.5v10l-6-3.5zM3 3l18 18"/>',
     lupa: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>',
@@ -707,6 +708,7 @@
     const tm = S.typing.get(msg.ch);
     if (tm) tm.delete(msg.uid);
 
+    if (msg.sistema === 'roleta') RL.chegou.set(msg.id, Date.now()); // as que chegam agora giram
     const deOutro = msg.uid !== S.myId;
     const visivel = msg.ch === S.view && !(chan(S.view)?.type === 'sala' && !S.showSalaChat);
     if (visivel) {
@@ -765,6 +767,7 @@
   const TODOS = /(^|[^\p{L}\p{N}_])@(everyone|todos|here|galera)(?![\p{L}\p{N}_])/iu;
   function mencionaMe(m) {
     if (!m) return false;
+    if (m.sistema === 'roleta') return false;
     if (m.sistema === 'boasvindas') return !!S.myPid && m.alvo === S.myPid;
     if (m.uid === S.myId || (m.pid && m.pid === S.myPid)) return false; // as minhas não
     const t = String(m.text || '');
@@ -865,6 +868,7 @@
       + '</div>'
       + (fixada ? `<span class="m-pin" aria-label="Fixada por ${esc(fixada.por)}">${icon('pin')}</span>` : '');
     const attrs = `data-id="${esc(m.id)}"${Number.isInteger(m.pos) ? ` data-pos="${m.pos}"` : ''}${fixada ? ` title="Fixada por ${esc(fixada.por)}"` : ''}`;
+    if (m.sistema === 'roleta' && m.roleta) return h + roletaHtml(m, cls, attrs, acoes);
     if (m.sistema === 'boasvindas') {
       const p = S.perfis?.[m.alvo];
       const nome = `<span class="bv-nome" style="--cor:${esc(p?.cor || '#3db3f0')}">${esc(p?.nome || 'alguém')}</span>`;
@@ -915,7 +919,8 @@
       ? `<div class="antigas"><button type="button" class="btn sm ghost" data-antigas>${S.carregandoAntigas ? 'Carregando…' : 'Carregar mensagens anteriores'}</button></div>`
       : `<div class="welcome"><div class="wicon">${icon(sala ? 'screen' : 'hash')}</div>
       <h2>${sala ? 'Chat da ' + esc(c.name) : 'Bem-vindo(a) a #' + esc(c.name) + '!'}</h2>
-      <p>${sala ? 'Converse aqui enquanto assistem juntos.' : `Este é o começo do canal #${esc(c.name)}.`}</p></div>`;
+      <p>${sala ? 'Converse aqui enquanto assistem juntos.' : c.roleta ? 'Na dúvida entre duas (ou vinte) opções? Crie uma roleta: todo mundo vê girar, e cada opção tem a mesma chance.' : `Este é o começo do canal #${esc(c.name)}.`}</p>
+      ${c.roleta ? `<button type="button" class="btn primary rl-criar" data-criar-roleta>${icon('roleta')} Criar roleta</button>` : ''}</div>`;
     lista.forEach((m, i) => { h += msgHtml(m, lista[i - 1]); });
     const box = $('#messages');
     box.innerHTML = h;
@@ -990,6 +995,14 @@
     if (ed) return editarMensagem(ed.dataset.editar);
     const fx = e.target.closest('[data-fixar]');
     if (fx) return fixarMensagem(fx.dataset.fixar);
+    if (e.target.closest('[data-criar-roleta]')) return criarRoleta();
+    const rl = e.target.closest('[data-girar-de-novo], [data-editar-roleta]');
+    if (rl) {
+      const m = (S.messages[S.view] || []).find((x) => x.id === rl.closest('.msg')?.dataset.id);
+      if (!m?.roleta) return;
+      if (rl.dataset.editarRoleta !== undefined) return criarRoleta(m.roleta);
+      return api('roleta', { channel: S.view, titulo: m.roleta.titulo, itens: m.roleta.itens }).catch((err) => toast(err.message));
+    }
     const voto = e.target.closest('[data-votar], [data-encerrar]');
     if (voto) {
       const el = voto.closest('.msg');
@@ -1056,6 +1069,81 @@
     setTimeout(() => el.classList.remove('piscando'), 2400);
   }
 
+  // ----- Roleta: o servidor sorteia; a roda gira na tela de todo mundo e uma telinha anuncia -----
+  const RL_DUR = 4600;
+  const RL = { chegou: new Map() }; // id -> quando chegou nesta página (só essas giram)
+  function rodaSvg(itens) {
+    const n = itens.length;
+    const R = 100;
+    const f = 360 / n;
+    const pt = (ang, r) => {
+      const a = ((ang - 90) * Math.PI) / 180;
+      return `${(R + r * Math.cos(a)).toFixed(2)} ${(R + r * Math.sin(a)).toFixed(2)}`;
+    };
+    const tam = n > 12 ? 8 : n > 8 ? 10 : n > 4 ? 12 : 13;
+    let fatias = '';
+    let textos = '';
+    itens.forEach((t, i) => {
+      const a0 = i * f;
+      const a1 = (i + 1) * f;
+      fatias += `<path d="M${R} ${R} L${pt(a0, R)} A${R} ${R} 0 ${f > 180 ? 1 : 0} 1 ${pt(a1, R)} Z" fill="${CORES[i % CORES.length]}"/>`;
+      const curto = [...t].length > 13 ? `${[...t].slice(0, 12).join('')}…` : t;
+      textos += `<text transform="rotate(${(a0 + f / 2 - 90).toFixed(2)} ${R} ${R}) translate(${R + R * 0.56} ${R})" text-anchor="middle" dominant-baseline="central" font-size="${tam}">${esc(curto)}</text>`;
+    });
+    return `<svg viewBox="0 0 200 200" aria-hidden="true">${fatias}${textos}<circle cx="100" cy="100" r="13" class="rl-centro"/></svg>`;
+  }
+  function roletaHtml(m, cls, attrs, acoes) {
+    const r = m.roleta;
+    const f = 360 / r.itens.length;
+    const final = 360 * 6 - (r.vencedor + (r.ajuste ?? 0.5)) * f; // a fatia vencedora para embaixo do ponteiro
+    const t0 = RL.chegou.get(m.id);
+    const passou = t0 ? Date.now() - t0 : Infinity;
+    const girando = passou < RL_DUR && !MODO_LEVE;
+    const autor = autorDe(m);
+    const d = new Date(m.ts);
+    const ganhou = r.itens[r.vencedor];
+    return `<div class="msg roleta-msg${cls}" ${attrs}>
+      <div class="rl-roda" role="img" aria-label="Roleta com ${r.itens.length} opções: ${esc(r.itens.join(', '))}">
+        <div class="rl-disco${girando ? ' girando' : ''}" style="--final:${final.toFixed(1)}deg;transform:rotate(${final.toFixed(1)}deg)${girando ? `;animation-delay:-${passou}ms` : ''}">${rodaSvg(r.itens)}</div>
+        <span class="rl-ponteiro"></span></div>
+      <div class="rl-info">
+        <div class="rl-por"><span class="m-name" style="color:${esc(autor.color)}">${esc(autor.name)}</span> girou a roleta
+          <span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span></div>
+        <div class="rl-titulo">${esc(r.titulo)}</div>
+        <div class="rl-opcoes muted small">${r.itens.length} opções, ${String(Math.round(1000 / r.itens.length) / 10).replace('.', ',')}% de chance cada</div>
+        <div class="rl-resultado${girando ? ' esperando' : ''}"${girando ? ` style="animation-delay:${RL_DUR - passou}ms"` : ''} aria-live="polite">
+          <div class="rl-telinha">${STICKERS[r.figura] || STICKERS[0]}</div>
+          <div class="rl-balao">Sorteio <b>${esc(r.titulo)}</b>: quem ganhou foi <span class="rl-ganhou">${esc(ganhou)}</span>!</div></div>
+        <div class="rl-botoes"><button type="button" class="btn sm primary" data-girar-de-novo>Girar de novo</button>
+          <button type="button" class="btn sm ghost" data-editar-roleta>Mudar as opções</button></div>
+      </div>${acoes}</div>`;
+  }
+  function criarRoleta(base) {
+    const c = S.channels.find((x) => x.roleta);
+    if (!c) return toast('O canal da roleta foi apagado. Um admin pode criar um canal chamado "roleta".');
+    if (S.view !== c.id) selecionarCanal(c.id);
+    abrirModal({
+      titulo: 'Criar roleta', ok: 'Girar',
+      corpo: `<label class="field"><span>Nome do sorteio</span><input type="text" name="titulo" maxlength="80" required placeholder="Que jogo hoje?" autocomplete="off" value="${esc(base?.titulo || '')}"></label>
+        <label class="field"><span>Opções (uma por linha, de 2 a 20)</span><textarea name="itens" id="rlItens" rows="6" maxlength="1000" required placeholder="Valorant\nLol\nMinecraft">${esc((base?.itens || []).join('\n'))}</textarea></label>
+        <p class="muted small" id="rlChance" aria-live="polite"></p>`,
+      aoConfirmar: async (fd) => {
+        const itens = String(fd.get('itens') || '').split('\n').map((x) => x.trim()).filter(Boolean);
+        if (itens.length < 2) throw new Error('Coloque pelo menos duas opções, uma em cada linha.');
+        if (itens.length > 20) throw new Error('No máximo 20 opções.');
+        await api('roleta', { channel: c.id, titulo: fd.get('titulo'), itens });
+      },
+    });
+    const chance = () => {
+      const vistos = new Set();
+      const n = $('#rlItens').value.split('\n').map((x) => x.trim().toLowerCase()).filter((x) => x && !vistos.has(x) && vistos.add(x)).length;
+      $('#rlChance').textContent = n >= 2 ? `${n} opções: cada uma tem ${String(Math.round(1000 / n) / 10).replace('.', ',')}% de chance.` : 'Coloque pelo menos duas opções.';
+    };
+    $('#rlItens').addEventListener('input', chance);
+    chance();
+  }
+  $('#roletaBtn').addEventListener('click', () => criarRoleta());
+
   // ----- Enquetes: uma mensagem com opções; cada um vota pelo seu perfil -----
   function enqueteHtml(m) {
     const e = m.enquete;
@@ -1110,7 +1198,7 @@
   function avisar(tipo, d) {
     if (tipo !== 'teste' && (AVISOS.naoPerturbe || !AVISOS[tipo])) return;
     if (PROGRAMA) {
-      if (PROGRAMA.aviso) PROGRAMA.aviso({ tipo, nome: d.nome, cor: d.cor, texto: d.texto, piscar: tipo === 'mencao' }).catch(() => {});
+      if (PROGRAMA.aviso && (!MODO_LEVE || tipo === 'teste')) PROGRAMA.aviso({ tipo, nome: d.nome, cor: d.cor, texto: d.texto, piscar: tipo === 'mencao' }).catch(() => {});
       return;
     }
     if (tipo !== 'teste' && !document.hidden && document.hasFocus()) return;
@@ -1129,7 +1217,8 @@
     const permissao = nav ? Notification.permission : '';
     const marca = (id, on, txt) => `<label class="av-op"><input type="checkbox" id="${id}"${on ? ' checked' : ''}> ${txt}</label>`;
     let onde;
-    if (PROGRAMA && PROGRAMA.aviso) onde = 'Aparece um cartão no canto da tela, por cima do jogo, quando o programa não está na frente. Funciona com o jogo em "janela sem bordas" ou "tela cheia em janela"; em "tela cheia exclusiva" o Windows não deixa nada por cima (aí só pisca o ícone na barra de tarefas).';
+    if (PROGRAMA && PROGRAMA.aviso && MODO_LEVE) onde = 'Com o modo leve ligado (em Aparência), os cartões por cima do jogo ficam desligados.';
+    else if (PROGRAMA && PROGRAMA.aviso) onde = 'Aparece um cartão no canto da tela, por cima do jogo, quando o programa não está na frente. Funciona com o jogo em "janela sem bordas" ou "tela cheia em janela"; em "tela cheia exclusiva" o Windows não deixa nada por cima (aí só pisca o ícone na barra de tarefas).';
     else if (PROGRAMA) onde = 'Feche e abra o programa para atualizar: a versão nova mostra os avisos por cima do jogo.';
     else if (!nav) onde = 'Este navegador não mostra notificações.';
     else if (permissao === 'granted') onde = 'O navegador mostra uma notificação quando esta aba não está na frente.';
@@ -1499,6 +1588,7 @@
     $('#toggleMembersBtn').hidden = sala;
     $('#toggleMembersBtn').classList.toggle('active', S.showMembers);
     if (S.fixadasDe !== S.view) { S.fixadasDe = S.view; $('#fixadasPanel').hidden = true; }
+    $('#roletaBtn').hidden = !chan(S.view)?.roleta;
     atualizarBotaoFixadas();
 
     const body = $('.main-body');
@@ -3114,6 +3204,15 @@
   montarDefsDosEmotes();
   // Cada um escolhe se os emotes dos outros aparecem na sua tela (o olho no fim da barra)
   let VER_EMOTES = salvo.verEmotes !== false;
+  // ----- Modo leve: menos trabalho para o computador (para quem joga e conversa ao mesmo tempo) -----
+  // Sem animações, sem o desfoque de vidro, sem emotes voando, sem cartões por cima do jogo e
+  // com o indicador de quem está falando conferido menos vezes.
+  let MODO_LEVE = salvo.modoLeve === true;
+  function aplicarModoLeve() {
+    document.body.classList.toggle('leve', MODO_LEVE);
+    if (MODO_LEVE) for (const el of document.querySelectorAll('.emote-voa')) el.remove();
+  }
+  aplicarModoLeve();
   const textoVerEmotes = () => (VER_EMOTES ? 'Esconder os emotes dos outros na sua tela' : 'Mostrar os emotes dos outros na sua tela');
   const barraDeReacoes = () => `<div class="t-reacoes" role="group" aria-label="Reações">${EMOTES.map((x, i) =>
     `<button type="button" class="t-reacao" data-act="emote" data-emote="${i}" title="${x.nome}" aria-label="Reagir: ${x.nome}">${x.svg}</button>`).join('')}
@@ -3205,6 +3304,7 @@
 
   const REACAO = { cliques: [] };
   function soltarEmote(sid, e, x, meu = false) {
+    if (MODO_LEVE) return;
     const t = S.tiles.get(sid);
     if (!t || !EMOTES[e]) return;
     const camada = t.el.querySelector('.t-emotes');
@@ -4130,7 +4230,9 @@
 
   // Quem está falando: contorno verde no avatar
   const bufVoz = new Float32Array(512);
+  let tiqueVoz = 0;
   setInterval(() => {
+    if (MODO_LEVE && ++tiqueVoz % 3) return;
     const agora = Date.now();
     if (VOZ.aberto && transmitindoVoz()) VOZ.ultimaFala.set(S.myId, agora);
     for (const [id, v] of VOZ.pcs) {
@@ -5527,6 +5629,9 @@
           <p>A cor principal vai nos botões, na seleção e nos links. A cor do fundo aparece nas ondas atrás dos painéis. O resto (céu, vidro e textos) se ajusta sozinho.</p>
         </div>
         <button type="button" class="btn sm ghost ap-restaurar" id="apRestaurar">Voltar ao padrão</button>
+        <div class="ap-leve"><span class="ap-rotulo">Desempenho</span>
+          <label class="av-op"><input type="checkbox" id="apLeve"${MODO_LEVE ? ' checked' : ''}> Habilitar modo leve</label>
+          <p>Gasta menos processador e memória: desliga as animações, o efeito de vidro desfocado, os emotes voando e os cartões de aviso por cima do jogo. Bom para computador mais fraco ou para jogar e conversar ao mesmo tempo.</p></div>
       </div>`,
       aoConfirmar: () => {},
     });
@@ -5560,6 +5665,12 @@
       if (r) r.checked = true;
       mostrarPropria();
       aplicar();
+    });
+    $('#apLeve').addEventListener('change', () => {
+      MODO_LEVE = $('#apLeve').checked;
+      salvar({ modoLeve: MODO_LEVE });
+      aplicarModoLeve();
+      if (S.view && chan(S.view)?.type === 'text') rerenderMantendoScroll(); // roleta girando para de girar
     });
     $('#apRestaurar').addEventListener('click', () => {
       cfg = { ...TEMA.PADRAO };
@@ -5677,6 +5788,7 @@
     $('#vpLeave').innerHTML = icon('logout');
     $('#sendBtn').innerHTML = icon('send');
     $('#enqueteBtn').innerHTML = icon('enquete');
+    $('#roletaBtn').innerHTML = icon('roleta');
     $('#buscaBtn').innerHTML = icon('lupa');
 
     $('#sendVol').addEventListener('input', (e) => {

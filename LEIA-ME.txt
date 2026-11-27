@@ -724,6 +724,19 @@ DICAS
     você ouve (0% desliga). Para uma pessoa só, use "Volume da voz e
     dos sons" no nome dela, dentro da sala: vale também para o som de
     entrada dela.
+  - Roleta: no canal #roleta, clique em "Criar roleta" (ou no botão de
+    roda, ao lado da caixa de mensagem), dê um nome ao sorteio e escreva
+    as opções, uma por linha (de 2 a 20). Cada opção tem a mesma chance.
+    Quem sorteia é o servidor, então todo mundo vê o mesmo resultado: a
+    roda gira na tela de todos e uma telinha anuncia quem ganhou. "Girar
+    de novo" repete com as mesmas opções. O canal é criado uma vez só:
+    se um admin apagar, ele não volta sozinho.
+  - Modo leve: Aparência (o botão de paleta, embaixo à esquerda) →
+    "Habilitar modo leve". Desliga as animações, o efeito de vidro
+    desfocado, os emotes voando e os cartões de aviso por cima do jogo,
+    e confere quem está falando com menos frequência. Bom para
+    computador mais fraco ou para jogar e conversar ao mesmo tempo. Vale
+    só no aparelho onde foi ligado.
   - Câmera: dentro de uma sala, o botão de câmera (ao lado de
     compartilhar tela) liga a sua. As câmeras aparecem numa faixa em
     cima do palco; clique numa para aumentar. Ela é leve de propósito
