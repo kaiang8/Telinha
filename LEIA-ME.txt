@@ -484,34 +484,42 @@ gasta uns 2 GB.
 DICAS
 =====================================================================
 
-  - Aparência: o botão de paleta, embaixo à esquerda (ao lado do seu
-    nome), escolhe o tema (Claro, Escuro ou Igual ao sistema) e as
-    cores. Tem 7 paletas prontas (Céu, Oceano, Aurora, Floresta, Pôr
-    do sol, Sakura e Rubi) e a "Sua paleta", em que você escolhe a cor
-    principal (botões e seleção) e a do fundo (as ondas atrás dos
-    painéis). A escolha fica guardada só no seu navegador ou programa:
-    cada amigo usa a que quiser.
+  - Onde fica cada coisa: embaixo à esquerda, ao lado do seu nome, ficam
+    o microfone, o fone (mutar a sala) e a engrenagem, que abre as
+    Configurações, separadas em abas: Perfil, Voz e áudio, Transmissão,
+    Sons, Aparência, Avisos e privacidade, Conta e aparelhos (é lá
+    também o "Sair do servidor"). Clicando no seu nome, um menu curto
+    troca o status (Online, Ausente, Não perturbe). O "?" da barra da
+    esquerda tem as Novidades (o que mudou em cada versão e o que dá pra
+    fazer) e o "Relatar um problema". Dentro de uma sala, o painel verde
+    da esquerda tem câmera, compartilhar tela, trocar tela e sair;
+    embaixo da transmissão ficam os botões da sala, só os que fazem
+    sentido na hora (transmitindo: Parar, Trocar tela, Caneta, Sons,
+    Transmissão e Sair).
+  - Aparência: em Configurações → Aparência você escolhe o tema (Claro,
+    Escuro ou Igual ao sistema) e as cores. Tem 7 paletas prontas (Céu,
+    Oceano, Aurora, Floresta, Pôr do sol, Sakura e Rubi) e a "Sua
+    paleta", em que você escolhe a cor principal (botões e seleção) e a
+    do fundo (as ondas atrás dos painéis). A escolha fica guardada só no
+    seu navegador ou programa: cada amigo usa a que quiser.
   - Voz: na primeira vez o microfone começa desligado. Os botões de
-    microfone e de mutar a sala ficam sempre no painel de baixo, à
-    esquerda, mesmo fora de uma sala: o que você escolher ali já vale
-    quando entrar (e o microfone só é ligado dentro da sala). Dentro
-    da sala, eles também aparecem embaixo da tela:
+    microfone e de mutar a sala ficam sempre embaixo à esquerda, ao lado
+    do seu nome, mesmo fora de uma sala: o que você escolher ali já vale
+    quando entrar (e o microfone só é ligado dentro da sala). Na tela
+    cheia, eles aparecem também na barra da transmissão:
       Microfone       liga e desliga (mudo). No mudo, o microfone fica
                       desligado de verdade.
       Fone            muta a sala: você para de ouvir as vozes, as
                       transmissões e os sons, e o seu microfone desliga
                       junto. Ao desmutar, o microfone volta como estava.
-      Engrenagem      Opções de áudio: qual microfone, em qual
-                      alto-falante ou fone o som sai (com o botão
-                      "Testar som"), "Quando eu
-                      falo" ou "Apertar para falar" (você grava a
-                      tecla, uma combinação ou o botão do meio/lateral
-                      do mouse), sensibilidade (no automático ela se
-                      ajusta ao barulho do seu ambiente; dá para
-                      ajustar na mão olhando a barra) e supressão de
-                      ruído. A janela tem um teste com uma barra que
-                      fica verde quando o microfone abre.
-    Atalhos: nas Opções de áudio dá para gravar uma tecla que liga e
+    Em Configurações → Voz e áudio: qual microfone, em qual alto-falante
+    ou fone o som sai (com o botão "Testar som"), "Quando eu falo" ou
+    "Apertar para falar" (você grava a tecla, uma combinação ou o botão
+    do meio/lateral do mouse), sensibilidade (no automático ela se
+    ajusta ao barulho do seu ambiente; dá para ajustar na mão olhando a
+    barra) e supressão de ruído. A aba tem um teste com uma barra que
+    fica verde quando o microfone abre.
+    Atalhos: em Voz e áudio dá para gravar uma tecla que liga e
     desliga o microfone e outra que muta a sala (Ctrl ou Alt com uma
     tecla, ou F1 a F24). No programa, funcionam até dentro de jogos,
     com um somzinho de confirmação.
@@ -561,7 +569,7 @@ DICAS
     que você manda continuam aparecendo para todo mundo. Os emotes ficam animados
     mesmo com as animações do Windows desligadas.
   - Relatar problema: o ponto de interrogação no canto de baixo, à
-    esquerda. Conte o que aconteceu; dá para mandar junto (ou não) as
+    esquerda → "Relatar um problema". Conte o que aconteceu; dá para mandar junto (ou não) as
     informações técnicas: versões, navegador, rede, voz e os últimos
     erros. Vai só para os admins.
   - Versão: aparece pequena no canto de baixo da tela de entrada e no
@@ -571,8 +579,10 @@ DICAS
   - Para transmitir, use Chrome, Edge, Firefox ou Opera no computador,
     ou o programa para Windows (parte 5).
     No celular dá para assistir e conversar.
-  - Ajustes da transmissão: o botão "Ajustes", embaixo da sala, guarda
-    o Som, a Qualidade e o "Seu upload".
+  - Ajustes da transmissão: Configurações → Transmissão guarda o Som, a
+    Qualidade e o "Seu upload". Enquanto você transmite, o botão
+    "Transmissão", embaixo da sala, abre direto essa aba (lá também fica
+    o volume do som que você está mandando).
   - Qualidade da imagem: se o computador de quem transmite codifica
     vídeo na placa (AV1, VP9 ou H.264), a transmissão usa esse formato:
     imagem melhor com a mesma internet e sem pesar no jogo. Cada pessoa
@@ -609,7 +619,7 @@ DICAS
     próximo: fica ainda mais estável. Quem transmite vê, em cima da
     própria tela, quantas pessoas estão assistindo e quanto vai para
     cada uma.
-  - Som: em "Ajustes" -> "Som", ANTES de compartilhar:
+  - Som: em Configurações → Transmissão → "Som", ANTES de compartilhar:
       Só o que estou mostrando (padrão, sem eco)
           vai só o som do jogo, do vídeo ou do programa que você está
           mostrando. A chamada de voz (Discord, WhatsApp...) NÃO entra.
@@ -671,12 +681,12 @@ DICAS
   - SEU NOME: o primeiro nome que você escolhe fica sendo o seu neste
     servidor, e o aparelho entra sempre com ele (ninguém mais consegue
     entrar com esse nome, nem com variações como letras maiúsculas ou
-    acentos). Para trocar, clique no seu nome, embaixo à esquerda: as
-    suas mensagens antigas passam a mostrar o nome novo. Para entrar
-    em outro aparelho (ou depois de limpar o navegador), gere um
-    código de acesso nessa mesma janela, ou peça para um admin, e use
-    "Já tenho um nome" na tela de entrada. Cada código vale 15 minutos
-    e uma vez só.
+    acentos). Para trocar: Configurações → Perfil. As suas mensagens
+    antigas passam a mostrar o nome novo. Para entrar em outro aparelho
+    (ou depois de limpar o navegador), gere um código de acesso em
+    Configurações → Conta e aparelhos, ou peça para um admin, e use "Já
+    tenho um nome" na tela de entrada. Cada código vale 15 minutos e uma
+    vez só.
   - Mensagens antigas: o chat abre com as 100 mais recentes; subindo
     até o topo (ou clicando em "Carregar mensagens anteriores"), as
     mais antigas vão aparecendo. O plano grátis do Upstash guarda 256
@@ -711,32 +721,32 @@ DICAS
     ele. Em monitor deitado, nada muda.
   - Som ao entrar na sala: quando alguém entra, toca sempre o aviso
     padrão (três notas subindo) e, logo depois, o som que a pessoa
-    escolheu, se tiver um. Para escolher: clique no seu nome (embaixo à
-    esquerda) → "Som ao entrar na sala" → escolha um .mp3. Uma barra
-    escolhe quantos segundos tocam (de 1 a 10) e outra, se o áudio for
-    maior, qual parte ("Ouvir trecho" para conferir). O próprio
-    navegador recorta e guarda só esse trecho (uns 6 KB por segundo). O
-    som de sair é o padrão para todos. Quem desligou os sons do
-    soundboard ou está com a sala mutada ouve só o aviso. Um admin pode
-    tirar o som de alguém pelo menu da lista de membros.
-    Volume: "Volume do seu som" define o quão alto o seu toca para
-    todos (10% a 100%). "Sons de entrada dos outros" muda só o que
-    você ouve (0% desliga). Para uma pessoa só, use "Volume da voz e
-    dos sons" no nome dela, dentro da sala: vale também para o som de
-    entrada dela.
+    escolheu, se tiver um. Para escolher: Configurações → Perfil → "Som
+    ao entrar na sala" → escolha um .mp3. Uma barra escolhe quantos
+    segundos tocam (de 1 a 10) e outra, se o áudio for maior, qual parte
+    ("Ouvir trecho" para conferir). O próprio navegador recorta e guarda
+    só esse trecho (uns 6 KB por segundo). O som de sair é o padrão para
+    todos. Quem desligou os sons do soundboard ou está com a sala mutada
+    ouve só o aviso. Um admin pode tirar o som de alguém pelo menu da
+    lista de membros. Volume: "Volume do seu som" define o quão alto o
+    seu toca para todos (10% a 100%). "Sons de entrada dos outros" muda
+    só o que você ouve (0% desliga). Para uma pessoa só, use "Volume da
+    voz e dos sons" no nome dela, dentro da sala: vale também para o som
+    de entrada dela.
   - Jogando agora: no programa para Windows (1.4.6 ou mais novo),
     embaixo do seu nome aparece o jogo que você está jogando. O programa
     confere a cada 20 segundos, pelo lugar onde o jogo está instalado
     (Steam, Epic, Riot, Xbox, GOG, Ubisoft, EA) e por uma lista de jogos
     conhecidos. Nunca lê o nome de outras janelas. Para não mostrar:
-    clique no seu nome → Privacidade → desmarque "Mostrar para os outros
-    o jogo que estou jogando" (aí o programa nem confere).
-  - Status: clique no seu nome → Status. Escolha Online, Ausente
-    (bolinha amarela) ou Não perturbe (bolinha vermelha), escreva um
-    recado curto se quiser ("volto às 22h") e quando ele some sozinho (1
-    hora, 4 horas, hoje à meia-noite ou nunca). O recado aparece embaixo
-    do seu nome na lista. Em Não perturbe, os seus avisos, notificações
-    e o som de menção ficam desligados.
+    Configurações → Avisos e privacidade → desmarque "Mostrar para os
+    outros o jogo que estou jogando" (aí o programa nem confere).
+  - Status: clique no seu nome (embaixo à esquerda) e escolha Online,
+    Ausente (bolinha amarela) ou Não perturbe (bolinha vermelha), em
+    "Editar perfil e recado", escreva um recado curto se quiser ("volto
+    às 22h") e quando ele some sozinho (1 hora, 4 horas, hoje à meia-
+    noite ou nunca). O recado aparece embaixo do seu nome na lista. Em
+    Não perturbe, os seus avisos, notificações e o som de menção ficam
+    desligados.
   - Prévia de links: quando alguém manda um link (https), aparece
     embaixo um cartão com o título, um resumo e a imagem da página; para
     vídeos do YouTube, o título e a capa do vídeo. Quem abre a página é
@@ -751,12 +761,12 @@ DICAS
     (aparece "replay" em cima). Para salvar, clique de novo no botão ou
     aperte Alt+L (no programa, funciona com o jogo na frente). No
     programa para Windows (1.4.7 ou mais novo), o vídeo vai para
-    Vídeos\Caras E Telas; dá para abrir ou trocar a pasta em: clique no
-    seu nome → Replay. No navegador, vira um download. O vídeo nunca
-    passa pelo servidor nem pelo Upstash. Quem transmite recebe um aviso
-    "fulano salvou um lance da sua tela". O replay pesa um pouco no
-    computador enquanto está ligado (por isso cada um liga na tela que
-    quiser) e fica desligado no modo leve.
+    Vídeos\Caras E Telas; dá para abrir ou trocar a pasta em
+    Configurações → Transmissão. No navegador, vira um download. O vídeo
+    nunca passa pelo servidor nem pelo Upstash. Quem transmite recebe um
+    aviso "fulano salvou um lance da sua tela". O replay pesa um pouco
+    no computador enquanto está ligado (por isso cada um liga na tela
+    que quiser) e fica desligado no modo leve.
   - Jogo do mês: o servidor soma o tempo do "Jogando agora" de cada jogo
     (só de quem deixou mostrar). Na virada do mês, uma telinha anuncia
     no #geral o jogo mais jogado, com o 2º e o 3º. Mostra só os jogos e
@@ -797,12 +807,11 @@ DICAS
     roda gira na tela de todos e uma telinha anuncia quem ganhou. "Girar
     de novo" repete com as mesmas opções. O canal é criado uma vez só:
     se um admin apagar, ele não volta sozinho.
-  - Modo leve: Aparência (o botão de paleta, embaixo à esquerda) →
-    "Habilitar modo leve". Desliga as animações, o efeito de vidro
-    desfocado, os emotes voando e os cartões de aviso por cima do jogo,
-    e confere quem está falando com menos frequência. Bom para
-    computador mais fraco ou para jogar e conversar ao mesmo tempo. Vale
-    só no aparelho onde foi ligado.
+  - Modo leve: Configurações → Aparência → "Habilitar modo leve".
+    Desliga as animações, o efeito de vidro desfocado, os emotes voando
+    e os cartões de aviso por cima do jogo, e confere quem está falando
+    com menos frequência. Bom para computador mais fraco ou para jogar e
+    conversar ao mesmo tempo. Vale só no aparelho onde foi ligado.
   - Câmera: dentro de uma sala, o botão de câmera (ao lado de
     compartilhar tela) liga a sua. As câmeras aparecem numa faixa em
     cima do palco; clique numa para aumentar. Ela é leve de propósito
@@ -814,8 +823,8 @@ DICAS
     "tela cheia exclusiva" o Windows não deixa nada por cima, e aí só
     pisca o ícone na barra de tarefas). No navegador, vira notificação
     do sistema, se você permitir. Escolha o que quer receber, ou "Não
-    perturbe", em: clique no seu nome → "Avisos" (tem um botão "Testar
-    aviso").
+    perturbe", em Configurações → Avisos e privacidade (tem um botão
+    "Testar aviso").
   - Buscar mensagens: a lupa no topo (ou Ctrl+F) procura nos canais de
     texto, sem ligar para acentos nem maiúsculas. Clique num resultado
     para ir até a mensagem.

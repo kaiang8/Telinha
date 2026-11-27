@@ -56,8 +56,7 @@
       <button type="button" class="rail-dm" id="railDm" title="Mensagens privadas" aria-label="Mensagens privadas"></button>
       <div class="rail-sep"></div>
       <div class="rail-server" id="railServer"></div>
-      <button type="button" class="icon-btn rail-novidades" id="novidadesBtn" title="Novidades" aria-label="Novidades"></button>
-      <button type="button" class="icon-btn rail-ajuda" id="ajudaBtn" title="Relatar um problema" aria-label="Relatar um problema"></button>
+      <button type="button" class="icon-btn rail-ajuda" id="ajudaBtn" title="Ajuda: novidades e relatar um problema" aria-label="Ajuda: novidades e relatar um problema" aria-haspopup="menu" aria-expanded="false"></button>
       <button type="button" class="versao versao-rail" id="railVersao" hidden></button>
     </nav>
 
@@ -78,8 +77,6 @@
           <div class="vp-where ellipsis" id="vpWhere"></div>
         </div>
         <div class="vp-botoes">
-          <button class="icon-btn" id="vpMic"></button>
-          <button class="icon-btn" id="vpSurdo"></button>
           <button class="icon-btn" id="vpCam" title="Ligar câmera" hidden></button>
           <button class="icon-btn" id="vpShare" title="Compartilhar tela"></button>
           <button class="icon-btn" id="vpSwap" title="Trocar tela (sem parar a transmissão)" hidden></button>
@@ -89,13 +86,13 @@
 
       <div class="user-panel">
         <div class="avatar" id="meAvatar"></div>
-        <div class="up-name" id="meInfo" role="button" tabindex="0" title="Seu nome e cor">
+        <div class="up-name" id="meInfo" role="button" tabindex="0" title="Status e perfil" aria-haspopup="menu" aria-expanded="false">
           <div id="meName" class="ellipsis"></div>
           <div class="muted small" id="meStatus">Online</div>
         </div>
-        <button class="icon-btn" id="audioBtn" title="Opções de áudio" aria-label="Opções de áudio"></button>
-        <button class="icon-btn" id="aparenciaBtn" title="Aparência: tema e cores"></button>
-        <button class="icon-btn" id="logoutBtn" title="Sair do servidor"></button>
+        <button class="icon-btn" id="vpMic"></button>
+        <button class="icon-btn" id="vpSurdo"></button>
+        <button class="icon-btn" id="cfgBtn" title="Configurações" aria-label="Configurações"></button>
       </div>
     </aside>
     <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
@@ -127,32 +124,6 @@
           <div class="stage-grid" id="stageGrid"></div>
           <div class="stage-empty" id="stageEmpty"></div>
           <div class="stage-controls" id="stageControls">
-            <div class="ajustes" id="ajustesPanel" hidden>
-              <label class="quality" title="De onde vem o som da sua transmissão">
-                <span>Som</span>
-                <select id="somSelect">
-                  <option value="janela">Só o que estou mostrando (sem eco)</option>
-                  <option value="pc">Computador inteiro (dá eco)</option>
-                  <option value="nenhum">Sem som</option>
-                </select>
-              </label>
-              <p class="ajustes-dica som-dica" id="somDica"></p>
-              <label class="quality" title="Qualidade máxima da sua transmissão">
-                <span>Qualidade</span>
-                <select id="qualitySelect"></select>
-              </label>
-              <label class="quality" title="Quanto a sua internet consegue enviar">
-                <span>Seu upload</span>
-                <select id="uploadSelect"></select>
-              </label>
-              <p class="ajustes-dica">Cada pessoa assistindo recebe uma cópia do vídeo. O site divide o seu upload entre elas e baixa a resolução quando a sala enche. No automático, ele mede a sua internet sozinho.</p>
-              <p class="ajustes-dica programa-dica" id="programaDica" hidden>Também tem o <a href="/baixar" target="_blank" rel="noopener">programa para Windows</a>: nele, o som do computador vai sem eco e os atalhos dos sons funcionam até dentro de jogos.</p>
-            </div>
-            <label class="quality send-vol" id="sendVolWrap" title="Volume do som que você está mandando, para todo mundo" hidden>
-              <span class="muted small">Volume enviado</span>
-              <input type="range" id="sendVol" min="0" max="2" step="0.05" value="1">
-              <span class="vol-pct" id="sendVolPct">100%</span>
-            </label>
             <div class="sons" id="sonsPanel" hidden>
               <div class="sons-topo">
                 <strong class="sons-titulo">Sons</strong>
@@ -167,18 +138,14 @@
               <p class="sons-dica" id="sonsDica">Clique num som ou use o atalho. Os atalhos só funcionam com esta janela do navegador em foco (dentro de um jogo, o navegador não recebe as teclas). Com Alt+0, todos os sons param.</p>
             </div>
             <div class="ajustes caneta-painel" id="canetaPanel" hidden></div>
-            <div class="voz-botoes">
-              <button class="btn redondo" id="micBtn" hidden></button>
-              <button class="btn redondo" id="surdoBtn" hidden></button>
-              <button class="btn redondo" id="vozOpcoesBtn" title="Opções de áudio" aria-label="Opções de áudio" hidden></button>
-            </div>
+            <button class="btn primary" id="shareBtn"></button>
+            <button class="btn" id="swapBtn" title="Mostrar outra janela, aba ou tela sem parar a transmissão" hidden></button>
+            <button class="btn" id="camBtn" hidden></button>
+            <button class="btn" id="canetaBtn" hidden></button>
             <button class="btn" id="sonsBtn" title="Soundboard: sons que todo mundo da chamada ouve" hidden></button>
             <button class="btn" id="ajustesBtn" title="Som, qualidade e upload da sua transmissão" hidden></button>
-            <button class="btn" id="canetaBtn" hidden></button>
-            <button class="btn" id="swapBtn" title="Mostrar outra janela, aba ou tela sem parar a transmissão" hidden></button>
-            <button class="btn primary" id="shareBtn"></button>
             <button class="btn green" id="joinBtn"></button>
-            <button class="btn danger" id="leaveBtn"></button>
+            <button class="btn danger" id="leaveBtn" title="Sair da sala"></button>
           </div>
         </section>
 
@@ -207,6 +174,36 @@
 
   <div id="adminPanel" class="modal admin-modal" hidden></div>
   <div id="novidadesPanel" class="modal admin-modal" hidden></div>
+
+  <!-- partes que aparecem dentro de Configurações (ficam guardadas aqui quando a janela está fechada) -->
+  <div id="cfgGuardados" hidden>
+            <div class="ajustes" id="ajustesPanel" hidden>
+              <label class="quality" title="De onde vem o som da sua transmissão">
+                <span>Som</span>
+                <select id="somSelect">
+                  <option value="janela">Só o que estou mostrando (sem eco)</option>
+                  <option value="pc">Computador inteiro (dá eco)</option>
+                  <option value="nenhum">Sem som</option>
+                </select>
+              </label>
+              <p class="ajustes-dica som-dica" id="somDica"></p>
+              <label class="quality" title="Qualidade máxima da sua transmissão">
+                <span>Qualidade</span>
+                <select id="qualitySelect"></select>
+              </label>
+              <label class="quality" title="Quanto a sua internet consegue enviar">
+                <span>Seu upload</span>
+                <select id="uploadSelect"></select>
+              </label>
+              <p class="ajustes-dica">Cada pessoa assistindo recebe uma cópia do vídeo. O site divide o seu upload entre elas e baixa a resolução quando a sala enche. No automático, ele mede a sua internet sozinho.</p>
+              <p class="ajustes-dica programa-dica" id="programaDica" hidden>Também tem o <a href="/baixar" target="_blank" rel="noopener">programa para Windows</a>: nele, o som do computador vai sem eco e os atalhos dos sons funcionam até dentro de jogos.</p>
+            </div>
+            <label class="quality send-vol" id="sendVolWrap" title="Volume do som que você está mandando, para todo mundo" hidden>
+              <span class="muted small">Volume enviado</span>
+              <input type="range" id="sendVol" min="0" max="2" step="0.05" value="1">
+              <span class="vol-pct" id="sendVolPct">100%</span>
+            </label>
+  </div>
 
   <div id="modal" class="modal" hidden>
     <form class="modal-card" id="modalForm">

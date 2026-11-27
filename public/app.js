@@ -15,6 +15,7 @@
     olho: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
     olhoOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/><path d="M4 4l16 16"/>',
     full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    pessoa: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.2-3.8 4-5.6 7.5-5.6s6.3 1.8 7.5 5.6"/>',
     replay: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/>',
     baixar: '<path d="M12 4v10.5"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19.5h14"/>',
     pip: '<rect x="2.5" y="4.5" width="19" height="15" rx="2"/><rect x="12" y="11.5" width="7" height="5.5" rx="1" fill="currentColor" stroke="none"/>',
@@ -137,6 +138,7 @@
   const coroa = (u) => (u.admin ? `<span class="crown" title="Admin">${icon('crown')}</span>` : '');
   const avatar = (u, extra = '') => `<div class="avatar ${extra}" style="background:${esc(u.color)}">${esc(initial(u.name))}${extra.includes('dotted') ? '<span class="dot"></span>' : ''}</div>`;
 
+  const ACOES = {}; // ações montadas na inicialização e usadas em outros lugares (ex.: sair do servidor)
   function toast(msg, ms = 3500, acao = null) {
     const t = $('#toast');
     t.textContent = msg;
@@ -1634,7 +1636,7 @@
     const permissao = nav ? Notification.permission : '';
     const marca = (id, on, txt) => `<label class="av-op"><input type="checkbox" id="${id}"${on ? ' checked' : ''}> ${txt}</label>`;
     let onde;
-    if (PROGRAMA && PROGRAMA.aviso && MODO_LEVE) onde = 'Com o modo leve ligado (em Aparência), os cartões por cima do jogo ficam desligados.';
+    if (PROGRAMA && PROGRAMA.aviso && MODO_LEVE) onde = 'Com o modo leve ligado (em Configurações → Aparência), os cartões por cima do jogo ficam desligados.';
     else if (PROGRAMA && PROGRAMA.aviso) onde = 'Aparece um cartão no canto da tela, por cima do jogo, quando o programa não está na frente. Funciona com o jogo em "janela sem bordas" ou "tela cheia em janela"; em "tela cheia exclusiva" o Windows não deixa nada por cima (aí só pisca o ícone na barra de tarefas).';
     else if (PROGRAMA) onde = 'Feche e abra o programa para atualizar: a versão nova mostra os avisos por cima do jogo.';
     else if (!nav) onde = 'Este navegador não mostra notificações.';
@@ -2233,7 +2235,7 @@
     if (act === 'mencionar') { fecharMenuMembro(); return mencionarNoChat(nome); }
     if (act === 'x1') { const pid = pessoaDoMenu().u?.pid; fecharMenuMembro(); return pid && desafiarX1(pid); }
     if (act === 'dm') { const pid = MM.pid || pessoaDoMenu().u?.pid; fecharMenuMembro(); return pid && abrirDm(idDaDm(pid), pid); }
-    if (act === 'perfil') { fecharMenuMembro(); return $('#meInfo').click(); }
+    if (act === 'perfil') { fecharMenuMembro(); return abrirConfig('perfil'); }
     if (act === 'volume') {
       const row = $(`#members [data-chave="${CSS.escape(MM.chave)}"]`);
       fecharMenuMembro();
@@ -2318,7 +2320,7 @@
     // o painel de voz fica sempre à vista: fora de uma sala, só com o microfone e o som
     // (o que for escolhido aqui já vale quando a pessoa entrar)
     const vp = $('#voicePanel');
-    vp.hidden = false;
+    vp.hidden = !S.sala;
     vp.classList.toggle('fora', !S.sala);
     for (const sel of ['#vpShare', '#vpLeave', '#vpCam']) $(sel).hidden = !S.sala;
     const cb = $('#vpCam');
@@ -2326,6 +2328,12 @@
     cb.title = CAM.faixa ? 'Desligar câmera' : 'Ligar câmera';
     cb.setAttribute('aria-label', cb.title);
     cb.classList.toggle('active', !!CAM.faixa);
+    // a câmera também na barra da sala (quando não está transmitindo a tela)
+    const cb2 = $('#camBtn');
+    cb2.hidden = !S.sala || S.live;
+    cb2.innerHTML = `${icon(CAM.faixa ? 'cameraOff' : 'camera')}<span class="rot">${CAM.faixa ? 'Desligar câmera' : 'Câmera'}</span>`;
+    cb2.title = cb.title;
+    cb2.classList.toggle('active', !!CAM.faixa);
     $('#vpInfo').title = S.sala ? 'Voltar para a sala' : '';
     const st = $('#vpStatus');
     if (!S.sala) {
@@ -2382,16 +2390,14 @@
     }
 
     $('#joinBtn').hidden = naSala;
-    $('#joinBtn').innerHTML = `${icon('screen')} Entrar na sala`;
+    $('#joinBtn').innerHTML = `${icon('screen')}<span class="rot">Entrar na sala</span>`;
     $('#shareBtn').hidden = !naSala;
     $('#leaveBtn').hidden = !naSala;
-    $('#leaveBtn').innerHTML = `${icon('logout')} Sair da sala`;
-    $('#ajustesBtn').hidden = !naSala;
+    $('#leaveBtn').innerHTML = `${icon('logout')}<span class="rot">Sair</span>`;
+    $('#ajustesBtn').hidden = !(naSala && S.live);
     $('#sonsBtn').hidden = !naSala;
-    $('#micBtn').hidden = !naSala;
-    $('#surdoBtn').hidden = !naSala;
-    $('#vozOpcoesBtn').hidden = !naSala;
-    if (!naSala) { $('#ajustesPanel').hidden = true; $('#sonsPanel').hidden = true; }
+    $('#camBtn').hidden = !naSala || S.live || !S.sala;
+    if (!naSala) $('#sonsPanel').hidden = true;
     $('#canetaBtn').hidden = !(naSala && S.live);
     if (!S.live) $('#canetaPanel').hidden = true;
     renderCanetaBtn();
@@ -2400,13 +2406,14 @@
     const sw = $('#swapBtn');
     sw.hidden = !(naSala && S.live);
     sw.disabled = !!S.trocando;
-    sw.innerHTML = `${icon('swap')} ${S.trocando ? 'Escolhendo…' : 'Trocar tela'}`;
+    sw.innerHTML = `${icon('swap')}<span class="rot">${S.trocando ? 'Escolhendo…' : 'Trocar tela'}</span>`;
     $('#sendVol').value = String(S.volEnvio);
     $('#sendVolPct').textContent = `${Math.round(S.volEnvio * 100)}%`;
     $('#somSelect').disabled = S.live;
     $('#somSelect').title = S.live ? 'Para mudar o som, pare e comece a transmissão de novo' : '';
     const sb = $('#shareBtn');
-    sb.innerHTML = S.live ? `${icon('screenOff')} Parar transmissão` : `${icon('screen')} Compartilhar tela`;
+    sb.innerHTML = S.live ? `${icon('screenOff')}<span class="rot">Parar</span>` : `${icon('screen')}<span class="rot">Compartilhar tela</span>`;
+    sb.title = S.live ? 'Parar transmissão' : 'Mostrar uma janela, uma aba ou a tela inteira para a sala';
     sb.classList.toggle('primary', !S.live);
   }
 
@@ -3245,7 +3252,7 @@
     const somDoSistema = !!at && (superficie === 'monitor' || S.som === 'pc' || /system|sistema/i.test(at.label || ''));
     if (somDoSistema) {
       if (at.getSettings?.().restrictOwnAudio !== true) S.evitarEco = true;
-      let porque = 'Para evitar, vá em Ajustes → Som → "Só o que estou mostrando".';
+      let porque = 'Para evitar, vá em Configurações → Transmissão → Som → "Só o que estou mostrando".';
       if (S.som === 'janela' && navegadorAntigo()) porque = `Seu navegador (versão ${versaoChromium()}) é antigo e não consegue mandar só o som de uma janela. Atualize o Chrome (Menu → Ajuda → Sobre o Google Chrome) ou compartilhe uma aba.`;
       else if (S.som === 'janela') porque = 'Na janela de escolha, desligue "Compartilhar com áudio do sistema" e ligue o áudio do aplicativo, se aparecer.';
       toast(`${trocou ? 'Tela trocada. ' : ''}Você está mandando o som do computador inteiro: quem está na chamada de voz vai ouvir a própria voz. ${porque}`, 12000);
@@ -4880,7 +4887,7 @@
         VOZ.surdo = false;
         VOZ.mudoAntes = null;
       }
-      if (VOZ.cfg.modo === 'ptt' && !VOZ.cfg.atalho) toast('Escolha a tecla do apertar-para-falar em Opções de áudio.', 6000);
+      if (VOZ.cfg.modo === 'ptt' && !VOZ.cfg.atalho) toast('Escolha a tecla do apertar-para-falar em Configurações → Voz e áudio.', 6000);
     } else {
       VOZ.mudo = true;
     }
@@ -4920,8 +4927,8 @@
     pintarBotaoDeSurdo(t.el.querySelector('[data-act="voz-surdo"]'));
   }
   function renderVoz() {
-    for (const sel of ['#micBtn', '#vpMic']) if ($(sel)) pintarBotaoDeMic($(sel));
-    for (const sel of ['#surdoBtn', '#vpSurdo']) if ($(sel)) pintarBotaoDeSurdo($(sel));
+    pintarBotaoDeMic($('#vpMic'));
+    pintarBotaoDeSurdo($('#vpSurdo'));
     for (const t of S.tiles.values()) vozNoTile(t);
   }
 
@@ -5110,13 +5117,11 @@
   }, true);
 
   // ----- janela "Opções de áudio" -----
-  async function abrirOpcoesAudio() {
+  function abrirOpcoesAudio() { abrirConfig('voz'); }
+  async function montarAudio(painel) {
     let cfg = { ...VOZ.cfg };
     const pct = (db) => Math.max(0, Math.min(100, ((db + 80) / 80) * 100));
-    abrirModal({
-      titulo: 'Opções de áudio',
-      ok: 'Pronto',
-      corpo: `<div class="voz-opcoes" id="vozOpcoes">
+    painel.innerHTML = tituloCfg('voz') + `<div class="voz-opcoes" id="vozOpcoes">
         <label class="vo-campo"><span class="ap-rotulo">Microfone</span>
           <select id="voDispositivo"><option value="">Padrão do sistema</option></select></label>
         <div class="vo-campo"><label class="ap-rotulo" for="voSaida">Saída de áudio (alto-falante ou fone)</label>
@@ -5155,10 +5160,7 @@
             : 'No navegador, só com esta janela em foco. No programa para Windows, funcionam até dentro de jogos.'}</p>
         </div>
         <p class="vo-dica">O cancelamento de eco fica sempre ligado. Com fone de ouvido o som fica ainda melhor.</p>
-      </div>`,
-      aoConfirmar: () => {},
-    });
-    $('#modalCancel').hidden = true; // tudo vale na hora
+      </div>`;
     const caixa = $('#vozOpcoes');
     const sel = $('#voDispositivo');
     const nivel = caixa.querySelector('.medidor .nivel');
@@ -5345,7 +5347,7 @@
       atualizarMicrofone();
     });
     obs.observe($('#modal'), { attributes: true, attributeFilter: ['hidden'] });
-    obs.observe($('#modalBody'), { childList: true });
+    obs.observe($('#modalBody'), { childList: true, subtree: true }); // trocar de aba também desliga o teste
   }
 
   // ================= Saída de áudio (alto-falante ou fone) =================
@@ -6080,7 +6082,7 @@
     if (!b) return;
     const pessoas = [...vizinhosDeSala()];
     const n = pessoas.filter(podeDesenharNaMinha).length;
-    b.innerHTML = `${icon('caneta')} Caneta`;
+    b.innerHTML = `${icon('caneta')}<span class="rot">Caneta</span>`;
     b.classList.toggle('caneta-on', S.live && n > 0);
     b.title = !pessoas.length ? 'Caneta: quem assistir poderá desenhar na sua tela, se você liberar'
       : n === 0 ? 'Caneta: ninguém pode desenhar na sua tela' : n === pessoas.length ? 'Caneta: todos podem desenhar na sua tela'
@@ -6164,7 +6166,6 @@
       e.stopPropagation();
       const abrir = $('#canetaPanel').hidden;
       $('#canetaPanel').hidden = !abrir;
-      $('#ajustesPanel').hidden = true;
       $('#sonsPanel').hidden = true;
       if (abrir) {
         renderCanetaPainel();
@@ -6221,15 +6222,13 @@
     temaParaOPrograma(TEMA.gerar(TEMA.atual()));
   }
 
-  function abrirAparencia() {
-    if (!TEMA) return toast('Não consegui carregar os temas. Recarregue a página.');
+  function abrirAparencia() { abrirConfig('aparencia'); }
+  function montarAparencia(painel) {
+    if (!TEMA) { painel.innerHTML = tituloCfg('aparencia') + '<p class="cfg-dica">Não consegui carregar os temas. Recarregue a página.</p>'; return; }
     let cfg = TEMA.atual();
     const orbe = (a, b, id = '') => `<span class="orbe"${id ? ` id="${id}"` : ''} style="--a:${esc(a)};--b:${esc(b)}"></span>`;
     const modos = [['claro', 'Claro'], ['escuro', 'Escuro'], ['auto', 'Igual ao sistema']];
-    abrirModal({
-      titulo: 'Aparência',
-      ok: 'Pronto',
-      corpo: `<div class="aparencia" id="aparencia">
+    painel.innerHTML = tituloCfg('aparencia') + `<div class="aparencia" id="aparencia">
         <div><span class="ap-rotulo">Tema</span>
           <div class="segmento" role="radiogroup" aria-label="Tema">
             ${modos.map(([v, n]) => `<label><input type="radio" name="modo" value="${v}"${cfg.modo === v ? ' checked' : ''}><span>${n}</span></label>`).join('')}
@@ -6247,11 +6246,8 @@
         <button type="button" class="btn sm ghost ap-restaurar" id="apRestaurar">Voltar ao padrão</button>
         <div class="ap-leve"><span class="ap-rotulo">Desempenho</span>
           <label class="av-op"><input type="checkbox" id="apLeve"${MODO_LEVE ? ' checked' : ''}> Habilitar modo leve</label>
-          <p>Gasta menos processador e memória: desliga as animações, o efeito de vidro desfocado, os emotes voando e os cartões de aviso por cima do jogo. Bom para computador mais fraco ou para jogar e conversar ao mesmo tempo.</p></div>
-      </div>`,
-      aoConfirmar: () => {},
-    });
-    $('#modalCancel').hidden = true; // as mudanças já valem na hora; é só fechar
+          <p>Gasta menos processador e memória: desliga as animações, o efeito de vidro desfocado, os emotes voando, os cartões de aviso por cima do jogo e o replay. Bom para computador mais fraco ou para jogar e conversar ao mesmo tempo.</p></div>
+      </div>`;
     const caixa = $('#aparencia');
     const aplicar = () => {
       cfg = TEMA.validar(cfg);
@@ -6300,8 +6296,267 @@
     });
   }
 
+  // ================= Configurações: tudo numa janela, separado por assunto =================
+  // Cada aba reaproveita o que já existia. As que têm controles fixos da página (os ajustes da
+  // transmissão, o volume dos sons) pegam esses controles emprestados e devolvem ao fechar.
+  const CFG_ABAS = [
+    ['perfil', 'Perfil', 'pessoa'],
+    ['voz', 'Voz e áudio', 'mic'],
+    ['transmissao', 'Transmissão', 'screen'],
+    ['sons', 'Sons', 'vol'],
+    ['aparencia', 'Aparência', 'paleta'],
+    ['avisos', 'Avisos e privacidade', 'shield'],
+    ['conta', 'Conta e aparelhos', 'link'],
+  ];
+  const CFG = { aba: 'perfil', emprestados: [] };
+  const tituloCfg = (id) => `<h3 class="cfg-titulo">${esc(CFG_ABAS.find(([x]) => x === id)?.[1] || '')}</h3>`;
+  const painelCfg = (id) => document.querySelector(`#modalBody [data-cfg-painel="${id}"]`);
+  function emprestar(no, onde) {
+    if (!no || !onde) return;
+    if (!CFG.emprestados.some((x) => x.no === no)) CFG.emprestados.push({ no, pai: no.parentNode, depois: no.nextSibling });
+    onde.appendChild(no);
+  }
+  function devolverEmprestados() {
+    for (const { no, pai, depois } of CFG.emprestados.splice(0).reverse()) {
+      if (depois && depois.parentNode === pai) pai.insertBefore(no, depois);
+      else pai.appendChild(no);
+    }
+  }
+  new MutationObserver(() => {
+    if (!$('#modal').hidden) return;
+    devolverEmprestados();
+    $('#modal').classList.remove('cfg-modal');
+  }).observe($('#modal'), { attributes: true, attributeFilter: ['hidden'] });
+
+  function abrirConfig(aba = CFG.aba) {
+    fecharPopover();
+    abrirModal({
+      titulo: 'Configurações',
+      ok: 'Pronto',
+      corpo: `<div class="cfg">
+        <nav class="cfg-abas" role="tablist" aria-label="Configurações" aria-orientation="vertical">
+          ${CFG_ABAS.map(([id, nome, ic]) => `<button type="button" class="cfg-aba" role="tab" data-cfg-aba="${id}" aria-selected="false">${icon(ic)}<span>${esc(nome)}</span></button>`).join('')}
+          <button type="button" class="cfg-aba cfg-sair" data-cfg-sair>${icon('logout')}<span>Sair do servidor</span></button>
+        </nav>
+        <div class="cfg-paineis">${CFG_ABAS.map(([id, nome]) => `<section class="cfg-painel" role="tabpanel" data-cfg-painel="${id}" aria-label="${esc(nome)}" hidden></section>`).join('')}</div>
+      </div>`,
+      aoConfirmar: salvarPerfilDoForm,
+    });
+    $('#modal').classList.add('cfg-modal');
+    $('#modalCancel').hidden = true; // quase tudo vale na hora; o "Pronto" salva o apelido, a cor e o status
+    montarAbaPerfil(painelCfg('perfil')); // sempre montada: o "Pronto" lê os campos dela
+    const nav = $('#modalBody .cfg-abas');
+    nav.addEventListener('click', (e) => {
+      if (e.target.closest('[data-cfg-sair]')) return ACOES.sairDoServidor?.();
+      const b = e.target.closest('[data-cfg-aba]');
+      if (b) mostrarAbaCfg(b.dataset.cfgAba);
+    });
+    // setas para cima e para baixo andam entre as abas
+    nav.addEventListener('keydown', (e) => {
+      if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+      const lista = [...nav.querySelectorAll('[data-cfg-aba]')];
+      const i = lista.findIndex((b) => b.dataset.cfgAba === CFG.aba);
+      const prox = lista[(i + (e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : lista.length - 1)) % lista.length];
+      e.preventDefault();
+      mostrarAbaCfg(prox.dataset.cfgAba);
+      prox.focus();
+    });
+    mostrarAbaCfg(aba);
+  }
+  const MONTAR_ABA = {
+    voz: (p) => montarAudio(p),
+    transmissao: (p) => montarAbaTransmissao(p),
+    sons: (p) => montarAbaSons(p),
+    aparencia: (p) => montarAparencia(p),
+    avisos: (p) => montarAbaAvisos(p),
+    conta: (p) => montarAbaConta(p),
+  };
+  function mostrarAbaCfg(id) {
+    if (!CFG_ABAS.some(([x]) => x === id)) id = 'perfil';
+    const antes = CFG.aba;
+    CFG.aba = id;
+    for (const b of document.querySelectorAll('#modalBody [data-cfg-aba]')) {
+      const on = b.dataset.cfgAba === id;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-selected', String(on));
+      b.tabIndex = on ? 0 : -1;
+    }
+    for (const p of document.querySelectorAll('#modalBody [data-cfg-painel]')) p.hidden = p.dataset.cfgPainel !== id;
+    // o teste do microfone só fica ligado enquanto a aba de voz está aberta
+    if (antes === 'voz' && id !== 'voz' && painelCfg('voz')) painelCfg('voz').innerHTML = '';
+    const p = painelCfg(id);
+    if (!p) return;
+    if (id !== 'perfil' && !p.childElementCount) MONTAR_ABA[id](p);
+    p.parentNode.scrollTop = 0;
+  }
+
+  function montarAbaPerfil(p) {
+    if (!S.myPid) { p.innerHTML = tituloCfg('perfil') + '<p class="cfg-dica">Entre de novo para ter um nome guardado.</p>'; return; }
+    p.innerHTML = tituloCfg('perfil') + `<label class="field"><span>Apelido</span><input type="text" name="nome" maxlength="32" value="${esc(S.myName)}" autocomplete="off"></label>
+        <p class="muted small">É o nome que todo mundo vê. Trocando, as suas mensagens antigas passam a mostrar o nome novo.</p>
+        <div class="field"><span>Sua cor</span><div class="color-picker pf-cores">${CORES.map((c) => `<label class="pf-cor"><input type="radio" name="cor" value="${c}"${c === S.myColor ? ' checked' : ''}><span style="background:${c}"></span></label>`).join('')}</div></div>
+        ${secaoStatus()}
+        ${SOM_DE_ENTRADA_HTML()}`;
+    ligarSomDeEntrada();
+  }
+  async function salvarPerfilDoForm(fd) {
+    if (!S.myPid || fd.get('nome') === null) return;
+    const nome = String(fd.get('nome') || '').trim();
+    if (!nome) { mostrarAbaCfg('perfil'); throw new Error('Escolha um apelido.'); }
+    await salvarStatusDoForm(fd);
+    const cor = fd.get('cor') || S.myColor;
+    if (nome === S.myName && cor === S.myColor) return;
+    const r = await api('perfil', { nome, cor });
+    toast(r.nome !== S.myName ? `Pronto: agora você é "${r.nome}".` : 'Salvo.');
+  }
+  function montarAbaTransmissao(p) {
+    p.innerHTML = tituloCfg('transmissao') + `<p class="cfg-dica">O som, a qualidade e o upload valem para a próxima vez que você compartilhar a tela (o som só muda antes de começar).</p>
+      <div class="pf-secao" id="cfgTxAjustes"></div>
+      <div class="pf-secao" id="cfgTxVol"><b>Volume enviado</b>
+        <p class="muted small" id="cfgTxVolDica">Enquanto você transmite com som, aqui dá para baixar ou aumentar o volume que todo mundo ouve.</p></div>
+      ${secaoLances()}`;
+    const aj = $('#ajustesPanel');
+    aj.hidden = false;
+    emprestar(aj, $('#cfgTxAjustes'));
+    emprestar($('#sendVolWrap'), $('#cfgTxVol'));
+    ligarLances();
+  }
+  function montarAbaSons(p) {
+    p.innerHTML = tituloCfg('sons') + `<p class="cfg-dica">A soundboard toca sons que todo mundo da sala ouve. Para tocar: na sala, clique em <b>Sons</b>. Para trocar um som, o nome ou o atalho: <b>Sons → Editar</b>. Alt+0 para todos os sons.</p>
+      <div class="cfg-sons" id="cfgSons"></div>
+      <p class="cfg-dica" style="margin-top:14px">O seu som ao entrar na sala e o volume dos sons de entrada dos outros ficam em <b>Perfil</b>. Para silenciar os sons de uma pessoa só, clique no nome dela, dentro da sala.</p>`;
+    emprestar($('#sbVolume').closest('label'), $('#cfgSons'));
+    emprestar($('#sbOuvir').closest('label'), $('#cfgSons'));
+  }
+  function montarAbaAvisos(p) {
+    p.innerHTML = tituloCfg('avisos') + secaoAvisos() + secaoPrivacidade();
+    ligarAvisos();
+    ligarPrivacidade();
+  }
+  function montarAbaConta(p) {
+    p.innerHTML = tituloCfg('conta') + `<div class="pf-secao"><b>Entrar em outro aparelho</b>
+        <p class="muted small">Gere um código e, no outro aparelho, clique em "Já tenho um nome" na tela de entrada. O código vale 15 minutos.</p>
+        <button type="button" class="btn sm" id="pfCodigo">Gerar código</button><div class="pf-codigo" id="pfCodigoVer" hidden></div></div>
+      <div class="pf-secao"><b>Esquecer este aparelho</b>
+        <p class="muted small">Ele deixa de entrar com o seu nome. Para voltar, só com um código.</p>
+        <button type="button" class="btn sm danger" id="pfEsquecer">Esquecer este aparelho</button></div>
+      <div class="pf-secao"><b>Sair do servidor</b>
+        <p class="muted small">O seu nome continua guardado neste aparelho: da próxima vez, é só clicar em Entrar.</p>
+        <button type="button" class="btn sm" id="pfSair">Sair do servidor</button></div>`;
+    $('#pfSair').onclick = () => ACOES.sairDoServidor?.();
+    $('#pfCodigo').onclick = async () => {
+      try {
+        const r = await api('perfil-codigo');
+        const ver = $('#pfCodigoVer');
+        ver.hidden = false;
+        ver.innerHTML = `<span class="pf-codigo-txt">${esc(r.codigo)}</span><span class="muted small">vale até ${hhmm(new Date(r.ate))}</span>`;
+      } catch (e) { toast(e.message); }
+    };
+    $('#pfEsquecer').onclick = () => {
+      abrirModal({
+        titulo: 'Esquecer este aparelho',
+        ok: 'Esquecer e sair',
+        perigo: true,
+        corpo: ESQUECER_HTML(),
+        aoConfirmar: async () => {
+          await api('perfil-esquecer').catch(() => {});
+          salvar({ perfil: null, name: '', password: '', adminPassword: '' });
+          S.saindoDeVez = true;
+          sairDaPagina();
+          location.reload();
+        },
+      });
+    };
+  }
+
+  // ----- Menus curtos: status (clicando no seu nome) e ajuda (o "?" da barra da esquerda) -----
+  const POP = { el: null, dono: null };
+  function fecharPopover() {
+    if (!POP.el) return;
+    POP.el.remove();
+    POP.dono?.setAttribute('aria-expanded', 'false');
+    POP.el = null;
+    POP.dono = null;
+  }
+  function abrirPopover(dono, html, posicionar) {
+    const mesmo = POP.dono === dono;
+    fecharPopover();
+    if (mesmo) return null; // clicar de novo fecha
+    const el = document.createElement('div');
+    el.className = 'menu-membro menu-pop';
+    el.setAttribute('role', 'menu');
+    el.innerHTML = html;
+    document.body.appendChild(el);
+    posicionar(el, dono.getBoundingClientRect());
+    POP.el = el;
+    POP.dono = dono;
+    dono.setAttribute('aria-expanded', 'true');
+    el.querySelector('button')?.focus({ preventScroll: true });
+    return el;
+  }
+  document.addEventListener('pointerdown', (e) => {
+    if (POP.el && !POP.el.contains(e.target) && !POP.dono?.contains(e.target)) fecharPopover();
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !POP.el) return;
+    const dono = POP.dono;
+    fecharPopover();
+    dono?.focus();
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+
+  function abrirMenuStatus() {
+    const atual = statusDe(S.myPid)?.tipo || '';
+    const opcoes = [['', 'Online'], ['ausente', 'Ausente'], ['np', 'Não perturbe']];
+    const el = abrirPopover($('#meInfo'), `${opcoes.map(([t, n]) => `<button type="button" class="mm-item${atual === t ? ' on' : ''}" role="menuitemradio" aria-checked="${atual === t}" data-st="${t}"><span class="mm-st st-${t || 'online'}"></span>${n}</button>`).join('')}
+      <div class="mm-linha" role="separator"></div>
+      <button type="button" class="mm-item" role="menuitem" data-st-perfil>${icon('pencil')} Editar perfil e recado</button>
+      <button type="button" class="mm-item" role="menuitem" data-st-cfg>${icon('engrenagem')} Configurações</button>`, (m, r) => {
+      m.style.left = `${Math.max(8, r.left - 48)}px`;
+      m.style.bottom = `${Math.max(8, innerHeight - r.top + 10)}px`;
+    });
+    if (!el) return;
+    if (!S.myPid) for (const b of el.querySelectorAll('[data-st]')) b.disabled = true;
+    el.addEventListener('click', async (e) => {
+      if (e.target.closest('[data-st-perfil]')) return abrirConfig('perfil');
+      if (e.target.closest('[data-st-cfg]')) return abrirConfig();
+      const b = e.target.closest('[data-st]');
+      if (!b) return;
+      fecharPopover();
+      const tipo = b.dataset.st;
+      const agora = statusDe(S.myPid) || {};
+      if (tipo === (agora.tipo || '')) return;
+      // trocar entre Ausente e Não perturbe mantém o recado e a hora de acabar
+      const texto = tipo ? agora.texto || '' : '';
+      const ate = tipo && agora.ate && agora.ate > Date.now() + 60e3 ? agora.ate : 0;
+      try {
+        const r = await api('status', { tipo, texto, ate });
+        (S.perfis[S.myPid] ||= {}).status = r.status;
+      } catch (err) { toast(err.message); }
+    });
+  }
+  function abrirMenuAjuda() {
+    const novo = salvo.novidadesVista !== versaoAtualNv();
+    const el = abrirPopover($('#ajudaBtn'), `<button type="button" class="mm-item" role="menuitem" data-aj="novidades">${icon('presente')} Novidades e o que dá pra fazer${novo ? '<span class="mm-novo">novo</span>' : ''}</button>
+      <button type="button" class="mm-item" role="menuitem" data-aj="relatar">${icon('megaphone')} Relatar um problema</button>`, (m, r) => {
+      m.style.left = `${r.right + 10}px`;
+      m.style.bottom = `${Math.max(8, innerHeight - r.bottom)}px`;
+    });
+    if (!el) return;
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-aj]');
+      if (!b) return;
+      fecharPopover();
+      if (b.dataset.aj === 'novidades') abrirNovidades(true);
+      else abrirRelatarProblema().catch((er) => toast(er.message));
+    });
+  }
+
   // ================= Canais (criar / apagar) =================
   function abrirModal({ titulo, corpo, ok = 'OK', perigo = false, aoConfirmar }) {
+    devolverEmprestados();
+    $('#modal').classList.remove('cfg-modal');
     $('#modalCancel').hidden = false;
     $('#modalTitle').textContent = titulo;
     $('#modalBody').innerHTML = corpo;
@@ -6391,6 +6646,8 @@
   // ----- Novidades: o que mudou (por versão) e o que o Caras E Telas oferece -----
   const NV_MUDOU = [
     { v: '1.4.7', data: '27/11', nome: 'Lances e disputas', itens: [
+      { t: 'Tela mais organizada: todas as configurações numa janela só, com abas (a engrenagem embaixo, ao lado do seu nome). Microfone e fone ficam ali também.' },
+      { t: 'Clique no seu nome para trocar o status rápido. Novidades e Relatar um problema ficam no "?" da barra da esquerda.' },
       { t: 'Replay: ligue numa transmissão e salve os últimos 30 s (Alt+L). O vídeo vai para Vídeos\\Caras E Telas, no seu computador.', p: true },
       { t: 'Canal #X1 Otário?: desafie alguém no pedra, papel e tesoura pra decidir uma disputa. O vencedor é anunciado no canal.' },
       { t: 'Status: Ausente ou Não perturbe, com recado e hora pra acabar (clique no seu nome).' },
@@ -6424,9 +6681,9 @@
     ] },
   ];
   const NV_RECURSOS = [
-    { icone: 'chat', titulo: 'Conversar', itens: ['Canais de texto', 'Respostas, reações e menções', 'Editar e apagar as suas mensagens', 'Imagens e GIFs', 'Mensagens privadas', 'Buscar, fixar e enquetes'] },
-    { icone: 'screen', titulo: 'Salas de tela', itens: ['Compartilhar a tela em grupo', 'Assistir junto', 'Câmera (no programa)', 'Voz e apertar-pra-falar', 'Caneta por cima da tela', 'Soundboard e som de entrada'] },
-    { icone: 'controle', titulo: 'No dia a dia', itens: ['Avisos quando te chamam', 'Jogando agora (no programa)', 'Roleta de sorteio', 'Quem está online e offline', 'Modo leve', 'Temas e cores'] },
+    { icone: 'chat', titulo: 'Conversar', itens: ['Canais de texto', 'Respostas, reações e menções', 'Editar e apagar as suas mensagens', 'Imagens e GIFs', 'Mensagens privadas', 'Buscar, fixar e enquetes', 'Spoiler e prévia de links'] },
+    { icone: 'screen', titulo: 'Salas de tela', itens: ['Compartilhar a tela em grupo', 'Assistir junto', 'Câmera (no programa)', 'Voz e apertar-pra-falar', 'Caneta por cima da tela', 'Soundboard e som de entrada', 'Replay: salvar os últimos 30 s'] },
+    { icone: 'controle', titulo: 'No dia a dia', itens: ['Avisos quando te chamam', 'Jogando agora (no programa)', 'Roleta de sorteio e X1 Otário?', 'Status: ausente e não perturbe', 'Jogo mais jogado do mês', 'Modo leve', 'Temas e cores'] },
   ];
   const NV = { aba: 'mudou', abertos: new Set([0]) };
   const versaoAtualNv = () => NV_MUDOU[0].v;
@@ -6445,7 +6702,7 @@
             <div class="nv-itens">${r.itens.map((it) => `<div class="nv-item">${icon('presente')}<span>${esc(it.t)}${it.p ? ' <span class="nv-win">🪟 programa</span>' : ''}</span></div>`).join('')}</div></div>`;
         }).join('');
     } else {
-      corpo = `<div class="nv-recursos">${NV_RECURSOS.map((c) => `<div class="nv-cat">
+      corpo = `<p class="nv-intro">Tudo o que é configuração fica na engrenagem, embaixo à esquerda, ao lado do seu nome. Clicando no seu nome, você troca o status.</p><div class="nv-recursos">${NV_RECURSOS.map((c) => `<div class="nv-cat">
         <div class="nv-cat-cab">${icon(c.icone)}<b>${esc(c.titulo)}</b></div>
         <ul>${c.itens.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`).join('')}</div>`;
     }
@@ -6458,12 +6715,12 @@
   function abrirNovidades(abrir = $('#novidadesPanel').hidden) {
     $('#novidadesPanel').hidden = !abrir;
     if (!abrir) return;
-    if (salvo.novidadesVista !== versaoAtualNv()) { salvar({ novidadesVista: versaoAtualNv() }); $('#novidadesBtn').classList.remove('tem-novo'); }
+    if (salvo.novidadesVista !== versaoAtualNv()) { salvar({ novidadesVista: versaoAtualNv() }); $('#ajudaBtn').classList.remove('tem-novo'); }
     renderNovidades();
     $('#novidadesPanel .admin-tabs button')?.focus?.();
   }
   function marcarNovidadesNovo() {
-    $('#novidadesBtn').classList.toggle('tem-novo', salvo.novidadesVista !== versaoAtualNv());
+    $('#ajudaBtn').classList.toggle('tem-novo', salvo.novidadesVista !== versaoAtualNv());
   }
 
   function montarBotoes() {
@@ -6472,14 +6729,11 @@
     $('#menuBtn').innerHTML = icon('menu');
     $('#toggleChatBtn').innerHTML = icon('chat');
     $('#toggleMembersBtn').innerHTML = icon('people');
-    $('#logoutBtn').innerHTML = icon('logout');
-    $('#aparenciaBtn').innerHTML = icon('paleta');
-    $('#audioBtn').innerHTML = icon('engrenagem');
+    $('#cfgBtn').innerHTML = icon('engrenagem');
+    $('#cfgBtn').addEventListener('click', () => abrirConfig());
     $('#ajudaBtn').innerHTML = icon('ajuda');
-    $('#ajudaBtn').addEventListener('click', () => abrirRelatarProblema().catch((e) => toast(e.message)));
-    $('#novidadesBtn').innerHTML = icon('presente');
+    $('#ajudaBtn').addEventListener('click', abrirMenuAjuda);
     marcarNovidadesNovo();
-    $('#novidadesBtn').addEventListener('click', () => abrirNovidades());
     $('#novidadesPanel').addEventListener('click', (e) => {
       if (e.target.id === 'novidadesPanel' || e.target.closest('[data-nv-fechar]')) return abrirNovidades(false);
       const aba = e.target.closest('[data-nv-aba]');
@@ -6488,12 +6742,9 @@
       if (rel) { const i = Number(rel.dataset.nvRel); NV.abertos.has(i) ? NV.abertos.delete(i) : NV.abertos.add(i); return renderNovidades(); }
     });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#novidadesPanel').hidden) abrirNovidades(false); });
-    $('#vozOpcoesBtn').innerHTML = icon('engrenagem');
-    for (const sel of ['#micBtn', '#vpMic']) $(sel).addEventListener('click', alternarMudo);
-    for (const sel of ['#surdoBtn', '#vpSurdo']) $(sel).addEventListener('click', alternarSurdo);
-    for (const sel of ['#audioBtn', '#vozOpcoesBtn']) $(sel).addEventListener('click', abrirOpcoesAudio);
+    $('#vpMic').addEventListener('click', alternarMudo);
+    $('#vpSurdo').addEventListener('click', alternarSurdo);
     renderVoz();
-    $('#aparenciaBtn').addEventListener('click', abrirAparencia);
     $('#vpLeave').innerHTML = icon('logout');
     $('#sendBtn').innerHTML = icon('send');
     $('#enqueteBtn').innerHTML = icon('enquete');
@@ -6512,19 +6763,9 @@
 
     montarSons();
     montarCaneta();
-    $('#ajustesBtn').innerHTML = `${icon('sliders')} Ajustes`;
-    $('#ajustesBtn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      $('#ajustesPanel').hidden = !$('#ajustesPanel').hidden;
-      $('#sonsPanel').hidden = true;
-      $('#canetaPanel').hidden = true;
-    });
-    document.addEventListener('click', (e) => {
-      if (!$('#ajustesPanel').hidden && !e.target.closest('#ajustesPanel, #ajustesBtn')) $('#ajustesPanel').hidden = true;
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !$('#ajustesPanel').hidden) { $('#ajustesPanel').hidden = true; e.preventDefault(); }
-    });
+    $('#ajustesBtn').innerHTML = `${icon('sliders')}<span class="rot">Transmissão</span>`;
+    $('#ajustesBtn').addEventListener('click', () => abrirConfig('transmissao'));
+    $('#camBtn').addEventListener('click', () => $('#vpCam').click());
     const up = $('#uploadSelect');
     up.innerHTML = UPLOADS.map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
     up.value = S.upload;
@@ -6669,7 +6910,7 @@
       }
     });
 
-    $('#logoutBtn').addEventListener('click', () => {
+    ACOES.sairDoServidor = () => {
       abrirModal({
         titulo: 'Sair do servidor',
         ok: 'Sair',
@@ -6685,7 +6926,7 @@
           location.reload();
         },
       });
-    });
+    };
 
     $('#menuBtn').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
     $('#sidebarBackdrop').addEventListener('click', () => $('#sidebar').classList.remove('open'));
@@ -6875,16 +7116,8 @@
   }
 
   // ----- Seu nome: trocar o nome e a cor, e entrar em outro aparelho -----
-  function abrirPerfil() {
-    if (!S.myPid) return toast('Entre de novo para ter um nome guardado.');
-    abrirModal({
-      titulo: 'Seu nome',
-      ok: 'Salvar',
-      corpo: `<label class="field"><span>Apelido</span><input type="text" name="nome" maxlength="32" required value="${esc(S.myName)}" autocomplete="off"></label>
-        <p class="muted small">É o nome que todo mundo vê. Trocando, as suas mensagens antigas passam a mostrar o nome novo.</p>
-        <div class="field"><span>Sua cor</span><div class="color-picker pf-cores">${CORES.map((c) => `<label class="pf-cor"><input type="radio" name="cor" value="${c}"${c === S.myColor ? ' checked' : ''}><span style="background:${c}" aria-label="Cor ${c}"></span></label>`).join('')}</div></div>
-        ${secaoStatus()}
-        <div class="pf-secao" id="pfSom"><b>Som ao entrar na sala</b>
+  function abrirPerfil() { abrirConfig('perfil'); }
+  const SOM_DE_ENTRADA_HTML = () => `<div class="pf-secao" id="pfSom"><b>Som ao entrar na sala</b>
           <p class="muted small" id="seEstado"></p>
           <div class="se-botoes"><button type="button" class="btn sm" id="seEscolher">Escolher um .mp3</button>
             <button type="button" class="btn sm ghost" id="seOuvirAtual" hidden>Ouvir</button>
@@ -6904,49 +7137,8 @@
             <div class="se-botoes"><button type="button" class="btn sm ghost" id="seOuvir">Ouvir trecho</button>
               <button type="button" class="btn sm primary" id="seUsar">Usar este som</button></div>
             <p class="muted small" id="seStatus" aria-live="polite"></p>
-          </div></div>
-        ${secaoAvisos()}
-        ${secaoPrivacidade()}
-        ${secaoLances()}
-        <div class="pf-secao"><b>Entrar em outro aparelho</b>
-          <p class="muted small">Gere um código e, no outro aparelho, clique em "Já tenho um nome" na tela de entrada. O código vale 15 minutos.</p>
-          <button type="button" class="btn sm" id="pfCodigo">Gerar código</button><div class="pf-codigo" id="pfCodigoVer" hidden></div></div>
-        <div class="pf-secao"><button type="button" class="link-btn perigo" id="pfEsquecer">Esquecer este aparelho</button>
-          <p class="muted small">Ele deixa de entrar com o seu nome. Para voltar, só com um código.</p></div>`,
-      aoConfirmar: async (fd) => {
-        await salvarStatusDoForm(fd);
-        const r = await api('perfil', { nome: fd.get('nome'), cor: fd.get('cor') || undefined });
-        toast(r.nome !== S.myName ? `Pronto: agora você é "${r.nome}".` : 'Salvo.');
-      },
-    });
-    ligarSomDeEntrada();
-    ligarAvisos();
-    ligarPrivacidade();
-    ligarLances();
-    $('#pfCodigo').onclick = async () => {
-      try {
-        const r = await api('perfil-codigo');
-        const ver = $('#pfCodigoVer');
-        ver.hidden = false;
-        ver.innerHTML = `<span class="pf-codigo-txt">${esc(r.codigo)}</span><span class="muted small">vale até ${hhmm(new Date(r.ate))}</span>`;
-      } catch (e) { toast(e.message); }
-    };
-    $('#pfEsquecer').onclick = () => {
-      abrirModal({
-        titulo: 'Esquecer este aparelho',
-        ok: 'Esquecer e sair',
-        perigo: true,
-        corpo: `<p>Este aparelho deixa de entrar como <b>${esc(S.myName)}</b> e você sai agora. Para voltar com o mesmo nome, vai precisar de um código de acesso (gerado num aparelho seu ou por um admin).</p>`,
-        aoConfirmar: async () => {
-          await api('perfil-esquecer').catch(() => {});
-          salvar({ perfil: null, name: '', password: '', adminPassword: '' });
-          S.saindoDeVez = true;
-          sairDaPagina();
-          location.reload();
-        },
-      });
-    };
-  }
+          </div></div>`;
+  const ESQUECER_HTML = () => `<p>Este aparelho deixa de entrar como <b>${esc(S.myName)}</b> e você sai agora. Para voltar com o mesmo nome, vai precisar de um código de acesso (gerado num aparelho seu ou por um admin).</p>`;
   // ----- Escolher o som de entrada: lê o mp3, a pessoa escolhe 5 s e o navegador grava só esse trecho -----
   const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
   function ligarSomDeEntrada() {
@@ -7105,8 +7297,8 @@
       ctx.close().catch(() => {});
     }
   }
-  $('#meInfo')?.addEventListener('click', abrirPerfil);
-  $('#meInfo')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirPerfil(); } });
+  $('#meInfo')?.addEventListener('click', abrirMenuStatus);
+  $('#meInfo')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirMenuStatus(); } });
 
   function onRenamed(m) {
     S.myName = m.name;
@@ -8407,12 +8599,11 @@
   function montarSons() {
     dicaSons();
     sincronizarAtalhos();
-    $('#sonsBtn').innerHTML = `${icon('vol')} Sons`;
+    $('#sonsBtn').innerHTML = `${icon('vol')}<span class="rot">Sons</span>`;
     $('#sonsBtn').addEventListener('click', (e) => {
       e.stopPropagation();
       const abrir = $('#sonsPanel').hidden;
       $('#sonsPanel').hidden = !abrir;
-      $('#ajustesPanel').hidden = true;
       $('#canetaPanel').hidden = true;
       if (abrir) {
         renderSons();
