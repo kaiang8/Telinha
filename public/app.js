@@ -7134,7 +7134,7 @@
           <button class="btn sm danger" data-act="backup-restaurar">Restaurar um backup…</button></div></div>
       <div class="ap-section"><h4>Servidor ligado</h4>
         <p>Ligado desde <b>${esc(new Date(st.ligadoDesde || Date.now()).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }))}</b>.
-        ${st.acordado ? 'Ele se visita a cada 12 minutos para o Render não colocar para dormir.' : 'Fora do Render: não precisa se manter acordado.'}</p></div>
+        ${st.acordado === 'ligado' ? 'Ele se visita a cada 10 minutos para o Render não colocar para dormir.' : st.acordado === 'desligado' ? 'Manter acordado está desligado (variável MANTER_ACORDADO=0 no Render): ele dorme depois de 15 minutos sem ninguém.' : 'Fora do Render: não precisa se manter acordado.'}</p></div>
       <div class="ap-section"><h4>Onde ficam os dados</h4>
         <p>${st.storage === 'upstash' ? 'No Upstash (banco na nuvem): canais, mensagens, banimentos e configurações sobrevivem a reinícios.' : 'No arquivo <b>data.json</b>, na pasta do servidor. Numa hospedagem grátis, esse arquivo some quando o serviço reinicia: configure o Upstash (veja o LEIA-ME).'}</p></div>
       ${secaoAparelhos(d)}
