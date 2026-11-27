@@ -265,6 +265,7 @@
       .then((r) => r.json())
       .then((cfg) => {
         mostrarVersao(cfg.programa, cfg.build);
+        conferirBuild(cfg.build);
         S.serverName = cfg.serverName;
         if (cfg.serverName && cfg.serverName !== MARCA) $('#loginSub').textContent = `Entre em ${cfg.serverName} para conversar e assistir junto com a galera.`;
         $('#passField').hidden = !cfg.needsPassword;
@@ -559,6 +560,7 @@
 
   async function onInit(m) {
     conferirVersaoDoPrograma(m.programa);
+    conferirBuild(m.build);
     if (m.programa && `v${m.programa}` !== VERSAO.texto && !PROGRAMA) mostrarVersao(m.programa, m.build);
     S.myId = m.me.id;
     S.isAdmin = !!m.me.admin;
@@ -4438,6 +4440,21 @@
       el.hidden = false;
     }
   }
+  // ----- versão nova do site: quem está com a página aberta vê uma faixa para recarregar -----
+  // Uma atualização reinicia o servidor; ao reconectar, o "envio" (commit) que chega é outro.
+  const BUILD = { carregado: null, avisado: null };
+  function conferirBuild(b) {
+    if (!b) return;
+    if (!BUILD.carregado) { BUILD.carregado = b; return; }
+    if (b === BUILD.carregado || b === BUILD.avisado) return;
+    BUILD.avisado = b;
+    $('#novaVersaoTxt').textContent = S.sala
+      ? 'O Caras E Telas foi atualizado. Recarregue quando puder (você sai da sala por um instante).'
+      : 'O Caras E Telas foi atualizado.';
+    $('#novaVersao').hidden = false;
+  }
+  $('#novaVersaoBtn').addEventListener('click', () => location.reload());
+  $('#novaVersaoFechar').addEventListener('click', () => { $('#novaVersao').hidden = true; });
   for (const id of ['#loginVersao', '#railVersao']) $(id).addEventListener('click', () => { if (VERSAO.detalhe) toast(VERSAO.detalhe, VERSAO.antigo ? 9000 : 4000); });
 
   // ================= Problemas: erros da página e "Relatar problema" =================

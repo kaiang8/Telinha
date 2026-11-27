@@ -1331,3 +1331,7 @@ img.tl-rosa { animation-name: tlPuloRosa; animation-duration: 2.6s; animation-de
 .se-trecho { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .se-trecho input[type="range"] { width: 100%; accent-color: var(--p2, #3db3f0); }
 .se-vols { margin: 12px 0 4px; display: grid; gap: 6px; }
+.nova-versao { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.nova-versao button { font: inherit; font-weight: 800; border: 0; border-radius: 999px; padding: 3px 12px; cursor: pointer; background: #3d2a00; color: #fff; }
+.nova-versao button.nv-depois { background: transparent; color: #3d2a00; text-decoration: underline; padding: 3px 4px; }
+.nova-versao button:focus-visible { outline: 2px solid #3d2a00; outline-offset: 2px; }
