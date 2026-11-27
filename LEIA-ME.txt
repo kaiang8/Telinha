@@ -731,6 +731,12 @@ DICAS
     conhecidos. Nunca lê o nome de outras janelas. Para não mostrar:
     clique no seu nome → Privacidade → desmarque "Mostrar para os outros
     o jogo que estou jogando" (aí o programa nem confere).
+  - Status: clique no seu nome → Status. Escolha Online, Ausente
+    (bolinha amarela) ou Não perturbe (bolinha vermelha), escreva um
+    recado curto se quiser ("volto às 22h") e quando ele some sozinho (1
+    hora, 4 horas, hoje à meia-noite ou nunca). O recado aparece embaixo
+    do seu nome na lista. Em Não perturbe, os seus avisos, notificações
+    e o som de menção ficam desligados.
   - Spoiler: escreva o texto entre duas barras de cada lado, ||assim||,
     e ele aparece tampado até alguém clicar. Funciona também com links
     de imagem (a imagem fica borrada). Nos avisos, nas respostas e na

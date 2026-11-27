@@ -1297,10 +1297,25 @@ function donoDoNome(nome) {
 }
 // O que todo mundo vê de cada nome: a cor, quando foi visto pela última vez (para a lista de quem
 // está offline) e se está fora da lista (banido, ou tirado por um admin). Nada de IP.
+// ---------- Status personalizado (Ausente, Não perturbe e um texto curto; some na hora marcada) ----------
+const statusValido = (p) => (p?.status && (p.status.tipo || p.status.texto) && !(p.status.ate && p.status.ate <= Date.now()) ? p.status : null);
+const STATUS_TIMERS = new Map();
+function agendarFimDoStatus(pid) {
+  clearTimeout(STATUS_TIMERS.get(pid));
+  STATUS_TIMERS.delete(pid);
+  const ate = data.perfis[pid]?.status?.ate;
+  if (!ate) return;
+  STATUS_TIMERS.set(pid, setTimeout(() => {
+    STATUS_TIMERS.delete(pid);
+    const p = data.perfis[pid];
+    if (p?.status?.ate && p.status.ate <= Date.now() + 1000) { delete p.status; salvar(); avisarPerfil(pid); }
+  }, Math.max(1000, ate - Date.now())));
+}
+
 function perfilPublico(id) {
   const p = data.perfis[id];
   const fora = p.oculto || data.bans.some((b) => b.pid === id);
-  return { nome: p.nome, cor: p.cor, visto: p.visto || p.criado || 0, ...(fora ? { fora: true } : {}), ...(p.som ? { som: p.som, ...(p.somVol && p.somVol !== 1 ? { somVol: p.somVol } : {}) } : {}) };
+  return { nome: p.nome, cor: p.cor, visto: p.visto || p.criado || 0, ...(fora ? { fora: true } : {}), ...(p.som ? { som: p.som, ...(p.somVol && p.somVol !== 1 ? { somVol: p.somVol } : {}) } : {}), ...(statusValido(p) ? { status: p.status } : {}) };
 }
 function perfisPublicos() {
   const o = {};
@@ -2628,6 +2643,22 @@ async function api(req, res, url) {
       }
     }
 
+    case 'status': {
+      const p = u.pid && data.perfis[u.pid];
+      if (!p) return json(res, 400, { error: 'Entre de novo para ter um nome guardado' });
+      if (limiteDe(u, 'limStatus', 10, 60e3)) return json(res, 429, { error: 'Calma, espere um pouco.' });
+      const tipo = body.tipo === 'ausente' || body.tipo === 'np' ? body.tipo : null;
+      const texto = String(body.texto || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+      const ate = Number(body.ate);
+      const ateOk = Number.isFinite(ate) && ate > Date.now() + 30e3 && ate < Date.now() + 8 * 86400e3 ? Math.round(ate) : 0;
+      if (!tipo && !texto) delete p.status;
+      else p.status = { ...(tipo ? { tipo } : {}), ...(texto ? { texto } : {}), ...(ateOk ? { ate: ateOk } : {}) };
+      salvar();
+      agendarFimDoStatus(u.pid);
+      avisarPerfil(u.pid);
+      return json(res, 200, { ok: true, status: p.status || null });
+    }
+
     case 'roleta': {
       const c = canal(body.channel);
       if (!c || !c.roleta) return json(res, 404, { error: 'A roleta fica no canal #roleta' });
@@ -3154,6 +3185,7 @@ async function iniciar() {
   }
   await carregarDados();
   criarCanalDaRoleta();
+  for (const pid of Object.keys(data.perfis)) agendarFimDoStatus(pid);
   await carregarMensagens();
   await carregarRegistro();
   await TRAFEGO.carregar();

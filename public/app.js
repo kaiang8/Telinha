@@ -743,7 +743,7 @@
         document.title = `(${S.unseen}) ${MARCA}`;
       }
       if (mencionaMe(msg)) {
-        blip('msg');
+        if (statusDe(S.myPid)?.tipo !== 'np') blip('msg');
         S.mencoes.add(msg.ch);
       }
     }
@@ -798,6 +798,10 @@
   }
   const nomeDoPerfil = (pid) => S.perfis?.[pid]?.nome || 'alguém';
   // <@id> vira "@Nome atual" (para editar, ou um resuminho sem formatação)
+  // status de alguém (só se não venceu)
+  const ROTULO_STATUS = { ausente: 'Ausente', np: 'Não perturbe' };
+  const statusDe = (pid) => { const s = pid && S.perfis?.[pid]?.status; return s && !(s.ate && s.ate <= Date.now()) ? s : null; };
+  const textoDoStatus = (s) => (s ? s.texto || ROTULO_STATUS[s.tipo] || '' : '');
   const semSpoiler = (t) => String(t || '').replace(/\|\|([^\n]+?)\|\|/g, '[spoiler]');
   const textoComNomes = (t) => String(t || '').replace(/<@([0-9a-f]{12})>/g, (_, id) => `@${nomeDoPerfil(id)}`);
   // "@Nome" escrito à mão (mensagens de antes): acha o nome registrado mais comprido que combina
@@ -1378,7 +1382,7 @@
     if (meu) { marcarDmVista(msg.ch); }
     else if (msg.ch !== S.view || document.hidden) {
       if (msg.ch !== S.view) S.dmNaoLidas.add(msg.ch);
-      blip('msg');
+      if (statusDe(S.myPid)?.tipo !== 'np') blip('msg');
       const a = autorDe(msg);
       if (PROGRAMA?.aviso || document.hidden || !document.hasFocus()) {
         avisar('mencao', { nome: a.name, cor: a.color, texto: `mensagem privada: ${semSpoiler(textoComNomes(msg.text)).replace(/\s+/g, ' ').slice(0, 100)}`, dm: msg.ch });
@@ -1427,7 +1431,7 @@
     naoPerturbe: salvo.naoPerturbe === true,
   };
   function avisar(tipo, d) {
-    if (tipo !== 'teste' && (AVISOS.naoPerturbe || !AVISOS[tipo])) return;
+    if (tipo !== 'teste' && (AVISOS.naoPerturbe || statusDe(S.myPid)?.tipo === 'np' || !AVISOS[tipo])) return;
     if (PROGRAMA) {
       if (PROGRAMA.aviso && (!MODO_LEVE || tipo === 'teste')) PROGRAMA.aviso({ tipo, nome: d.nome, cor: d.cor, texto: d.texto, piscar: tipo === 'mencao' }).catch(() => {});
       return;
@@ -1879,9 +1883,11 @@
       let st = '';
       if (u.live) st = `<span class="live-badge">ao vivo</span><span class="ellipsis">${esc(nomeSala(u.sala))}</span>`;
       else if (u.sala) st = `<span class="ellipsis">Em ${esc(nomeSala(u.sala))}</span>`;
+      const stt = statusDe(u.pid);
       if (u.jogo) st = `<span class="mb-jogo ellipsis" title="Jogando ${esc(u.jogo)}">${icon('controle')} ${esc(u.jogo)}</span>${st ? `<span class="ellipsis mb-jogo-sala">${st}</span>` : ''}`;
+      else if (stt) st = `<span class="mb-status ellipsis" title="${esc(textoDoStatus(stt))}">${esc(textoDoStatus(stt))}</span>${st ? `<span class="ellipsis mb-jogo-sala">${st}</span>` : ''}`;
       const eu = u.id === S.myId ? ' <span class="muted small">(você)</span>' : '';
-      return linha(`u${u.id}`, `data-uid="${esc(u.id)}"${u.pid ? ` data-pid="${esc(u.pid)}"` : ''}`, avatar(u, 'dotted'),
+      return linha(`u${u.id}`, `data-uid="${esc(u.id)}"${u.pid ? ` data-pid="${esc(u.pid)}"` : ''}`, avatar(u, `dotted${stt?.tipo ? ` st-${stt.tipo}` : ''}`),
         `<span style="color:${esc(u.color)}">${esc(u.name)}</span>${coroa(u)}${eu}`, st);
     }).join('') + (off.length ? `<h3 class="mb-off">${off.length} offline</h3>` + off.map((p) => linha(`p${p.pid}`,
       `data-pid="${esc(p.pid)}"${p.visto ? ` title="Visto por último ${esc(quandoCurto(p.visto))}"` : ''}`, avatar({ name: p.nome, color: p.cor }),
@@ -1952,7 +1958,8 @@
     const { u, p, nome, cor, eu } = pessoaDoMenu();
     if (!u && !p) return fecharMenuMembro();
     const item = (act, txt, cls = '') => `<button type="button" role="menuitem" class="mm-item${cls}" data-mm="${act}">${txt}</button>`;
-    const status = (u?.jogo ? `Jogando ${esc(u.jogo)} · ` : '') + (u ? (u.live ? `Transmitindo em ${esc(nomeSala(u.sala))}` : u.sala ? `Em ${esc(nomeSala(u.sala))}` : 'Online') : esc(offlineHa(p.visto)));
+    const stMenu = u && statusDe(u.pid || MM.pid);
+    const status = (stMenu ? `${esc(textoDoStatus(stMenu))} · ` : '') + (u?.jogo ? `Jogando ${esc(u.jogo)} · ` : '') + (u ? (u.live ? `Transmitindo em ${esc(nomeSala(u.sala))}` : u.sala ? `Em ${esc(nomeSala(u.sala))}` : 'Online') : esc(offlineHa(p.visto)));
     let corpo;
     if (MM.form) corpo = formDoMenu(MM.form, { u, nome });
     else {
@@ -2121,7 +2128,8 @@
     const me = { name: S.myName, color: S.myColor };
     $('#meAvatar').outerHTML = avatar(me, 'dotted').replace('class="avatar', 'id="meAvatar" class="avatar');
     $('#meName').textContent = S.myName;
-    $('#meStatus').textContent = S.live ? 'Transmitindo' : S.sala ? `Em ${nomeSala(S.sala)}` : S.isAdmin ? 'Online · Admin' : 'Online';
+    const meuSt = statusDe(S.myPid);
+    $('#meStatus').textContent = S.live ? 'Transmitindo' : S.sala ? `Em ${nomeSala(S.sala)}` : meuSt ? textoDoStatus(meuSt) : S.isAdmin ? 'Online · Admin' : 'Online';
 
     // o painel de voz fica sempre à vista: fora de uma sala, só com o microfone e o som
     // (o que for escolhido aqui já vale quando a pessoa entrar)
@@ -6456,7 +6464,7 @@
   }
   function onPerfil(m) {
     if (typeof m.id !== 'string' || typeof m.nome !== 'string') return;
-    (S.perfis ||= {})[m.id] = { ...S.perfis[m.id], nome: m.nome, cor: m.cor, ...(m.visto !== undefined ? { visto: m.visto } : {}), fora: !!m.fora, som: m.som || 0, somVol: m.somVol || 1 };
+    (S.perfis ||= {})[m.id] = { ...S.perfis[m.id], nome: m.nome, cor: m.cor, ...(m.visto !== undefined ? { visto: m.visto } : {}), fora: !!m.fora, som: m.som || 0, somVol: m.somVol || 1, status: m.status || null };
     // o volume da voz e dos sons de cada pessoa fica guardado pelo nome: acompanha a troca
     if (m.antes && m.antes !== m.nome) {
       for (const [obj, chave] of [[VOLUMES_VOZ, 'volVoz'], [VOLUMES_EFEITOS, 'volEfeitos']]) {
@@ -6472,6 +6480,31 @@
     renderTudo();
   }
 
+  // ----- Status: Online, Ausente, Não perturbe e um texto curto -----
+  function secaoStatus() {
+    const s = statusDe(S.myPid) || {};
+    const op = (v, nome) => `<label class="st-op"><input type="radio" name="stTipo" value="${v}"${(s.tipo || '') === v ? ' checked' : ''}><span><i class="st-bola st-${v || 'on'}"></i>${nome}</span></label>`;
+    const vence = s.ate ? `<p class="muted small">Some sozinho ${esc(quandoCurto(s.ate))}.</p>` : '';
+    return `<div class="pf-secao" id="pfStatus"><b>Status</b>
+      <div class="st-ops">${op('', 'Online')}${op('ausente', 'Ausente')}${op('np', 'Não perturbe')}</div>
+      <label class="field"><span>Recado (opcional)</span><input type="text" name="stTexto" maxlength="60" value="${esc(s.texto || '')}" placeholder="Volto às 22h" autocomplete="off"></label>
+      <label class="field"><span>Limpar depois de</span><select name="stLimpar"><option value="">Não limpar</option><option value="60">1 hora</option><option value="240">4 horas</option><option value="hoje">Hoje à meia-noite</option></select></label>
+      ${vence}<p class="muted small">"Não perturbe" desliga os seus avisos e notificações.</p></div>`;
+  }
+  async function salvarStatusDoForm(fd) {
+    const atual = statusDe(S.myPid) || {};
+    const tipo = fd.get('stTipo') || '';
+    const texto = String(fd.get('stTexto') || '').trim();
+    const limpar = fd.get('stLimpar');
+    if (tipo === (atual.tipo || '') && texto === (atual.texto || '') && !limpar) return;
+    let ate = 0;
+    if (limpar === 'hoje') { const d = new Date(); d.setHours(24, 0, 0, 0); ate = d.getTime(); }
+    else if (limpar) ate = Date.now() + Number(limpar) * 60e3;
+    else if (atual.ate && tipo === (atual.tipo || '') && texto === (atual.texto || '')) ate = atual.ate;
+    const r = await api('status', { tipo, texto, ate });
+    (S.perfis[S.myPid] ||= {}).status = r.status;
+  }
+
   // ----- Seu nome: trocar o nome e a cor, e entrar em outro aparelho -----
   function abrirPerfil() {
     if (!S.myPid) return toast('Entre de novo para ter um nome guardado.');
@@ -6481,6 +6514,7 @@
       corpo: `<label class="field"><span>Apelido</span><input type="text" name="nome" maxlength="32" required value="${esc(S.myName)}" autocomplete="off"></label>
         <p class="muted small">É o nome que todo mundo vê. Trocando, as suas mensagens antigas passam a mostrar o nome novo.</p>
         <div class="field"><span>Sua cor</span><div class="color-picker pf-cores">${CORES.map((c) => `<label class="pf-cor"><input type="radio" name="cor" value="${c}"${c === S.myColor ? ' checked' : ''}><span style="background:${c}" aria-label="Cor ${c}"></span></label>`).join('')}</div></div>
+        ${secaoStatus()}
         <div class="pf-secao" id="pfSom"><b>Som ao entrar na sala</b>
           <p class="muted small" id="seEstado"></p>
           <div class="se-botoes"><button type="button" class="btn sm" id="seEscolher">Escolher um .mp3</button>
@@ -6510,6 +6544,7 @@
         <div class="pf-secao"><button type="button" class="link-btn perigo" id="pfEsquecer">Esquecer este aparelho</button>
           <p class="muted small">Ele deixa de entrar com o seu nome. Para voltar, só com um código.</p></div>`,
       aoConfirmar: async (fd) => {
+        await salvarStatusDoForm(fd);
         const r = await api('perfil', { nome: fd.get('nome'), cor: fd.get('cor') || undefined });
         toast(r.nome !== S.myName ? `Pronto: agora você é "${r.nome}".` : 'Salvo.');
       },
