@@ -7132,6 +7132,9 @@
         <p>Baixa um arquivo com canais, perfis, configurações, todas as mensagens e os sons de entrada. Guarde só com você: ele tem os resumos das senhas.</p>
         <div class="ap-row"><button class="btn sm primary" data-act="backup-baixar">Baixar backup</button>
           <button class="btn sm danger" data-act="backup-restaurar">Restaurar um backup…</button></div></div>
+      <div class="ap-section"><h4>Servidor ligado</h4>
+        <p>Ligado desde <b>${esc(new Date(st.ligadoDesde || Date.now()).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }))}</b>.
+        ${st.acordado ? 'Ele se visita a cada 12 minutos para o Render não colocar para dormir.' : 'Fora do Render: não precisa se manter acordado.'}</p></div>
       <div class="ap-section"><h4>Onde ficam os dados</h4>
         <p>${st.storage === 'upstash' ? 'No Upstash (banco na nuvem): canais, mensagens, banimentos e configurações sobrevivem a reinícios.' : 'No arquivo <b>data.json</b>, na pasta do servidor. Numa hospedagem grátis, esse arquivo some quando o serviço reinicia: configure o Upstash (veja o LEIA-ME).'}</p></div>
       ${secaoAparelhos(d)}

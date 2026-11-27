@@ -1430,6 +1430,18 @@ function expulsar(alvo, info) {
   broadcastPresenca();
   armarRemocao(alvo, 3000); // dá tempo do aviso chegar
 }
+// ---------- Manter acordado (Render grátis) ----------
+// O Render grátis dorme depois de 15 min sem nenhum acesso e leva ~1 min para acordar. O servidor se
+// visita pelo endereço público a cada 12 min (o Render passa a variável RENDER_EXTERNAL_URL sozinho).
+// Para desligar: variável MANTER_ACORDADO=0 no Render.
+const LIGADO_DESDE = Date.now();
+const URL_PUBLICA_ACORDAR = process.env.MANTER_ACORDADO === '0' ? '' : String(process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
+if (/^https:\/\//.test(URL_PUBLICA_ACORDAR)) {
+  setInterval(() => {
+    fetch(`${URL_PUBLICA_ACORDAR}/api/config`, { headers: { 'User-Agent': 'caras-e-telas-acordado' }, signal: AbortSignal.timeout(30000) }).catch(() => {});
+  }, 12 * 60e3);
+}
+
 function visaoAdmin() {
   limparSilenciosVencidos();
   return {
@@ -1442,6 +1454,8 @@ function visaoAdmin() {
       ...configPublica(),
       adminFromEnv: !!ADMIN_ENV_HASH,
       storage: USA_UPSTASH ? 'upstash' : 'arquivo',
+      ligadoDesde: LIGADO_DESDE,
+      acordado: !!URL_PUBLICA_ACORDAR,
       turn: visaoTurn(),
     },
   };

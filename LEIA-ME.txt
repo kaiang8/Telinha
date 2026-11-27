@@ -744,6 +744,14 @@ DICAS
     se o limite da hora acabar. As imagens passam pelo servidor, então o
     GIPHY não vê o IP de ninguém. A marca "Powered by GIPHY" no seletor
     é exigência do GIPHY: não tire.
+  - Sempre acordado: no Render grátis, o servidor dormia depois de 15
+    minutos sem ninguém e levava cerca de 1 minuto para acordar. Agora
+    ele mesmo se visita a cada 12 minutos e fica ligado direto. Isso usa
+    quase todas as 750 horas grátis do mês do Render: não crie outro
+    serviço grátis lá, senão os dois dividem as horas e podem ser
+    suspensos no fim do mês. Para conferir: painel de admin → Servidor →
+    "Servidor ligado" (a data só muda quando ele reinicia). Para
+    desligar: no Render, crie a variável MANTER_ACORDADO com o valor 0.
   - Roleta: no canal #roleta, clique em "Criar roleta" (ou no botão de
     roda, ao lado da caixa de mensagem), dê um nome ao sorteio e escreva
     as opções, uma por linha (de 2 a 20). Cada opção tem a mesma chance.
