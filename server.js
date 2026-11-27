@@ -274,6 +274,7 @@ let data = {
   perfis: {}, // cada pessoa: id -> { nome, cor, criado, visto, chaves: [resumos das chaves dos aparelhos] }
   nomesAntigos: {}, // nome (normalizado) das mensagens de antes dos perfis -> id do perfil que ficou com ele
   nomesLegados: [], // nomes (normalizados) que aparecem nas mensagens de antes dos perfis
+  fixadas: {}, // canal -> mensagens fixadas (uma cópia de cada, até 25)
 };
 let podeSalvar = true;
 
@@ -288,6 +289,7 @@ function aplicarDados(raw) {
   if (raw.perfis && typeof raw.perfis === 'object' && !Array.isArray(raw.perfis)) data.perfis = raw.perfis;
   if (raw.nomesAntigos && typeof raw.nomesAntigos === 'object') data.nomesAntigos = raw.nomesAntigos;
   if (Array.isArray(raw.nomesLegados)) data.nomesLegados = raw.nomesLegados;
+  if (raw.fixadas && typeof raw.fixadas === 'object' && !Array.isArray(raw.fixadas)) data.fixadas = raw.fixadas;
 }
 
 async function upstash(comando, { semContar = false } = {}) {
@@ -696,7 +698,25 @@ async function apagarMensagemGuardada(ch, id, pos, pode) {
   citacoesDepois(ch, m, true);
   return { ok: true };
 }
+// ---------- Mensagens fixadas (por canal) ----------
+const FIXADAS_MAX = 25;
+function avisarFixadas(ch) {
+  broadcast({ type: 'fixadas', channel: ch, lista: data.fixadas[ch] || [] });
+}
+// a mensagem foi editada ou apagada: a cópia fixada acompanha
+function mexerNaFixada(ch, id, texto) {
+  const l = data.fixadas[ch];
+  const i = l ? l.findIndex((x) => x.id === id) : -1;
+  if (i < 0) return;
+  if (texto == null) l.splice(i, 1);
+  else l[i] = { ...l[i], texto: String(texto).slice(0, 2000) };
+  if (!l.length) delete data.fixadas[ch];
+  salvar();
+  avisarFixadas(ch);
+}
+
 function esvaziarCanal(ch, sumir = false) {
+  if (data.fixadas[ch]) { delete data.fixadas[ch]; salvar(); avisarFixadas(ch); }
   MSGS.recentes[ch] = [];
   MSGS.total[ch] = 0;
   if (USA_UPSTASH) filaDeMensagens({ tipo: 'del', ch });
@@ -1162,6 +1182,7 @@ function enviarInit(u) {
     ...configPublica(),
     channels: data.channels,
     messages: historico,
+    fixadas: data.fixadas,
     antigas,
     perfis: perfisPublicos(),
     users: listaUsuarios(),
@@ -2091,7 +2112,7 @@ async function restaurarBackup(b) {
   SONS_CACHE.clear();
   // o resto dos dados
   const { messages, ...resto } = b.dados;
-  Object.assign(data, { messages: {}, settings: { locked: false }, bans: [], mutes: [], lembretes: [], perfis: {}, nomesAntigos: {}, nomesLegados: [] });
+  Object.assign(data, { messages: {}, settings: { locked: false }, bans: [], mutes: [], lembretes: [], perfis: {}, nomesAntigos: {}, nomesLegados: [], fixadas: {} });
   aplicarDados({ ...resto, channels: canais, perfis, messages: {} });
   sujo = true;
   clearTimeout(saveTimer);
@@ -2355,6 +2376,7 @@ async function api(req, res, url) {
       regravarMensagem(c.id, m, semPos(m));
       citacoesDepois(c.id, m, false);
       broadcast({ type: 'msg-edit', channel: c.id, id, text: m.text, editada: m.editada });
+      mexerNaFixada(c.id, id, m.text);
       return json(res, 200, { ok: true });
     }
 
@@ -2438,6 +2460,37 @@ async function api(req, res, url) {
       if (r.status === 403) return json(res, 403, { error: 'Você só pode apagar as suas mensagens' });
       if (!r.ok) return json(res, 503, { error: 'Não consegui apagar agora. Tente de novo.' });
       broadcast({ type: 'msg-delete', channel: c.id, id });
+      mexerNaFixada(c.id, id, null);
+      return json(res, 200, { ok: true });
+    }
+
+    case 'fixar': {
+      // qualquer um fixa; desafixa quem fixou, quem escreveu ou um admin
+      const c = canal(body.channel);
+      const id = String(body.id || '');
+      if (!c || c.type !== 'text' || !id) return json(res, 404, { error: 'Mensagem não encontrada' });
+      if (silencioDe(u)) return json(res, 403, { error: 'Você está silenciado por um admin' });
+      if (limiteDe(u, 'limFixar', 10, 30e3)) return json(res, 429, { error: 'Calma, espere um pouco.' });
+      const l = data.fixadas[c.id] || [];
+      const ja = l.find((x) => x.id === id);
+      if (body.fixar === false) {
+        if (!ja) return json(res, 200, { ok: true });
+        if (!(u.admin || (u.pid && (ja.porPid === u.pid || ja.pid === u.pid)))) return json(res, 403, { error: 'Só quem fixou, quem escreveu ou um admin pode desafixar' });
+        mexerNaFixada(c.id, id, null);
+        return json(res, 200, { ok: true });
+      }
+      if (ja) return json(res, 200, { ok: true });
+      if (l.length >= FIXADAS_MAX) return json(res, 400, { error: `Este canal já tem ${FIXADAS_MAX} fixadas. Desafixe uma antes.` });
+      let m;
+      try { m = await acharMensagem(c.id, id, Number(body.pos)); } catch { return json(res, 503, { error: 'Não consegui fixar agora. Tente de novo.' }); }
+      if (!m || m.sistema) return json(res, 404, { error: 'Mensagem não encontrada' });
+      const autor = msgParaEnviar(m);
+      data.fixadas[c.id] = [...l, {
+        id, pos: m.pos, pid: autor.pid || null, nome: m.name, cor: m.color, texto: String(m.text || '').slice(0, 2000), ts: m.ts,
+        por: u.name, porPid: u.pid || null, quando: Date.now(),
+      }];
+      salvar();
+      avisarFixadas(c.id);
       return json(res, 200, { ok: true });
     }
 

@@ -38,6 +38,7 @@
     retry: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
     shield: '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>',
     crown: '<path d="M3.5 8.5 8 12l4-6.5 4 6.5 4.5-3.5-1.8 10H5.3z" fill="currentColor" stroke-width="1.5"/>',
+    pin: '<path d="M9 3.5h6l-.8 6.2 3.3 3.3H6.5l3.3-3.3z"/><path d="M12 13v7.5"/>',
     pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m14 6 4 4"/>',
     responder: '<path d="M10 8.5 4.5 13 10 17.5"/><path d="M4.8 13H14a5.5 5.5 0 0 0 5.5-5.5V6"/>',
     megaphone: '<path d="M3 10v4h3l8 4.5v-13L6 10H3z"/><path d="M17.5 9a3.5 3.5 0 0 1 0 6"/>',
@@ -540,6 +541,7 @@
       case 'signal': return onSignal(m.from, m.data);
       case 'msg-delete': return onMsgDelete(m);
       case 'msg-edit': return onMsgEdit(m);
+      case 'fixadas': return onFixadas(m);
       case 'clear': return onClear(m);
       case 'settings': return onSettings(m);
       case 'announce': return mostrarAviso(m);
@@ -572,6 +574,7 @@
     S.serverName = m.serverName;
     S.channels = m.channels;
     S.messages = m.messages || {};
+    S.fixadas = m.fixadas || {};
     S.antigas = m.antigas || {}; // canal -> posição de onde começam as mais antigas (0: não tem)
     S.perfis = m.perfis || {};
     if (m.me?.pid) S.myPid = m.me.pid;
@@ -839,11 +842,15 @@
     const cls = mencionaMe(m) ? ' mention' : '';
     const minha = (m.pid && m.pid === S.myPid) || m.uid === S.myId;
     const botao = (attr, ic, titulo) => `<button class="icon-btn small" ${attr} title="${titulo}" aria-label="${titulo}">${icon(ic)}</button>`;
+    const fixada = (S.fixadas?.[m.ch] || []).find((x) => x.id === m.id);
+    const podeFixar = !m.sistema && chan(m.ch)?.type === 'text';
     const acoes = `<div class="m-actions">${botao(`data-responder="${esc(m.id)}"`, 'responder', 'Responder')}`
+      + (podeFixar && (!fixada || podeDesafixar(fixada)) ? botao(`data-fixar="${esc(m.id)}"`, 'pin', fixada ? 'Desafixar' : 'Fixar no canal') : '')
       + (minha && !m.sistema ? botao(`data-editar="${esc(m.id)}"`, 'pencil', 'Editar') : '')
       + (minha || S.isAdmin ? botao(`data-delmsg="${esc(m.id)}"`, 'trash', 'Apagar mensagem (Shift+clique apaga sem perguntar)') : '')
-      + '</div>';
-    const attrs = `data-id="${esc(m.id)}"${Number.isInteger(m.pos) ? ` data-pos="${m.pos}"` : ''}`;
+      + '</div>'
+      + (fixada ? `<span class="m-pin" aria-label="Fixada por ${esc(fixada.por)}">${icon('pin')}</span>` : '');
+    const attrs = `data-id="${esc(m.id)}"${Number.isInteger(m.pos) ? ` data-pos="${m.pos}"` : ''}${fixada ? ` title="Fixada por ${esc(fixada.por)}"` : ''}`;
     if (m.sistema === 'boasvindas') {
       const p = S.perfis?.[m.alvo];
       const nome = `<span class="bv-nome" style="--cor:${esc(p?.cor || '#3db3f0')}">${esc(p?.nome || 'alguém')}</span>`;
@@ -860,9 +867,9 @@
       : `<div class="m-text">${formatar(m.text)}</div>`;
     const editada = m.editada ? `<span class="m-editada" title="Editada ${esc(quando(new Date(m.editada)).toLowerCase())}">(editada)</span>` : '';
     if (agrupada) {
-      return h + `<div class="msg${cls}" ${attrs}><span class="m-stamp">${hhmm(d)}</span>${editada ? `<div class="m-editada-linha">${editada}</div>` : ''}${texto}${acoes}</div>`;
+      return h + `<div class="msg${cls}${fixada ? ' fixada' : ''}" ${attrs}><span class="m-stamp">${hhmm(d)}</span>${editada ? `<div class="m-editada-linha">${editada}</div>` : ''}${texto}${acoes}</div>`;
     }
-    return h + `<div class="msg head${cls}${m.resp ? ' com-resp' : ''}" ${attrs}>${m.resp ? citacaoHtml(m) : ''}${avatar(autor)}<div class="m-head"><span class="m-name" style="color:${esc(autor.color)}">${esc(autor.name)}</span>${coroa(m)}<span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span>${editada}</div>${texto}${acoes}</div>`;
+    return h + `<div class="msg head${cls}${fixada ? ' fixada' : ''}${m.resp ? ' com-resp' : ''}" ${attrs}>${m.resp ? citacaoHtml(m) : ''}${avatar(autor)}<div class="m-head"><span class="m-name" style="color:${esc(autor.color)}">${esc(autor.name)}</span>${coroa(m)}<span class="m-time" title="${esc(d.toLocaleString('pt-BR'))}">${quando(d)}</span>${editada}</div>${texto}${acoes}</div>`;
   }
   // A mensagem respondida, em cima da resposta (clicar leva até ela)
   function citacaoHtml(m) {
@@ -967,6 +974,8 @@
     if (resp) return responderMensagem(resp.dataset.responder);
     const ed = e.target.closest('[data-editar]');
     if (ed) return editarMensagem(ed.dataset.editar);
+    const fx = e.target.closest('[data-fixar]');
+    if (fx) return fixarMensagem(fx.dataset.fixar);
     const ir = e.target.closest('[data-ir]');
     if (ir && !ir.classList.contains('apagada')) return irParaMensagem(ir.dataset.ir, ir.dataset.irPos === '' ? null : Number(ir.dataset.irPos));
     const img = e.target.closest('img.embed');
@@ -1024,6 +1033,75 @@
     el.classList.add('piscando');
     setTimeout(() => el.classList.remove('piscando'), 2400);
   }
+
+  // ----- Mensagens fixadas: qualquer um fixa; desafixa quem fixou, quem escreveu ou um admin -----
+  const podeDesafixar = (f) => S.isAdmin || (S.myPid && (f.porPid === S.myPid || f.pid === S.myPid));
+  async function fixarMensagem(id, fixar) {
+    const ch = S.view;
+    const m = (S.messages[ch] || []).find((x) => x.id === id);
+    const ja = (S.fixadas?.[ch] || []).find((x) => x.id === id);
+    if (fixar === undefined) fixar = !ja;
+    try {
+      await api('fixar', { channel: ch, id, pos: m?.pos ?? ja?.pos, fixar });
+      toast(fixar ? 'Mensagem fixada no canal.' : 'Mensagem desafixada.');
+    } catch (e) { toast(e.message); }
+  }
+  function onFixadas(m) {
+    (S.fixadas ||= {})[m.channel] = m.lista || [];
+    if (m.channel !== S.view) return;
+    atualizarBotaoFixadas();
+    rerenderMantendoScroll();
+    if (!$('#fixadasPanel').hidden) desenharFixadas();
+  }
+  function atualizarBotaoFixadas() {
+    const b = $('#fixadasBtn');
+    const n = (S.fixadas?.[S.view] || []).length;
+    b.hidden = chan(S.view)?.type !== 'text';
+    b.innerHTML = `${icon('pin')}${n ? `<span class="fx-n">${n}</span>` : ''}`;
+    b.title = n ? `Mensagens fixadas (${n})` : 'Mensagens fixadas';
+    b.setAttribute('aria-label', b.title);
+    b.classList.toggle('active', !$('#fixadasPanel').hidden);
+    if (b.hidden) $('#fixadasPanel').hidden = true;
+  }
+  function desenharFixadas() {
+    const l = [...(S.fixadas?.[S.view] || [])].reverse();
+    $('#fixadasPanel').innerHTML = `<div class="fx-topo"><b>Fixadas em ${esc(nomeCanal(S.view))}</b>
+        <button class="icon-btn small" data-fx-fechar title="Fechar (Esc)" aria-label="Fechar">${icon('close')}</button></div>
+      ${l.length ? l.map((f) => {
+        const autor = f.pid && S.perfis?.[f.pid] ? { name: S.perfis[f.pid].nome, color: S.perfis[f.pid].cor } : { name: f.nome, color: f.cor };
+        return `<div class="fx-item" data-fx="${esc(f.id)}" data-fx-pos="${Number.isInteger(f.pos) ? f.pos : ''}">
+          <div class="fx-cab"><span class="m-name" style="color:${esc(autor.color || '#8a94a6')}">${esc(autor.name || 'alguém')}</span>
+            <span class="m-time">${esc(new Date(f.ts).toLocaleDateString('pt-BR'))}</span></div>
+          <div class="fx-texto">${formatar(f.texto)}</div>
+          <div class="fx-rodape"><span class="muted small">Fixada por ${esc(f.por)}</span>
+            <button class="btn sm" data-fx-ir>Ir até</button>${podeDesafixar(f) ? '<button class="btn sm ghost" data-fx-tirar>Desafixar</button>' : ''}</div></div>`;
+      }).join('') : '<p class="muted fx-vazio">Nenhuma mensagem fixada aqui. Passe o mouse numa mensagem e clique no alfinete para fixar.</p>'}`;
+  }
+  function abrirFixadas(abrir = $('#fixadasPanel').hidden) {
+    $('#fixadasPanel').hidden = !abrir;
+    if (abrir) {
+      const r = $('#fixadasBtn').getBoundingClientRect();
+      $('#fixadasPanel').style.top = `${Math.round(r.bottom + 6)}px`;
+      $('#fixadasPanel').style.right = `${Math.max(8, Math.round(innerWidth - r.right))}px`;
+      desenharFixadas();
+    }
+    atualizarBotaoFixadas();
+  }
+  $('#fixadasBtn').addEventListener('click', () => abrirFixadas());
+  $('#fixadasPanel').addEventListener('click', (e) => {
+    if (e.target.closest('[data-fx-fechar]')) return abrirFixadas(false);
+    const item = e.target.closest('[data-fx]');
+    if (!item) return;
+    if (e.target.closest('[data-fx-tirar]')) return fixarMensagem(item.dataset.fx, false);
+    if (e.target.closest('[data-fx-ir]')) {
+      abrirFixadas(false);
+      irParaMensagem(item.dataset.fx, item.dataset.fxPos === '' ? null : Number(item.dataset.fxPos));
+    }
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#fixadasPanel').hidden) abrirFixadas(false); });
+  document.addEventListener('mousedown', (e) => {
+    if (!$('#fixadasPanel').hidden && !e.target.closest('#fixadasPanel, #fixadasBtn')) abrirFixadas(false);
+  });
 
   // ----- Editar as próprias mensagens (todo mundo vê "(editada)") -----
   const minhaMensagem = (m) => (m.pid && m.pid === S.myPid) || m.uid === S.myId;
@@ -1220,6 +1298,8 @@
     $('#toggleChatBtn').classList.toggle('active', S.showSalaChat);
     $('#toggleMembersBtn').hidden = sala;
     $('#toggleMembersBtn').classList.toggle('active', S.showMembers);
+    if (S.fixadasDe !== S.view) { S.fixadasDe = S.view; $('#fixadasPanel').hidden = true; }
+    atualizarBotaoFixadas();
 
     const body = $('.main-body');
     body.classList.toggle('sala-view', sala);

@@ -1335,3 +1335,19 @@ img.tl-rosa { animation-name: tlPuloRosa; animation-duration: 2.6s; animation-de
 .nova-versao button { font: inherit; font-weight: 800; border: 0; border-radius: 999px; padding: 3px 12px; cursor: pointer; background: #3d2a00; color: #fff; }
 .nova-versao button.nv-depois { background: transparent; color: #3d2a00; text-decoration: underline; padding: 3px 4px; }
 .nova-versao button:focus-visible { outline: 2px solid #3d2a00; outline-offset: 2px; }
+/* mensagens fixadas */
+.fixadas-btn { position: relative; }
+.fixadas-btn .fx-n { position: absolute; top: 1px; right: 0; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; font-size: 10px; font-weight: 800; line-height: 15px; text-align: center; background: var(--p-forte, #1e88e5); color: #fff; }
+.msg .m-pin { position: absolute; right: 16px; top: 4px; color: var(--fraco); opacity: .85; pointer-events: none; }
+.msg .m-pin .i { width: 15px; height: 15px; }
+.msg:hover .m-pin { display: none; }
+.fixadas-panel { position: fixed; z-index: 40; top: 58px; right: 12px; width: min(380px, calc(100vw - 24px)); max-height: min(70vh, 560px); overflow-y: auto;
+  background: linear-gradient(180deg, var(--pop-1), var(--pop-2)); color: var(--texto); border-radius: 14px; box-shadow: 0 14px 40px rgba(10, 40, 80, .28); border: 1px solid var(--borda-vidro); padding: 10px 12px 12px; }
+.fx-topo b { color: var(--texto-forte); }
+.fx-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0 8px; }
+.fx-item { padding: 10px; border-radius: 10px; background: rgba(120, 160, 200, .12); margin-top: 8px; }
+.fx-cab { display: flex; gap: 8px; align-items: baseline; }
+.fx-texto { margin: 4px 0 8px; max-height: 8.5em; overflow: hidden; overflow-wrap: anywhere; }
+.fx-rodape { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.fx-rodape .muted { margin-right: auto; }
+.fx-vazio { padding: 10px 2px; }
