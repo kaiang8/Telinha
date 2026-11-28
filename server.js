@@ -1223,7 +1223,7 @@ async function definirSomEntrada(pid, audio) {
 // e o GIF só é baixado quando alguém passa o mouse ou abre o cartão.
 const FONTES_NOME = ['padrao', 'gotica', 'pixel', 'bloco', 'script', 'lobster', 'marcador', 'futurista', 'terror', 'redonda', 'quadrinhos', 'classica', 'retro'];
 const EFEITOS_NOME = ['solido', 'degrade', 'neon', 'contorno', '3d', 'bala', 'brilho', 'arcoiris'];
-const MOLDURAS = ['estrelas', 'nuvens', 'coroa', 'chamas', 'gato', 'fone'];
+const MOLDURAS = ['estrelas', 'nuvens', 'coroa', 'chamas', 'gato', 'fone', 'flores', 'neon', 'gelo', 'diabinho', 'anjo', 'raio', 'coracoes', 'galaxia', 'bolhas', 'outono'];
 const COR_HEX = /^#[0-9a-f]{6}$/i;
 const IMG_LIMITES = { av: 1024 * 1024, avp: 80 * 1024, fx: 3 * 1024 * 1024, fxp: 160 * 1024 };
 const ARQUIVO_IMGS = DATA_FILE.replace(/\.json$/i, '') + '-imagens.json';

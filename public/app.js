@@ -6968,32 +6968,118 @@
   };
   const COR2_PADRAO = { degrade: '#ffd23f', contorno: '#ffffff', '3d': '#1b2433', brilho: '#ffffff' };
   // Molduras desenhadas aqui (originais), em volta do avatar redondo do cartão (caixa de 120, avatar de raio 40)
-  const ESTRELA = 'M0 -8C1 -2.2 2.2 -1 8 0C2.2 1 1 2.2 0 8C-1 2.2 -2.2 1 -8 0C-2.2 -1 -1 -2.2 0 -8Z';
-  const CHAMA = 'M0 0C-7 -5 -7 -13 -1 -21C0 -14 5 -13 4 -6C7 -9 8 -12 7 -15C12 -8 10 -1 0 0Z';
-  const NUVEM = 'M0 0a9 9 0 0 1 6-15a12 12 0 0 1 22-4a9 9 0 0 1 13 8a7 7 0 0 1-2 11Z';
-  const MOLDURAS = {
-    estrelas: { nome: 'Estrelas', svg: `<defs><linearGradient id="mfOuro" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff4b0"/><stop offset=".5" stop-color="#ffc83d"/><stop offset="1" stop-color="#ee8a00"/></linearGradient></defs>
-      <circle cx="60" cy="60" r="42.5" fill="none" stroke="url(#mfOuro)" stroke-width="3.5"/>
-      ${[[18, 26, 1], [101, 22, 0.8], [106, 88, 0.6], [13, 92, 0.7], [62, 9, 0.9]].map(([x, y, e], i) => `<path class="mf-pisca" style="animation-delay:${i * 0.45}s" transform="translate(${x} ${y}) scale(${e})" d="${ESTRELA}" fill="url(#mfOuro)" stroke="#c77800" stroke-width=".8"/>`).join('')}` },
-    nuvens: { nome: 'Nuvens', svg: `<g class="mf-flutua" fill="#fff" stroke="#a9d3f2" stroke-width="2.2" stroke-linejoin="round">
-      <path transform="translate(2 101)" d="${NUVEM}"/><path transform="translate(72 105) scale(1.05)" d="${NUVEM}"/></g>
-      <g class="mf-flutua mf-atrasa" fill="#fff" stroke="#a9d3f2" stroke-width="2.2"><path transform="translate(80 26) scale(.7)" d="${NUVEM}"/></g>` },
-    coroa: { nome: 'Coroa', svg: `<defs><linearGradient id="mfCoroa" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff1a0"/><stop offset=".55" stop-color="#ffbf2e"/><stop offset="1" stop-color="#d98200"/></linearGradient></defs>
-      <g transform="translate(40 20) rotate(-18)"><path d="M-19 8L-23 -11L-9 -2L0 -17L9 -2L23 -11L19 8Z" fill="url(#mfCoroa)" stroke="#a86200" stroke-width="1.6" stroke-linejoin="round"/>
-      <rect x="-19" y="6" width="38" height="6" rx="2" fill="#f2a516" stroke="#a86200" stroke-width="1.4"/>
-      <circle cx="0" cy="1" r="3" fill="#e5484d"/><circle cx="-11" cy="4" r="2.2" fill="#3db3f0"/><circle cx="11" cy="4" r="2.2" fill="#3fbf6f"/></g>` },
-    chamas: { nome: 'Chamas', svg: `<defs><linearGradient id="mfFogo" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#e5341d"/><stop offset=".55" stop-color="#ff8a1f"/><stop offset="1" stop-color="#ffe25c"/></linearGradient></defs>
-      ${[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((a, i) => `<g transform="rotate(${a} 60 60) translate(60 21)"><path class="mf-chama" style="animation-delay:${(i % 4) * 0.18}s" transform="scale(${i % 2 ? 0.75 : 1})" d="${CHAMA}" fill="url(#mfFogo)"/></g>`).join('')}` },
-    gato: { nome: 'Gatinho', svg: `<g stroke="#3b3f4c" stroke-width="2" stroke-linejoin="round"><path d="M22 36L28 5L52 23Z" fill="#5a6070"/><path d="M98 36L92 5L68 23Z" fill="#5a6070"/></g>
-      <path d="M28 30L31 14L44 24Z" fill="#ff9fbc"/><path d="M92 30L89 14L76 24Z" fill="#ff9fbc"/>
-      <g stroke="#5a6070" stroke-width="2" stroke-linecap="round"><path d="M4 66L20 70M3 76L19 76M6 86L20 81"/><path d="M116 66L100 70M117 76L101 76M114 86L100 81"/></g>` },
-    fone: { nome: 'Fone gamer', svg: `<path d="M17 64A43 43 0 0 1 103 64" fill="none" stroke="#2b2f3a" stroke-width="8" stroke-linecap="round"/>
-      <path class="mf-luz" d="M21 60A39 39 0 0 1 99 60" fill="none" stroke="#3db3f0" stroke-width="2"/>
-      <rect x="5" y="52" width="17" height="30" rx="7" fill="#2b2f3a"/><rect x="98" y="52" width="17" height="30" rx="7" fill="#2b2f3a"/>
-      <rect class="mf-luz" x="9" y="58" width="4" height="18" rx="2" fill="#3db3f0"/><rect class="mf-luz" x="107" y="58" width="4" height="18" rx="2" fill="#3db3f0"/>
-      <path d="M13 82Q16 104 38 104" fill="none" stroke="#2b2f3a" stroke-width="4" stroke-linecap="round"/><circle class="mf-luz" cx="40" cy="104" r="4" fill="#ff4d6d"/>` },
+  // Molduras do avatar: imagens com o centro vazado (desenhadas no Creative Claw), em /molduras/<id>.webp
+  const MOLDURAS = Object.fromEntries([
+    ['estrelas', 'Estrelas'], ['nuvens', 'Nuvens'], ['coroa', 'Coroa'], ['chamas', 'Chamas'], ['gato', 'Gatinho'], ['fone', 'Fone gamer'],
+    ['flores', 'Flores'], ['neon', 'Neon'], ['gelo', 'Gelo'], ['diabinho', 'Diabinho'], ['anjo', 'Anjo'], ['raio', 'Raio'],
+    ['coracoes', 'Corações'], ['galaxia', 'Galáxia'], ['bolhas', 'Bolhas'], ['outono', 'Outono'],
+  ].map(([id, nome]) => [id, { nome }]));
+  // Animação de cada moldura (só no cartão do perfil): tudo em código por cima da mesma imagem, nada a mais para baixar.
+  // Coordenadas de 0 a 100 na imagem (o furo do avatar fica no centro, com raio 27,8).
+  // aura: brilho colorido pulsando · brilho: reflexo passando · pisca: brilhos [x, y, tamanho] · cai/sobe: partículas
+  // pedacos: partes que se mexem (caixa [x, y, largura, altura], giro = ponto de apoio, fora = só o que está fora desse raio)
+  const MF_ANIM = {
+    estrelas: { brilho: 1, aura: '#ffd23f', pisca: [[33, 23, 1.3], [72, 24, 0.8], [17, 46, 0.9], [77, 65, 1.2], [29, 73, 0.8], [66, 77, 0.8]] },
+    nuvens: { corpo: 'flutua', aura: '#bfe6ff', pisca: [[80, 17, 0.8], [17, 82, 0.7], [88, 68, 0.6], [20, 25, 0.5]] },
+    coroa: { brilho: 1, pisca: [[32, 17, 0.75], [22, 24, 0.55], [41, 16, 0.55], [17, 48, 0.55], [82, 48, 0.55], [66, 22, 0.5], [31, 74, 0.5], [69, 74, 0.5], [50, 81, 0.6]] },
+    chamas: { efeito: 'fogo', aura: '#ff6a10', sobe: { tipo: 'brasa', n: 10 } },
+    gato: { pedacos: [{ caixa: [14, 4, 30, 28], giro: [31, 28], anim: 'orelha', fora: 32 }, { caixa: [56, 4, 30, 28], giro: [69, 28], anim: 'orelha2', fora: 32 }] },
+    fone: { pedacos: [{ caixa: [8, 36, 12, 27], anim: 'rgb' }, { caixa: [80, 36, 12, 27], anim: 'rgb' }, { caixa: [58, 71, 12, 10], anim: 'luz' }] },
+    flores: { corpo: 'balanca', cai: { tipo: 'petala', n: 8 } },
+    neon: { efeito: 'neon', aura: '#ff4fd8', pisca: [[76, 18, 1], [15, 65, 0.9], [26, 78, 0.6]] },
+    gelo: { brilho: 1, aura: '#9fe0ff', cai: { tipo: 'floco', n: 8 } },
+    diabinho: { aura: '#ff2a2a', sobe: { tipo: 'brasa', n: 7 }, pisca: [[29, 10, 0.5], [71, 10, 0.5]] },
+    anjo: { aura: '#ffe27a', pisca: [[26, 21, 0.8], [78, 20, 0.8], [24, 72, 0.8], [78, 68, 0.7], [64, 82, 0.8]], pedacos: [{ caixa: [28, 2, 44, 14.5], anim: 'aureola' }, { caixa: [3, 22, 23, 44], giro: [24, 42], anim: 'asa', fora: 32 }, { caixa: [74, 22, 23, 44], giro: [76, 42], anim: 'asa2', fora: 32 }] },
+    raio: { efeito: 'raio', aura: '#9a7bff', faiscas: 8 },
+    coracoes: { corpo: 'bate', aura: '#ff6b9a', sobe: { tipo: 'coracao', n: 8 } },
+    galaxia: { volta: '#ffe9a8', pisca: [[52, 18, 0.6], [82, 19, 0.6], [17, 44, 0.8], [29, 76, 0.7], [71, 76, 0.9], [82, 65, 0.5], [89, 40, 0.5]] },
+    bolhas: { corpo: 'ondula', sobe: { tipo: 'bolha', n: 9 } },
+    outono: { cai: { tipo: 'folha', n: 7 } },
   };
-  const molduraSvg = (id, cls = 'pc-moldura') => (MOLDURAS[id] ? `<svg class="${cls}" viewBox="0 0 120 120" aria-hidden="true">${MOLDURAS[id].svg}</svg>` : '');
+  const MF_FORMAS = {
+    brilho: '<path class="mf-estrela" d="M0-5C.6-1.2 1.2-.6 5 0C1.2.6.6 1.2 0 5C-.6 1.2-1.2.6-5 0C-1.2-.6-.6-1.2 0-5Z"/>',
+    petala: (r) => `<ellipse rx="1.8" ry="1.05" fill="${r() < 0.6 ? '#ffc2d8' : '#fff1f6'}" stroke="#e58aad" stroke-width=".3"/>`,
+    folha: (r) => `<path d="M0-2.4C1.8-1.4 1.8 1.1 0 2.4C-1.8 1.1-1.8-1.4 0-2.4Z" fill="${['#f08a24', '#d9481c', '#f2b134'][Math.floor(r() * 3)]}" stroke="#8a3a12" stroke-width=".3"/>`,
+    floco: () => '<path d="M0-2.2V2.2M-1.9-1.1L1.9 1.1M-1.9 1.1L1.9-1.1" stroke="#f4fbff" stroke-width=".55" stroke-linecap="round"/>',
+    brasa: (r) => `<circle r="${(0.5 + r() * 0.6).toFixed(2)}" fill="${r() < 0.5 ? '#ffd25a' : '#ff8a2a'}"/>`,
+    bolha: (r) => `<circle r="${(0.9 + r() * 1.4).toFixed(2)}" fill="rgba(190,240,255,.25)" stroke="#bff3ff" stroke-width=".35"/>`,
+    coracao: (r) => `<path d="M0 1.8C-2.6 0-2.4-2 -1.1-2.1C-.4-2.2 0-1.6 0-1.3C0-1.6.4-2.2 1.1-2.1C2.4-2 2.6 0 0 1.8Z" fill="${r() < 0.5 ? '#ff4d7a' : '#ff9ec0'}"/>`,
+  };
+  function sorteio(id) {
+    let x = [...id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+    return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
+  }
+  function defsDasMolduras() {
+    if (document.getElementById('mfDefs')) return;
+    document.body.insertAdjacentHTML('beforeend', `<svg id="mfDefs" width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="mfFogo" x="-15%" y="-15%" width="130%" height="130%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.03 0.08" numOctaves="2" seed="4" result="ruido"><animate attributeName="baseFrequency" dur="2.4s" values="0.03 0.08;0.036 0.1;0.03 0.08" repeatCount="indefinite"/></feTurbulence>
+      <feDisplacementMap in="SourceGraphic" in2="ruido" scale="6" xChannelSelector="R" yChannelSelector="G"/></filter></svg>`);
+  }
+  function camadasDaMoldura(id, src) {
+    const a = MF_ANIM[id] || {};
+    const r = sorteio(id);
+    const img = (estilo = '') => `<img class="mf-base" src="${src}" alt="" decoding="async" draggable="false"${estilo ? ` style="${estilo}"` : ''}>`;
+    const mascara = (url) => `-webkit-mask-image:${url};mask-image:${url}`;
+    let h = a.aura ? `<i class="mf-aura" style="--mf-cor:${a.aura}"><i></i></i>` : '';
+    if (a.pedacos) {
+      // a imagem de baixo fica sem os pedaços (menos o que está dentro do anel); as cópias recortadas se mexem por cima
+      const furos = a.pedacos.map((p) => `M${p.caixa[0]} ${p.caixa[1]}h${p.caixa[2]}v${p.caixa[3]}h${-p.caixa[2]}Z`).join('');
+      const fora = a.pedacos.find((p) => p.fora)?.fora;
+      const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'><path fill-rule='evenodd' d='M0 0H100V100H0Z${furos}'/>${fora ? `<circle cx='50' cy='50' r='${fora}'/>` : ''}</svg>`;
+      h += img(mascara(`url('data:image/svg+xml,${encodeURIComponent(svg).replace(/'/g, '%27')}')`));
+      for (const p of a.pedacos) {
+        const [x, y, w, hh] = p.caixa;
+        const [gx, gy] = p.giro || [x + w / 2, y + hh / 2];
+        const m = p.fora ? `;${mascara(`radial-gradient(circle closest-side,transparent ${p.fora * 2 - 0.6}%,#000 ${p.fora * 2}%)`)}` : '';
+        h += `<span class="mf-pedaco mf-${p.anim}" style="clip-path:inset(${y}% ${100 - x - w}% ${100 - y - hh}% ${x}%);transform-origin:${gx}% ${gy}%${m}">${img()}</span>`;
+      }
+    } else h += img();
+    if (a.brilho) h += '<i class="mf-brilho"></i>';
+    const sv = [];
+    for (const [x, y, e] of a.pisca || []) sv.push(`<g transform="translate(${x} ${y}) scale(${e})"><g class="mf-pisca" style="animation-delay:${(-r() * 3).toFixed(2)}s;animation-duration:${(2.2 + r() * 1.6).toFixed(2)}s">${MF_FORMAS.brilho}</g></g>`);
+    const part = (cfg, cls) => {
+      for (let i = 0; i < cfg.n; i++) {
+        let x;
+        let y;
+        let dx;
+        let dy = 0;
+        if (cls === 'cai') {
+          x = i % 2 ? 4 + r() * 24 : 72 + r() * 24; // pelas laterais, para não ficar na frente do rosto
+          y = -6 + r() * 6;
+          dx = (r() - 0.5) * 14;
+        } else {
+          // em volta do anel (bolhas: da metade de baixo e dos lados), subindo
+          const ang = (cfg.tipo === 'bolha' ? -0.15 + r() * 1.3 : r() * 2) * Math.PI;
+          const raio = 31 + r() * 8;
+          x = 50 + Math.cos(ang) * raio;
+          y = 50 + Math.sin(ang) * raio;
+          dx = (r() - 0.5) * 8;
+          dy = -(12 + r() * 16);
+        }
+        const d = (cls === 'cai' ? 6 + r() * 4 : 2.4 + r() * 2.2).toFixed(2);
+        sv.push(`<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)})"><g class="mf-${cls}" style="--dx:${dx.toFixed(1)}px;--dy:${dy.toFixed(1)}px;animation-duration:${d}s;animation-delay:${(-r() * d).toFixed(2)}s"><g class="mf-gira" style="animation-duration:${(1.4 + r() * 1.4).toFixed(2)}s">${MF_FORMAS[cfg.tipo](r)}</g></g></g>`);
+      }
+    };
+    if (a.cai) part(a.cai, 'cai');
+    if (a.sobe) part(a.sobe, 'sobe');
+    for (let i = 0; i < (a.faiscas || 0); i++) {
+      const ang = r() * Math.PI * 2;
+      const raio = 35 + r() * 9;
+      sv.push(`<g transform="translate(${(50 + Math.cos(ang) * raio).toFixed(1)} ${(50 + Math.sin(ang) * raio).toFixed(1)}) rotate(${Math.round(r() * 360)})"><path class="mf-faisca" style="animation-delay:${(-r() * 3).toFixed(2)}s;animation-duration:${(1.6 + r() * 1.8).toFixed(2)}s" d="M-2.6-1.6L.4-.2L-.6.5L2.6 1.8"/></g>`);
+    }
+    if (a.volta) sv.push(`<g class="mf-volta"><circle cx="50" cy="19.6" r="2.8" fill="${a.volta}" opacity=".35"/><circle cx="50" cy="19.6" r="1.2" fill="#fff"/></g>`);
+    if (sv.length) h += `<svg class="mf-p" viewBox="0 0 100 100">${sv.join('')}</svg>`;
+    return h;
+  }
+  // anima = true só no cartão do perfil; na lista de escolha fica a imagem parada
+  const molduraHtml = (id, cls = 'pc-moldura', anima = false) => {
+    if (!MOLDURAS[id]) return '';
+    const src = `/molduras/${id}.webp?v=3`;
+    if (!anima) return `<img class="${cls}" src="${src}" alt="" aria-hidden="true" decoding="async" draggable="false">`;
+    const a = MF_ANIM[id] || {};
+    if (a.efeito === 'fogo') defsDasMolduras();
+    return `<span class="${cls} mf mf-${id}${a.corpo ? ` mf-c-${a.corpo}` : ''}${a.efeito ? ` mf-e-${a.efeito}` : ''}" style="--mf:url('${src}')" aria-hidden="true">${camadasDaMoldura(id, src)}</span>`;
+  };
   const urlImgPerfil = (pid, t, v) => `/perfil-img/${encodeURIComponent(pid)}/${t}?v=${encodeURIComponent(v)}`;
   const leve = () => document.body.classList.contains('leve');
 
@@ -7059,7 +7145,7 @@
     const fundoFaixa = e.cartao ? `background:linear-gradient(135deg, ${esc(e.cartao[0])}, ${esc(e.cartao[1])})` : `background:linear-gradient(135deg, ${esc(cor)}, color-mix(in srgb, ${esc(cor)} 45%, #1b2433))`;
     return `<div class="pc${previa ? ' pc-previa' : ''}">
       <div class="pc-faixa" style="${fundoFaixa}">${faixa}</div>
-      <div class="pc-av">${avatar({ pid, name: nome, color: cor }, `pc-avatar${online ? ' dotted' : ''}`, { estilo: e, animar: true })}${molduraSvg(e.moldura)}</div>
+      <div class="pc-av${MOLDURAS[e.moldura] ? ' pc-com-moldura' : ''}">${avatar({ pid, name: nome, color: cor }, `pc-avatar${online ? ' dotted' : ''}`, { estilo: e, animar: true })}${molduraHtml(e.moldura, 'pc-moldura', true)}</div>
       <div class="pc-corpo"><div class="pc-nome ellipsis">${nomeHtml(pid, nome, cor, '', { estilo: e })}</div>${sub ? `<div class="pc-sub ellipsis">${sub}</div>` : ''}</div>
     </div>`;
   }
@@ -7142,7 +7228,7 @@
           <div class="se-botoes"><button type="button" class="btn sm" data-vis-enviar="fx">${e.fx ? 'Trocar' : 'Escolher'} faixa</button>${e.fx ? '<button type="button" class="btn sm ghost" data-vis-tirar="fx">Tirar</button>' : ''}</div></div>
         <div class="vis-bloco"><b>Cores do cartão</b><label class="av-op"><input type="checkbox" name="estCartaoLigar"${at.cartao ? ' checked' : ''}> Usar cores próprias (degradê de cima para baixo)</label>
           <div class="vis-cores" id="visCartao"><label><input type="color" name="estCartao1" value="${esc(at.cartao?.[0] || '#3b2a6b')}"> Em cima</label><label><input type="color" name="estCartao2" value="${esc(at.cartao?.[1] || '#16324f')}"> Embaixo</label></div></div>
-        <div class="vis-bloco"><b>Moldura do avatar</b><div class="vis-grade vis-molduras">${radio('estMoldura', '', !at.moldura, '<span class="vis-sem">Nenhuma</span>', 'Sem moldura')}${Object.entries(MOLDURAS).map(([id, m]) => radio('estMoldura', id, at.moldura === id, `<span class="vis-mold"><i></i>${molduraSvg(id, 'vis-mold-svg')}</span><small>${esc(m.nome)}</small>`, m.nome)).join('')}</div></div>
+        <div class="vis-bloco"><b>Moldura do avatar</b><div class="vis-grade vis-molduras">${radio('estMoldura', '', !at.moldura, '<span class="vis-sem">Nenhuma</span>', 'Sem moldura')}${Object.entries(MOLDURAS).map(([id, m]) => radio('estMoldura', id, at.moldura === id, `<span class="vis-mold"><i></i>${molduraHtml(id, 'vis-mold-img')}</span><small>${esc(m.nome)}</small>`, m.nome)).join('')}</div></div>
         <button type="button" class="btn sm ghost" id="visPadrao">Voltar o nome ao padrão</button>
         <input type="file" id="visArquivo" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
       </div>
@@ -7579,6 +7665,7 @@
       { t: 'Jogue junto: na sala Jogatina, quem assiste clica no controle da transmissão e pede para ser o jogador 2. Dá para jogar com controle, teclado e mouse, direto entre os dois computadores.' },
       { t: 'Quem transmite manda: escolhe o que o jogador 2 pode usar, tem prioridade no mouse e tira o controle na hora com Alt+F12 (Alt+F11 deixa jogar sem sair do jogo). Precisa transmitir pelo programa para Windows.' },
       { t: 'Imagem mais rápida na Jogatina: a transmissão aparece assim que chega, sem a espera que o navegador põe para alisar o vídeo.' },
+      { t: 'Molduras do avatar novas e animadas: as 6 antigas foram redesenhadas e chegaram mais 10 (Flores, Neon, Gelo, Diabinho, Anjo, Raio, Corações, Galáxia, Bolhas e Outono). No cartão do perfil elas se mexem: brilhos, faíscas, folhas e pétalas caindo, orelhas e asas.' },
     ] },
     { v: '1.4.7', data: '27/11', nome: 'Lances e disputas', itens: [
       { t: 'Tela mais organizada: todas as configurações numa janela só, com abas (a engrenagem embaixo, ao lado do seu nome). Microfone e fone ficam ali também.' },

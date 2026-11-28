@@ -773,6 +773,14 @@ DICAS
     e ele aparece tampado até alguém clicar. Funciona também com links
     de imagem (a imagem fica borrada). Nos avisos, nas respostas e na
     busca aparece só [spoiler].
+  - Molduras do avatar: são imagens em public/molduras (uma por
+    moldura, com o centro vazado), desenhadas no Creative Claw. A
+    animação de cada uma é feita em código no site (lista MF_ANIM no
+    app.js) e só roda no cartão do perfil; desliga no modo leve e para
+    quem pede menos movimento ao sistema. Para criar uma moldura nova:
+    gerar a imagem com fundo transparente e o furo no meio, pôr em
+    public/molduras/<nome>.webp e acrescentar o nome no MOLDURAS do
+    app.js e do server.js.
   - Espaço guardado (painel de admin → Servidor): mostra quanto do
     Upstash está ocupado (256 MB no plano grátis), separado em
     mensagens, mensagens privadas, fotos e GIFs de perfil, sons de
