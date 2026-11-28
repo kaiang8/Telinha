@@ -307,6 +307,22 @@ async function upstash(comando, { semContar = false } = {}) {
   return j.result;
 }
 
+// Vários comandos numa ida só: 'pipeline' (um depois do outro) ou 'multi-exec' (tudo ou nada)
+async function upstashVarios(comandos, tipo = 'pipeline') {
+  const corpo = JSON.stringify(comandos);
+  contarTrafego('banco', Buffer.byteLength(corpo) + 400);
+  const r = await fetch(`${UPSTASH_URL.replace(/\/$/, '')}/${tipo}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${UPSTASH_TOKEN}`, 'Content-Type': 'application/json' },
+    body: corpo,
+  });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !Array.isArray(j)) throw new Error(j?.error || `HTTP ${r.status}`);
+  const erro = j.find((x) => x && x.error);
+  if (erro) throw new Error(erro.error);
+  return j.map((x) => x?.result);
+}
+
 async function carregarDados() {
   if (USA_UPSTASH) {
     for (let tentativa = 1; tentativa <= 5; tentativa++) {
@@ -517,12 +533,36 @@ const MSGS = {
   timerArquivo: null,
 };
 const semPos = ({ pos, ...m }) => m;
-function lerMensagens(itens, ini) {
+// Mensagens guardadas enxutas: o canal já está no nome da chave, e o nome e a cor de quem mandou
+// vêm do perfil (que é sempre o atual). Na leitura, tudo volta como era.
+function compactar(m) {
+  const { pos, ch, ...x } = m;
+  if (x.pid && data.perfis[x.pid]) { delete x.name; delete x.color; delete x.uid; }
+  if (!x.admin) delete x.admin;
+  return x;
+}
+function descompactar(x, ch) {
+  if (!x || typeof x !== 'object') return x;
+  const m = { ...x, ch: x.ch || ch };
+  if (m.pid && (m.name === undefined || m.color === undefined)) {
+    const p = data.perfis[m.pid];
+    if (m.name === undefined) m.name = p?.nome || 'alguém';
+    if (m.color === undefined) m.color = p?.cor || '#8a94a6';
+  }
+  return m;
+}
+const paraGuardar = (m) => JSON.stringify(compactar(m));
+// Arquivo no GitHub: as primeiras posições de um canal podem ter ido para lá. desloc = quantas;
+// a mensagem da posição P fica no índice P - desloc da lista. ger = muda quando o canal é esvaziado.
+const chaveArquivo = `${CHAVE_UPSTASH}:arquivo`;
+const ARQ = { desloc: {}, ger: {}, compacto: false };
+const desloc = (ch) => (USA_UPSTASH ? ARQ.desloc[ch] || 0 : 0);
+function lerMensagens(itens, ini, ch) {
   const out = [];
   (itens || []).forEach((x, i) => {
     let m = x;
     if (typeof x === 'string') { try { m = JSON.parse(x); } catch { m = null; } }
-    if (m && m.id && !m.apagada) out.push({ ...m, pos: ini + i });
+    if (m && m.id && !m.apagada) out.push({ ...descompactar(m, ch), pos: ini + i });
   });
   return out;
 }
@@ -537,22 +577,39 @@ async function carregarMensagens() {
   const legados = new Set(data.nomesLegados || []);
   for (const l of Object.values(legado)) for (const m of Array.isArray(l) ? l : []) if (m && !m.pid && m.name) legados.add(nomeNormal(m.name));
   data.nomesLegados = [...legados].slice(0, 3000);
+  if (USA_UPSTASH) {
+    try {
+      const h = await upstash(['HGETALL', chaveArquivo]);
+      const pares = Array.isArray(h) ? h : Object.entries(h || {}).flat();
+      for (let i = 0; i + 1 < pares.length; i += 2) {
+        const [k, v] = [String(pares[i]), Number(pares[i + 1])];
+        if (k.startsWith('d:') && Number.isInteger(v) && v > 0) ARQ.desloc[k.slice(2)] = v;
+        else if (k.startsWith('g:') && Number.isInteger(v)) ARQ.ger[k.slice(2)] = v;
+        else if (k === 'compacto') ARQ.compacto = v === 1;
+      }
+    } catch (e) {
+      MSGS.ok = false;
+      console.warn('  ATENÇÃO: não consegui ler o índice do arquivo:', e.message);
+    }
+  }
   for (const c of data.channels) {
     const velhas = (Array.isArray(legado[c.id]) ? legado[c.id] : []).filter((m) => m && m.id).map(semPos);
     try {
       if (USA_UPSTASH) {
+        const d = desloc(c.id);
         let total = Number(await upstash(['LLEN', chaveMsgs(c.id)])) || 0;
-        if (!total && velhas.length) total = Number(await upstash(['RPUSH', chaveMsgs(c.id), ...velhas.map((m) => JSON.stringify(m))])) || 0;
-        let ini = Math.max(0, total - MSG_MEMORIA);
-        let rec = total ? lerMensagens(await upstash(['LRANGE', chaveMsgs(c.id), String(ini), String(total - 1)]), ini) : [];
+        if (!total && !d && velhas.length) total = Number(await upstash(['RPUSH', chaveMsgs(c.id), ...velhas.map((m) => paraGuardar(m))])) || 0;
+        total += d;
+        let ini = Math.max(d, total - MSG_MEMORIA);
+        let rec = total > d ? lerMensagens(await upstash(['LRANGE', chaveMsgs(c.id), String(ini - d), String(total - 1 - d)]), ini, c.id) : [];
         // na troca de versão, o servidor antigo ainda gravou umas mensagens no formato velho: junta as que faltam
         const ids = new Set(rec.map((m) => m.id));
         const desde = rec.length ? rec[0].ts : 0;
         const faltando = rec.length ? velhas.filter((m) => !ids.has(m.id) && m.ts > desde) : [];
         if (faltando.length) {
-          total = Number(await upstash(['RPUSH', chaveMsgs(c.id), ...faltando.map((m) => JSON.stringify(m))])) || total;
-          ini = Math.max(0, total - MSG_MEMORIA);
-          rec = lerMensagens(await upstash(['LRANGE', chaveMsgs(c.id), String(ini), String(total - 1)]), ini);
+          total = (Number(await upstash(['RPUSH', chaveMsgs(c.id), ...faltando.map((m) => paraGuardar(m))])) || total - d) + d;
+          ini = Math.max(d, total - MSG_MEMORIA);
+          rec = lerMensagens(await upstash(['LRANGE', chaveMsgs(c.id), String(ini - d), String(total - 1 - d)]), ini, c.id);
         }
         MSGS.total[c.id] = total;
         MSGS.recentes[c.id] = rec;
@@ -566,12 +623,12 @@ async function carregarMensagens() {
         const lista = MSGS.arquivo[c.id] || [];
         const ini = Math.max(0, lista.length - MSG_MEMORIA);
         MSGS.total[c.id] = lista.length;
-        MSGS.recentes[c.id] = lerMensagens(lista.slice(ini), ini);
+        MSGS.recentes[c.id] = lerMensagens(lista.slice(ini), ini, c.id);
       }
     } catch (e) {
       MSGS.ok = false;
       console.warn(`  ATENÇÃO: não consegui ler as mensagens de ${c.name}:`, e.message);
-      MSGS.recentes[c.id] = lerMensagens(velhas.slice(-MSG_MEMORIA), 0);
+      MSGS.recentes[c.id] = lerMensagens(velhas.slice(-MSG_MEMORIA), 0, c.id);
       MSGS.total[c.id] = 0;
     }
   }
@@ -610,12 +667,15 @@ async function rodarFilaDeMensagens() {
       const op = MSGS.fila[0];
       try {
         if (op.tipo === 'push') {
-          const n = Number(await upstash(['RPUSH', chaveMsgs(op.ch), JSON.stringify(semPos(op.m))]));
-          if (n > 0) op.m.pos = n - 1; // a posição de verdade (se outro servidor gravou junto, corrige)
+          const n = Number(await upstash(['RPUSH', chaveMsgs(op.ch), paraGuardar(op.m)]));
+          if (n > 0) op.m.pos = n - 1 + desloc(op.ch); // a posição de verdade (se outro servidor gravou junto, corrige)
         } else if (op.tipo === 'trocar') {
-          await upstash(['LSET', chaveMsgs(op.ch), String(op.alvo.pos), JSON.stringify(op.valor)]);
+          const i = op.alvo.pos - desloc(op.ch);
+          if (i >= 0) await upstash(['LSET', chaveMsgs(op.ch), String(i), paraGuardar(op.valor)]); // as arquivadas não mudam mais
         } else if (op.tipo === 'del') {
-          await upstash(['DEL', chaveMsgs(op.ch)]);
+          // canal esvaziado: a lista some e o arquivo dele começa uma "geração" nova no GitHub
+          await upstashVarios([['DEL', chaveMsgs(op.ch)], ['HDEL', chaveArquivo, `d:${op.ch}`], ['HINCRBY', chaveArquivo, `g:${op.ch}`, '1']], 'multi-exec');
+          ARQ.ger[op.ch] = (ARQ.ger[op.ch] || 0) + 1;
         }
         MSGS.fila.shift();
       } catch (e) {
@@ -638,7 +698,7 @@ async function itensParaBusca(ch) {
   if (!l) {
     await esperarGravacoes(5000);
     l = await todasAsMensagens(ch);
-    if (l.length === (MSGS.total[ch] || 0)) BUSCA.set(ch, l); // chegou mensagem no meio: usa só desta vez
+    if (l.length + desloc(ch) === (MSGS.total[ch] || 0)) BUSCA.set(ch, l); // chegou mensagem no meio: usa só desta vez
   }
   return l;
 }
@@ -649,8 +709,10 @@ async function buscarMensagens(q, canais, max = 50) {
   const achadas = [];
   for (const c of canais) {
     const l = await itensParaBusca(c.id);
-    for (let pos = l.length - 1; pos >= 0; pos--) {
-      const m = l[pos];
+    const d = desloc(c.id); // as arquivadas no GitHub não entram na busca
+    for (let i = l.length - 1; i >= 0; i--) {
+      const pos = i + d;
+      const m = l[i];
       if (!m || !m.id || m.apagada || m.sistema) continue;
       const alvo = semAcento(`${m.text} ${m.enquete ? m.enquete.opcoes.map((o) => o.t).join(' ') : ''}`);
       if (termos.every((t) => alvo.includes(t))) achadas.push({ ...msgParaEnviar(m), pos, ch: c.id });
@@ -667,7 +729,7 @@ function guardarMensagem(m) {
   const rec = (MSGS.recentes[m.ch] ||= []);
   rec.push(salva);
   if (rec.length > MSG_MEMORIA) rec.splice(0, rec.length - MSG_MEMORIA);
-  if (USA_UPSTASH) { filaDeMensagens({ tipo: 'push', ch: m.ch, m: salva }); BUSCA.get(m.ch)?.push(semPos(m)); }
+  if (USA_UPSTASH) { filaDeMensagens({ tipo: 'push', ch: m.ch, m: salva }); BUSCA.get(m.ch)?.push(semPos(salva)); }
   else { (MSGS.arquivo[m.ch] ||= []).push(semPos(m)); salvarArquivoDeMensagens(); }
   return salva;
 }
@@ -676,11 +738,11 @@ async function acharMensagem(ch, id, pos) {
   const rec = MSGS.recentes[ch] || [];
   const m = rec.find((x) => x.id === id);
   if (m) return m;
-  if (!Number.isInteger(pos) || pos < 0 || pos >= (MSGS.total[ch] || 0)) return null;
+  if (!Number.isInteger(pos) || pos < desloc(ch) || pos >= (MSGS.total[ch] || 0)) return null; // arquivada: só leitura
   let x = null;
   if (USA_UPSTASH) {
-    const bruto = await upstash(['LINDEX', chaveMsgs(ch), String(pos)]);
-    try { x = bruto ? { ...JSON.parse(bruto), pos } : null; } catch { x = null; }
+    const bruto = await upstash(['LINDEX', chaveMsgs(ch), String(pos - desloc(ch))]);
+    try { x = bruto ? { ...descompactar(JSON.parse(bruto), ch), pos } : null; } catch { x = null; }
   } else {
     const y = MSGS.arquivo[ch]?.[pos];
     x = y ? { ...y, pos } : null;
@@ -690,7 +752,8 @@ async function acharMensagem(ch, id, pos) {
 // Grava de novo uma mensagem na mesma posição (editada, ou a "lápide" de uma apagada)
 function regravarMensagem(ch, alvo, valor) {
   const b = BUSCA.get(ch);
-  if (b && alvo.pos < b.length) b[alvo.pos] = valor;
+  const i = alvo.pos - desloc(ch);
+  if (b && i >= 0 && i < b.length) b[i] = valor;
   if (USA_UPSTASH) filaDeMensagens({ tipo: 'trocar', ch, alvo, valor });
   else if (MSGS.arquivo[ch]) { MSGS.arquivo[ch][alvo.pos] = valor; salvarArquivoDeMensagens(); }
 }
@@ -707,9 +770,10 @@ async function atualizarCitacoes(ch, orig, apagada) {
   for (const x of rec) if (x.pos > orig.pos && mexer(x)) regravarMensagem(ch, x, semPos(x));
   // respostas que já saíram da memória (só acontece quando a original também é antiga)
   const ate = rec.length ? rec[0].pos : (MSGS.total[ch] || 0);
-  for (let ini = orig.pos + 1; ini < ate; ini += 500) {
+  const d = desloc(ch);
+  for (let ini = Math.max(orig.pos + 1, d); ini < ate; ini += 500) {
     const fim = Math.min(ate, ini + 500) - 1;
-    const itens = USA_UPSTASH ? await upstash(['LRANGE', chaveMsgs(ch), String(ini), String(fim)]) : (MSGS.arquivo[ch] || []).slice(ini, fim + 1);
+    const itens = USA_UPSTASH ? await upstash(['LRANGE', chaveMsgs(ch), String(ini - d), String(fim - d)]) : (MSGS.arquivo[ch] || []).slice(ini, fim + 1);
     (itens || []).forEach((bruto, i) => {
       let x;
       try { x = typeof bruto === 'string' ? JSON.parse(bruto) : { ...bruto }; } catch { return; }
@@ -755,19 +819,211 @@ function esvaziarCanal(ch, sumir = false) {
   if (data.fixadas[ch]) { delete data.fixadas[ch]; salvar(); avisarFixadas(ch); }
   MSGS.recentes[ch] = [];
   MSGS.total[ch] = 0;
+  delete ARQ.desloc[ch];
   if (USA_UPSTASH) filaDeMensagens({ tipo: 'del', ch });
   else { MSGS.arquivo[ch] = []; salvarArquivoDeMensagens(); }
   if (sumir) { delete MSGS.recentes[ch]; delete MSGS.total[ch]; delete MSGS.arquivo[ch]; }
 }
 async function mensagensAntigas(ch, antes) {
-  const ini = Math.max(0, antes - MSG_PAGINA);
+  const d = desloc(ch);
+  if (antes <= d) return mensagensDoArquivo(ch, antes);
+  const ini = Math.max(d, antes - MSG_PAGINA);
   const rec = MSGS.recentes[ch] || [];
   // o pedaço ainda está na memória: não precisa ir ao banco
   if (rec.length && ini >= rec[0].pos) return { lista: rec.filter((m) => m.pos >= ini && m.pos < antes), mais: ini > 0, desde: ini };
   const itens = USA_UPSTASH
-    ? await upstash(['LRANGE', chaveMsgs(ch), String(ini), String(antes - 1)])
+    ? await upstash(['LRANGE', chaveMsgs(ch), String(ini - d), String(antes - 1 - d)])
     : (MSGS.arquivo[ch] || []).slice(ini, antes);
-  return { lista: lerMensagens(itens, ini), mais: ini > 0, desde: ini };
+  return { lista: lerMensagens(itens, ini, ch), mais: ini > 0, desde: ini };
+}
+
+// ---------- Arquivo das mensagens antigas no GitHub (repositório privado) ----------
+// Os canais guardam as mensagens em blocos de 500 posições. Quando um bloco inteiro é antigo
+// (mais de 1 ano, ou mais de 3 meses se o Upstash passar de 70%), ele vai para um arquivo no
+// GitHub e sai do Upstash. Quem sobe o chat até lá vê as mensagens do mesmo jeito, só leitura.
+// As 300 mais recentes de cada canal nunca saem; as conversas privadas não vão para o GitHub.
+const GH_REPO = /^[\w.-]+\/[\w.-]+$/.test(process.env.ARQUIVO_GITHUB_REPO || '') ? process.env.ARQUIVO_GITHUB_REPO : '';
+const GH_TOKEN = process.env.ARQUIVO_GITHUB_TOKEN || '';
+const GH_API = process.env.ARQUIVO_GITHUB_API || 'https://api.github.com';
+const ARQ_BLOCO = 500;
+const ARQ_DIAS = 365;
+const ARQ_DIAS_CHEIO = 90;
+const ESPACO_LIMITE = Number(process.env.UPSTASH_LIMITE_MB) > 0 ? Number(process.env.UPSTASH_LIMITE_MB) * 1024 * 1024 : 256 * 1024 * 1024;
+const ESPACO_ALERTA = 0.7;
+const ARQ_ESTADO = { ultimo: 0, blocos: 0, erro: '', rodando: false };
+const ARQ_CACHE = new Map(); // caminho -> mensagens (os últimos blocos lidos)
+const arquivoLigado = () => USA_UPSTASH && !!GH_REPO && !!GH_TOKEN;
+const caminhoDoBloco = (ch, ini) => `canais/${ch}/g${ARQ.ger[ch] || 0}/${String(ini).padStart(8, '0')}.json`;
+async function github(metodo, caminho, corpo, cru = false) {
+  const r = await fetch(`${GH_API}/repos/${GH_REPO}/contents/${caminho.split('/').map(encodeURIComponent).join('/')}`, {
+    method: metodo,
+    headers: {
+      Authorization: `Bearer ${GH_TOKEN}`, 'User-Agent': 'caras-e-telas', 'X-GitHub-Api-Version': '2022-11-28',
+      Accept: cru ? 'application/vnd.github.raw+json' : 'application/vnd.github+json',
+      ...(corpo ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: corpo ? JSON.stringify(corpo) : undefined,
+    signal: AbortSignal.timeout(20000),
+  });
+  if (r.status === 404) return null;
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    const e = new Error(r.status === 401 ? 'a chave do GitHub não vale mais (venceu ou foi apagada)' : r.status === 403 ? 'a chave do GitHub não tem permissão de escrever no repositório' : `GitHub respondeu ${r.status}${j.message ? `: ${j.message}` : ''}`);
+    e.status = r.status;
+    throw e;
+  }
+  return cru ? r.text() : r.json();
+}
+async function gravarNoGithub(caminho, texto, mensagem) {
+  const corpo = { message: mensagem, content: Buffer.from(texto, 'utf8').toString('base64') };
+  try {
+    return await github('PUT', caminho, corpo);
+  } catch (e) {
+    if (e.status !== 422 && e.status !== 409) throw e;
+    // o arquivo já existe (uma tentativa anterior parou no meio): grava por cima
+    const atual = await github('GET', caminho);
+    return github('PUT', caminho, { ...corpo, sha: atual?.sha });
+  }
+}
+async function arquivarUmBloco(ch, dias) {
+  const d = desloc(ch);
+  const total = MSGS.total[ch] || 0;
+  if (total - d < ARQ_BLOCO + MSG_MEMORIA) return false;
+  await esperarGravacoes(10000);
+  const itens = await upstash(['LRANGE', chaveMsgs(ch), '0', String(ARQ_BLOCO - 1)]);
+  if (!Array.isArray(itens) || itens.length !== ARQ_BLOCO) return false;
+  const msgs = itens.map((x) => { try { return JSON.parse(x); } catch { return { apagada: true }; } });
+  const maisNova = Math.max(0, ...msgs.map((m) => Number(m.ts) || 0));
+  if (!maisNova || maisNova > Date.now() - dias * 86400e3) return false;
+  const c = canal(ch);
+  await gravarNoGithub(caminhoDoBloco(ch, d), JSON.stringify({
+    formato: 'caras-e-telas-arquivo', versao: 1, canal: ch, nome: c?.name || ch, inicio: d, fim: d + ARQ_BLOCO - 1, criado: Date.now(),
+    mensagens: msgs.map((m) => descompactar(m, ch)),
+  }), `#${c?.name || ch}: mensagens ${d + 1} a ${d + ARQ_BLOCO}`);
+  if (desloc(ch) !== d) return false; // o canal mudou no meio (foi esvaziado): não tira nada
+  // tira do Upstash e anota o deslocamento num passo só (tudo ou nada)
+  await upstashVarios([['LTRIM', chaveMsgs(ch), String(ARQ_BLOCO), '-1'], ['HINCRBY', chaveArquivo, `d:${ch}`, String(ARQ_BLOCO)]], 'multi-exec');
+  ARQ.desloc[ch] = d + ARQ_BLOCO;
+  BUSCA.delete(ch);
+  return true;
+}
+async function rotinaDoArquivo() {
+  if (!arquivoLigado() || !MSGS.ok || ARQ_ESTADO.rodando || desligando) return;
+  ARQ_ESTADO.rodando = true;
+  try {
+    await medirEspaco().catch(() => {});
+    const cheio = ESPACO.bytes != null && ESPACO.bytes > ESPACO_LIMITE * ESPACO_ALERTA;
+    const dias = cheio ? ARQ_DIAS_CHEIO : ARQ_DIAS;
+    let feitos = 0;
+    for (const c of data.channels) {
+      while (feitos < 40 && !desligando && await arquivarUmBloco(c.id, dias)) feitos++;
+    }
+    ARQ_ESTADO.ultimo = Date.now();
+    ARQ_ESTADO.erro = '';
+    if (feitos) {
+      ARQ_ESTADO.blocos += feitos;
+      console.log(`  Arquivo: ${feitos * ARQ_BLOCO} mensagens antigas foram para o GitHub.`);
+      await medirEspaco(true).catch(() => {});
+    }
+  } catch (e) {
+    ARQ_ESTADO.erro = e.message;
+    console.warn('Arquivo no GitHub:', e.message);
+  } finally {
+    ARQ_ESTADO.rodando = false;
+  }
+}
+// Histórico de antes do que está no Upstash: lê o bloco do GitHub (fica guardado na memória)
+async function mensagensDoArquivo(ch, antes) {
+  const ini = Math.max(0, antes - MSG_PAGINA);
+  if (!GH_REPO || !GH_TOKEN) return { lista: [], mais: false, desde: antes, semArquivo: true };
+  const blocoIni = Math.floor((antes - 1) / ARQ_BLOCO) * ARQ_BLOCO;
+  const caminho = caminhoDoBloco(ch, blocoIni);
+  let msgs = ARQ_CACHE.get(caminho);
+  if (!msgs) {
+    const texto = await github('GET', caminho, null, true);
+    if (!texto) return { lista: [], mais: false, desde: antes, semArquivo: true };
+    msgs = JSON.parse(texto).mensagens || [];
+    ARQ_CACHE.set(caminho, msgs);
+    if (ARQ_CACHE.size > 12) ARQ_CACHE.delete(ARQ_CACHE.keys().next().value);
+  }
+  const de = Math.max(ini, blocoIni);
+  const lista = lerMensagens(msgs.slice(de - blocoIni, antes - blocoIni), de, ch).map((m) => ({ ...m, arquivada: true }));
+  return { lista, mais: de > 0, desde: de };
+}
+
+// ---------- Espaço usado no Upstash (painel de admin) ----------
+// Soma o tamanho de cada chave do site (o Upstash informa por chave). Mede no máximo a cada 6 horas,
+// ou quando um admin pede (no máximo a cada 10 minutos).
+const ESPACO = { bytes: null, partes: null, quando: 0, erro: '', medindo: null };
+function parteDaChave(k) {
+  const resto = k.slice(CHAVE_UPSTASH.length + 1);
+  if (resto.startsWith('msgs:dm-')) return 'privadas';
+  if (resto.startsWith('msgs:')) return 'mensagens';
+  if (resto.startsWith('img:')) return 'imagens';
+  if (resto.startsWith('som:')) return 'sons';
+  return 'outros';
+}
+async function medirEspaco(forcar = false) {
+  if (!USA_UPSTASH) return ESPACO;
+  if (ESPACO.medindo) return ESPACO.medindo;
+  if (Date.now() - ESPACO.quando < (forcar ? 10 * 60e3 : 6 * 3600e3)) return ESPACO;
+  ESPACO.medindo = (async () => {
+    const partes = { mensagens: 0, privadas: 0, imagens: 0, sons: 0, outros: 0 };
+    const chaves = [];
+    let cursor = '0';
+    for (let voltas = 0; voltas < 50; voltas++) {
+      const r = await upstash(['SCAN', cursor, 'MATCH', `${CHAVE_UPSTASH}*`, 'COUNT', '500']);
+      cursor = String(r?.[0] ?? '0');
+      chaves.push(...(r?.[1] || []));
+      if (cursor === '0') break;
+    }
+    // os tamanhos vão de 100 em 100 numa ida só
+    for (let i = 0; i < chaves.length; i += 100) {
+      const lote = chaves.slice(i, i + 100);
+      const tam = await upstashVarios(lote.map((k) => ['MEMORY', 'USAGE', k, 'SAMPLES', '0']));
+      lote.forEach((k, j) => { partes[parteDaChave(k)] += Number(tam[j]) || 0; });
+    }
+    Object.assign(ESPACO, { bytes: Object.values(partes).reduce((a, b) => a + b, 0), partes, quando: Date.now(), erro: '' });
+    return ESPACO;
+  })().catch((e) => { ESPACO.erro = e.message; ESPACO.quando = Date.now(); return ESPACO; }).finally(() => { ESPACO.medindo = null; });
+  return ESPACO.medindo;
+}
+function espacoParaAdmin() {
+  return {
+    upstash: USA_UPSTASH, bytes: ESPACO.bytes, partes: ESPACO.partes, limite: ESPACO_LIMITE, alerta: ESPACO_ALERTA, quando: ESPACO.quando, erro: ESPACO.erro,
+    arquivo: {
+      ligado: arquivoLigado(), repo: GH_REPO ? GH_REPO.split('/')[1] : '', ultimo: ARQ_ESTADO.ultimo, erro: ARQ_ESTADO.erro,
+      arquivadas: Object.values(ARQ.desloc).reduce((a, b) => a + b, 0), diasNormal: ARQ_DIAS, diasCheio: ARQ_DIAS_CHEIO,
+    },
+  };
+}
+
+// ---------- Mensagens antigas no formato enxuto (uma vez só, depois de ligar) ----------
+// Regrava cada mensagem só se o formato enxuto for menor. Vai de 200 em 200, devagar, sem atrapalhar.
+async function compactarMensagensGuardadas() {
+  if (!USA_UPSTASH || ARQ.compacto || !MSGS.ok || !podeSalvar) return;
+  let economia = 0;
+  const listas = [...data.channels.map((c) => c.id), ...Object.keys(data.dms || {})];
+  for (const ch of listas) {
+    const n = Number(await upstash(['LLEN', chaveMsgs(ch)])) || 0;
+    for (let ini = 0; ini < n; ini += 200) {
+      if (desligando) return;
+      const itens = await upstash(['LRANGE', chaveMsgs(ch), String(ini), String(Math.min(n, ini + 200) - 1)]);
+      const cmds = [];
+      (itens || []).forEach((bruto, j) => {
+        let m;
+        try { m = JSON.parse(bruto); } catch { return; }
+        const novo = paraGuardar(m);
+        if (novo.length < bruto.length) { cmds.push(['LSET', chaveMsgs(ch), String(ini + j), novo]); economia += bruto.length - novo.length; }
+      });
+      if (cmds.length) await upstashVarios(cmds);
+      await new Promise((ok) => setTimeout(ok, 150));
+    }
+  }
+  await upstash(['HSET', chaveArquivo, 'compacto', '1']);
+  ARQ.compacto = true;
+  console.log(`  Mensagens guardadas no formato enxuto (${Math.round(economia / 1024)} KB a menos).`);
+  ESPACO.quando = 0;
 }
 
 // ---------- Dados guardados à parte (tráfego) ----------
@@ -969,7 +1225,7 @@ const FONTES_NOME = ['padrao', 'gotica', 'pixel', 'bloco', 'script', 'lobster', 
 const EFEITOS_NOME = ['solido', 'degrade', 'neon', 'contorno', '3d', 'bala', 'brilho', 'arcoiris'];
 const MOLDURAS = ['estrelas', 'nuvens', 'coroa', 'chamas', 'gato', 'fone'];
 const COR_HEX = /^#[0-9a-f]{6}$/i;
-const IMG_LIMITES = { av: 1024 * 1024, avp: 80 * 1024, fx: 2 * 1024 * 1024, fxp: 160 * 1024 };
+const IMG_LIMITES = { av: 1024 * 1024, avp: 80 * 1024, fx: 3 * 1024 * 1024, fxp: 160 * 1024 };
 const ARQUIVO_IMGS = DATA_FILE.replace(/\.json$/i, '') + '-imagens.json';
 const IMGS_CACHE = new Map(); // `${pid}:${tipo}` -> { tipo, buf, v } (as mais usadas ficam na memória)
 const IMGS_LENDO = new Map();
@@ -1067,7 +1323,7 @@ async function definirImagemDoPerfil(pid, t, dados, capa) {
     return { ok: true };
   }
   const img = bytesDaImagem(dados, IMG_LIMITES[t]);
-  if (!img) return { status: 413, erro: t === 'av' ? 'Use uma foto, ou um GIF de até 1 MB.' : 'Use uma foto, ou um GIF de até 2 MB.' };
+  if (!img) return { status: 413, erro: t === 'av' ? 'Use uma foto, ou um GIF de até 1 MB.' : 'Use uma foto, ou um GIF de até 3 MB.' };
   let c = null;
   if (img.tipo === 'image/gif') {
     c = bytesDaImagem(capa, IMG_LIMITES[tc]);
@@ -1709,6 +1965,7 @@ function visaoAdmin() {
     problemasNovos: RELATOS.todos().filter((r) => !r.lido).length,
     aparelhos: (limparLembretes(), data.lembretes.map((r) => ({ id: r.id, nome: r.nome, aparelho: r.aparelho, criado: r.criado, usado: r.usado }))),
     trafego: trafegoParaAdmin(),
+    espaco: espacoParaAdmin(),
     settings: {
       ...configPublica(),
       adminFromEnv: !!ADMIN_ENV_HASH,
@@ -1786,12 +2043,12 @@ async function garantirDm(id) {
     if (USA_UPSTASH) {
       const total = Number(await upstash(['LLEN', chaveMsgs(id)])) || 0;
       const ini = Math.max(0, total - MSG_MEMORIA);
-      MSGS.recentes[id] = total ? lerMensagens(await upstash(['LRANGE', chaveMsgs(id), String(ini), String(total - 1)]), ini) : [];
+      MSGS.recentes[id] = total ? lerMensagens(await upstash(['LRANGE', chaveMsgs(id), String(ini), String(total - 1)]), ini, id) : [];
       MSGS.total[id] = total;
     } else {
       const lista = MSGS.arquivo[id] || [];
       const ini = Math.max(0, lista.length - MSG_MEMORIA);
-      MSGS.recentes[id] = lerMensagens(lista.slice(ini), ini);
+      MSGS.recentes[id] = lerMensagens(lista.slice(ini), ini, id);
       MSGS.total[id] = lista.length;
     }
   })().finally(() => dmCarregando.delete(id));
@@ -2200,6 +2457,17 @@ async function acaoAdmin(u, body, res, req) {
       console.log(`! ${u.name} baixou um backup`);
       return json(res, 200, b);
     }
+    case 'medir-espaco': {
+      if (!USA_UPSTASH) return json(res, 400, { error: 'Só dá para medir com o Upstash.' });
+      await medirEspaco(true);
+      return json(res, 200, { ok: true, espaco: espacoParaAdmin() });
+    }
+    case 'arquivar-agora': {
+      if (!arquivoLigado()) return json(res, 400, { error: 'O arquivo no GitHub não está configurado.' });
+      if (limiteDe(u, 'limArquivar', 3, 10 * 60e3)) return json(res, 429, { error: 'Espere uns minutos.' });
+      await rotinaDoArquivo();
+      return json(res, 200, { ok: !ARQ_ESTADO.erro, erro: ARQ_ESTADO.erro || null, espaco: espacoParaAdmin() });
+    }
     case 'turn-desligar':
       USO_TURN.dados.desligado = true;
       USO_TURN.salvar(500);
@@ -2601,7 +2869,7 @@ async function todasAsMensagens(ch) {
   const out = [];
   for (let ini = 0; ini < total; ini += 1000) {
     const itens = await upstash(['LRANGE', chaveMsgs(ch), String(ini), String(Math.min(total, ini + 1000) - 1)]);
-    for (const x of itens || []) { try { out.push(JSON.parse(x)); } catch { out.push({ apagada: true }); } }
+    for (const x of itens || []) { try { out.push(descompactar(JSON.parse(x), ch)); } catch { out.push({ apagada: true }); } }
   }
   return out;
 }
@@ -2631,7 +2899,13 @@ async function montarBackup() {
     }
   }
   const { messages, dms, ...dados } = data; // as conversas privadas não vão para o backup
-  return { formato: BACKUP_FORMATO, versao: 1, criado: Date.now(), dados, mensagens, sons, imagens };
+  let tamanhoImagens = 0;
+  for (const tipos of Object.values(imagens)) for (const x of Object.values(tipos)) tamanhoImagens += x.b64.length;
+  const tamanhoResto = JSON.stringify({ dados, mensagens, sons }).length;
+  // o backup precisa caber na restauração (60 MB): se não couber, as fotos e GIFs de perfil ficam de fora
+  const semImagens = tamanhoResto + tamanhoImagens > BACKUP_MAX - 2 * 1024 * 1024;
+  const arquivo = { desloc: { ...ARQ.desloc }, ger: { ...ARQ.ger } };
+  return { formato: BACKUP_FORMATO, versao: 1, criado: Date.now(), dados, mensagens, sons, imagens: semImagens ? {} : imagens, arquivo, ...(semImagens ? { imagensFora: true } : {}) };
 }
 async function restaurarBackup(b) {
   if (!b || b.formato !== BACKUP_FORMATO || !b.dados || typeof b.dados !== 'object' || !b.mensagens || typeof b.mensagens !== 'object') {
@@ -2649,8 +2923,24 @@ async function restaurarBackup(b) {
       .map((x) => (x && typeof x === 'object' && !Array.isArray(x) ? { ...x, ch } : { apagada: true, ch }));
     if (USA_UPSTASH) {
       await upstash(['DEL', chaveMsgs(ch)]);
-      for (let i = 0; i < lista.length; i += 200) await upstash(['RPUSH', chaveMsgs(ch), ...lista.slice(i, i + 200).map((x) => JSON.stringify(x))]);
+      for (let i = 0; i < lista.length; i += 200) await upstash(['RPUSH', chaveMsgs(ch), ...lista.slice(i, i + 200).map((x) => paraGuardar(x))]);
     } else MSGS.arquivo[ch] = lista;
+  }
+  // o que já estava no GitHub quando o backup foi feito continua contando (as posições batem)
+  if (USA_UPSTASH) {
+    const num = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
+    const desl = b.arquivo && typeof b.arquivo.desloc === 'object' ? b.arquivo.desloc : {};
+    const ger = b.arquivo && typeof b.arquivo.ger === 'object' ? b.arquivo.ger : {};
+    const campos = [];
+    for (const ch of ids) {
+      if (num(desl[ch]) % ARQ_BLOCO === 0 && num(desl[ch]) > 0) campos.push(`d:${ch}`, String(num(desl[ch])));
+      if (num(ger[ch])) campos.push(`g:${ch}`, String(num(ger[ch])));
+    }
+    await upstashVarios([['DEL', chaveArquivo], ...(campos.length ? [['HSET', chaveArquivo, ...campos]] : []), ...(ARQ.compacto ? [['HSET', chaveArquivo, 'compacto', '1']] : [])], 'multi-exec');
+    ARQ.desloc = {};
+    ARQ.ger = {};
+    for (let i = 0; i < campos.length; i += 2) (campos[i].startsWith('d:') ? ARQ.desloc : ARQ.ger)[campos[i].slice(2)] = Number(campos[i + 1]);
+    ARQ_CACHE.clear();
   }
   // sons de entrada: os de quem não está no backup saem
   const perfisNovos = b.dados.perfis && typeof b.dados.perfis === 'object' && !Array.isArray(b.dados.perfis) ? b.dados.perfis : {};
@@ -2731,7 +3021,7 @@ async function api(req, res, url) {
 
   let body;
   try {
-    body = await lerCorpo(req, rota === 'som-entrada' ? 260 * 1024 : rota === 'imagem-perfil' ? 3200 * 1024 : MAX_BODY); // o som e as imagens vão inteiros no corpo
+    body = await lerCorpo(req, rota === 'som-entrada' ? 260 * 1024 : rota === 'imagem-perfil' ? 4600 * 1024 : MAX_BODY); // o som e as imagens vão inteiros no corpo
   } catch (e) {
     return json(res, 400, { error: e.message });
   }
@@ -3234,7 +3524,7 @@ async function api(req, res, url) {
       try {
         if (c.type === 'dm') await garantirDm(c.id);
         const r = await mensagensAntigas(c.id, antes);
-        return json(res, 200, { mensagens: r.lista.map(msgParaEnviar), mais: r.mais, desde: r.desde });
+        return json(res, 200, { mensagens: r.lista.map(msgParaEnviar), mais: r.mais, desde: r.desde, ...(r.semArquivo ? { semArquivo: true } : {}) });
       } catch (e) {
         return json(res, 503, { error: 'Não consegui buscar as mensagens antigas agora. Tente de novo.' });
       }
@@ -3708,6 +3998,11 @@ async function iniciar() {
   iniciarTurn();
   await carregarProblemas();
   garantirSenhaAdmin();
+  setTimeout(() => {
+    compactarMensagensGuardadas().catch((e) => console.warn('Não consegui deixar as mensagens enxutas agora:', e.message))
+      .finally(() => { medirEspaco().catch(() => {}); rotinaDoArquivo(); });
+  }, 90e3);
+  setInterval(rotinaDoArquivo, 24 * 3600e3);
   server.listen(PORT, () => {
     console.log(`\n  ${nomeServidor()} rodando em http://localhost:${PORT}`);
     console.log(precisaSenha() ? '  Entrada protegida por senha.' : '  Entrada sem senha (dá para colocar uma no painel de admin).');

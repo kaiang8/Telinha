@@ -928,7 +928,7 @@
     const botao = (attr, ic, titulo) => `<button class="icon-btn small" ${attr} title="${titulo}" aria-label="${titulo}">${icon(ic)}</button>`;
     const fixada = (S.fixadas?.[m.ch] || []).find((x) => x.id === m.id);
     const podeFixar = !m.sistema && chan(m.ch)?.type === 'text' && !chan(m.ch)?.dm;
-    const acoes = `<div class="m-actions">${botao(`data-responder="${esc(m.id)}"`, 'responder', 'Responder')}`
+    const acoes = m.arquivada ? '' : `<div class="m-actions">${botao(`data-responder="${esc(m.id)}"`, 'responder', 'Responder')}`
       + (podeFixar && (!fixada || podeDesafixar(fixada)) ? botao(`data-fixar="${esc(m.id)}"`, 'pin', fixada ? 'Desafixar' : 'Fixar no canal') : '')
       + (minha && !m.sistema && !m.enquete ? botao(`data-editar="${esc(m.id)}"`, 'pencil', 'Editar') : '')
       + (minha || S.isAdmin ? botao(`data-delmsg="${esc(m.id)}"`, 'trash', 'Apagar mensagem (Shift+clique apaga sem perguntar)') : '')
@@ -1059,6 +1059,7 @@
       const tem = new Set(lista.map((m) => m.id));
       S.messages[ch] = [...r.mensagens.filter((m) => !tem.has(m.id)), ...lista];
       S.antigas[ch] = r.mais ? r.desde : 0;
+      if (r.semArquivo) toast('As mensagens mais antigas deste canal estão no arquivo do GitHub, que não está disponível agora.', 6000);
       if (ch === S.view) {
         // continua vendo a mesma mensagem que estava no topo
         const box = $('#messages');
@@ -5912,6 +5913,33 @@
       <p>É uma estimativa: o número oficial está no painel do Render, em Billing. Se passar do limite sem cartão cadastrado, o Render suspende o site até o mês seguinte. A voz e as transmissões não contam aqui: vão direto entre vocês.</p></div>`;
   }
 
+
+  // Espaço guardado no Upstash (não zera no mês) e o arquivo das mensagens antigas no GitHub
+  function secaoEspaco(e) {
+    if (!e || !e.upstash) return '';
+    const mb = (b) => `${(b / 1048576).toFixed(b >= 100 * 1048576 ? 0 : 1).replace('.', ',')} MB`;
+    const pct = e.bytes != null ? Math.min(100, (e.bytes / e.limite) * 100) : 0;
+    const nivel = pct >= 90 ? 'perigo' : pct >= e.alerta * 100 ? 'alerta' : '';
+    const NOMES = { mensagens: 'Mensagens dos canais', privadas: 'Mensagens privadas', imagens: 'Fotos e GIFs de perfil', sons: 'Sons de entrada', outros: 'Configurações, registros e o resto' };
+    const partes = e.partes ? Object.entries(NOMES).filter(([k]) => e.partes[k]).sort((a, b) => e.partes[b[0]] - e.partes[a[0]])
+      .map(([k, n]) => `<li><span>${n}</span><span>${mb(e.partes[k])}</span></li>`).join('') : '';
+    const a = e.arquivo || {};
+    const arq = a.ligado
+      ? `<p><b>Arquivo no GitHub: ligado</b> (repositório ${esc(a.repo)}). ${a.arquivadas ? `${a.arquivadas.toLocaleString('pt-BR')} mensagens antigas já estão lá e continuam aparecendo quando alguém sobe o chat.` : 'Nenhuma mensagem precisou ir para lá ainda.'}
+        Uma vez por dia, as de mais de 1 ano vão para lá sozinhas (as de mais de 3 meses, se o espaço passar de ${Math.round(e.alerta * 100)}%). As 300 mais recentes de cada canal e as conversas privadas nunca saem.${a.ultimo ? ` Última verificação: ${quandoCurto(a.ultimo)}.` : ''}</p>
+        ${a.erro ? `<p class="ap-falha">Problema no arquivo: ${esc(a.erro)}. Enquanto isso, nada sai do Upstash.</p>` : ''}`
+      : '<p><b>Arquivo no GitHub: desligado.</b> Falta pôr o repositório e a chave no Render (ARQUIVO_GITHUB_REPO e ARQUIVO_GITHUB_TOKEN). O passo a passo está no LEIA-ME.</p>';
+    return `<div class="ap-section"><h4>Espaço guardado no banco (Upstash)${nivel ? ` <span class="ap-tag gold">${Math.round(pct)}%</span>` : ''}</h4>
+      ${e.bytes == null
+        ? `<p>${e.erro ? `Não consegui medir agora: ${esc(e.erro)}.` : 'Ainda não foi medido: mede sozinho alguns minutos depois de o servidor ligar, e depois a cada 6 horas.'}</p>`
+        : `<div class="trafego-barra ${nivel}" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct)}" aria-label="Espaço usado"><div style="width:${pct.toFixed(1)}%"></div></div>
+          <p><b>${mb(e.bytes)}</b> de ${mb(e.limite)} (${pct < 1 ? 'menos de 1' : Math.round(pct)}%). Medido ${quandoCurto(e.quando)}.${nivel ? ' Está passando de 70%: as mensagens antigas começam a ir para o GitHub mais cedo.' : ''}</p>
+          ${partes ? `<ul class="trafego-partes">${partes}</ul>` : ''}`}
+      ${arq}
+      <div class="ap-row"><button class="btn sm" data-act="medir-espaco">Medir agora</button>${a.ligado ? '<button class="btn sm" data-act="arquivar-agora">Arquivar agora</button>' : ''}</div>
+      <p>Diferente do tráfego, o espaço não zera todo mês: é o que está guardado. Se chegar a 100%, o Upstash grátis para de aceitar mensagens novas (sem cobrar nada).</p></div>`;
+  }
+
   // ================= Programa desatualizado =================
   // O servidor diz qual é a versão mais nova do programa; se a deste for mais antiga, avisa
   // (e, nas versões que sabem, pede para o programa procurar a atualização na hora).
@@ -6648,8 +6676,8 @@
   async function prepararImagemDoPerfil(tipo, arquivo) {
     const av = tipo === 'av';
     if (arquivo.type === 'image/gif') {
-      const max = av ? 1024 * 1024 : 2 * 1024 * 1024;
-      if (arquivo.size > max) throw new Error(`O GIF pode ter até ${av ? '1 MB' : '2 MB'} (esse tem ${(arquivo.size / 1048576).toFixed(1).replace('.', ',')} MB). Diminua ele num site de GIFs, ou use uma foto.`);
+      const max = av ? 1024 * 1024 : 3 * 1024 * 1024;
+      if (arquivo.size > max) throw new Error(`O GIF pode ter até ${av ? '1 MB' : '3 MB'} (esse tem ${(arquivo.size / 1048576).toFixed(1).replace('.', ',')} MB). Diminua ele num site de GIFs, ou use uma foto.`);
       return { dados: await lerArquivoComoDataUrl(arquivo), capa: await imagemRecortada(arquivo, av ? 128 : 480, av ? 128 : 192, 0.82) };
     }
     if (!/^image\//.test(arquivo.type)) throw new Error('Escolha uma imagem (PNG, JPG, WebP) ou um GIF.');
@@ -6672,7 +6700,7 @@
           <p class="cfg-dica" id="visCorDica"></p></div>
         <div class="vis-bloco"><b>Foto ou GIF</b><p class="cfg-dica">Uma foto (vira quadradinha e leve sozinha) ou um GIF de até 1 MB. No chat e na lista, o GIF se mexe quando passam o mouse; no cartão, sempre.</p>
           <div class="se-botoes"><button type="button" class="btn sm" data-vis-enviar="av">${e.av ? 'Trocar' : 'Escolher'} foto ou GIF</button>${e.av ? '<button type="button" class="btn sm ghost" data-vis-tirar="av">Tirar</button>' : ''}</div></div>
-        <div class="vis-bloco"><b>Faixa do cartão</b><p class="cfg-dica">A imagem no topo do seu cartão. Uma foto ou um GIF de até 2 MB.</p>
+        <div class="vis-bloco"><b>Faixa do cartão</b><p class="cfg-dica">A imagem no topo do seu cartão. Uma foto ou um GIF de até 3 MB.</p>
           <div class="se-botoes"><button type="button" class="btn sm" data-vis-enviar="fx">${e.fx ? 'Trocar' : 'Escolher'} faixa</button>${e.fx ? '<button type="button" class="btn sm ghost" data-vis-tirar="fx">Tirar</button>' : ''}</div></div>
         <div class="vis-bloco"><b>Cores do cartão</b><label class="av-op"><input type="checkbox" name="estCartaoLigar"${at.cartao ? ' checked' : ''}> Usar cores próprias (degradê de cima para baixo)</label>
           <div class="vis-cores" id="visCartao"><label><input type="color" name="estCartao1" value="${esc(at.cartao?.[0] || '#3b2a6b')}"> Em cima</label><label><input type="color" name="estCartao2" value="${esc(at.cartao?.[1] || '#16324f')}"> Embaixo</label></div></div>
@@ -8201,7 +8229,7 @@
   function abaServidor(d) {
     const st = d.settings;
     const canais = S.channels.map((c) => `<option value="${esc(c.id)}"${c.id === S.view ? ' selected' : ''}>${esc(nomeCanal(c.id))}</option>`).join('');
-    return `${secaoTrafego(d.trafego)}
+    return `${secaoTrafego(d.trafego)}${secaoEspaco(d.espaco)}
       <div class="ap-section"><h4>Nome do servidor</h4>
         <div class="ap-row"><input id="apNome" data-keep maxlength="40" value="${esc(st.serverName)}"><button class="btn sm primary" data-act="salvar-nome">Salvar</button></div></div>
       <div class="ap-section"><h4>Senha de entrada ${st.needsPassword ? '<span class="ap-tag gold">ativa</span>' : '<span class="ap-tag">sem senha</span>'}</h4>
@@ -8502,7 +8530,8 @@
             const r = await adm('backup');
             baixarBackup(r);
             const n = Object.values(r.mensagens).reduce((t, l) => t + l.filter((m) => m && m.id && !m.apagada).length, 0);
-            return toast(`Backup baixado: ${n} mensagens, ${Object.keys(r.dados.perfis || {}).length} perfis.`, 6000);
+            const arq = Object.values(r.arquivo?.desloc || {}).reduce((t, x) => t + x, 0);
+            return toast(`Backup baixado: ${n} mensagens, ${Object.keys(r.dados.perfis || {}).length} perfis.${arq ? ` As ${arq.toLocaleString('pt-BR')} mais antigas já estão guardadas no GitHub.` : ''}${r.imagensFora ? ' As fotos e GIFs de perfil ficaram de fora: com elas, o backup passaria do que dá para restaurar.' : ''}`, 9000);
           } finally { b.disabled = false; }
         }
         case 'backup-restaurar': return escolherBackup();
@@ -8543,6 +8572,13 @@
             aoConfirmar: async () => { await adm('limpar-conexoes'); P.conexoes = null; renderPainel(); toast('Registro de conexões limpo.'); },
           });
         case 'salvar-nome': await adm('settings', { serverName: val('apNome') }); return feito('Nome do servidor salvo.');
+        case 'medir-espaco': b.disabled = true; b.textContent = 'Medindo…'; await adm('medir-espaco'); return feito('Espaço medido.');
+        case 'arquivar-agora': {
+          b.disabled = true;
+          b.textContent = 'Arquivando…';
+          const r = await adm('arquivar-agora');
+          return feito(r.erro ? `Problema no arquivo: ${r.erro}` : 'Pronto: o que tinha para arquivar foi para o GitHub.');
+        }
         case 'salvar-senha':
           if (!val('apSenha')) throw new Error('Digite a nova senha');
           await adm('settings', { senha: val('apSenha') });

@@ -1810,3 +1810,5 @@ body.leve .nm, body.leve .mf-pisca, body.leve .mf-chama, body.leve .mf-flutua, b
   .vis { grid-template-columns: 1fr; }
   .vis-previa { position: static; order: -1; }
 }
+
+.ap-falha { color: #d1242f; font-weight: 600; }
