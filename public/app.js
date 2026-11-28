@@ -7074,7 +7074,7 @@
   // anima = true só no cartão do perfil; na lista de escolha fica a imagem parada
   const molduraHtml = (id, cls = 'pc-moldura', anima = false) => {
     if (!MOLDURAS[id]) return '';
-    const src = `/molduras/${id}.webp?v=3`;
+    const src = `/molduras/${id}.webp?v=4`;
     if (!anima) return `<img class="${cls}" src="${src}" alt="" aria-hidden="true" decoding="async" draggable="false">`;
     const a = MF_ANIM[id] || {};
     if (a.efeito === 'fogo') defsDasMolduras();
