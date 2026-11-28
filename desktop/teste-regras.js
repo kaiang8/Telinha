@@ -270,4 +270,16 @@ t('jogatina: o que o jogador 2 manda vira comando, e só o que foi permitido', (
   assert.equal(R.TECLAS_COOP.Digit0[0], 0x0b);
 });
 
+t('todo arquivo que o programa usa vai junto no instalador', () => {
+  const fs = require('node:fs');
+  const arquivos = require('./package.json').build.files;
+  for (const f of ['main.js', 'preload.js', 'coop.js', 'ajudante.js', 'regras.js']) {
+    const codigo = fs.readFileSync(`${__dirname}/${f}`, 'utf8');
+    for (const [, nome] of codigo.matchAll(/require\('\.\/([^']+)'\)/g)) {
+      const arq = nome.endsWith('.js') ? nome : `${nome}.js`;
+      assert.ok(arquivos.includes(arq), `${arq} (usado em ${f}) não está em build.files`);
+    }
+  }
+});
+
 console.log(`\n${n} grupos de testes passaram.`);
