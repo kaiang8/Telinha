@@ -234,4 +234,40 @@ t('lances: só grava vídeo de verdade, com nome que o Windows aceita', () => {
   assert.ok(!/[<>:"/\\|?*]/.test(R.nomeDoLance('a/b\\c:d', quando)));
 });
 
+t('jogatina: o que o jogador 2 manda vira comando, e só o que foi permitido', () => {
+  const tudo = { controle: true, teclado: true, mouse: true };
+  const e = R.novoEstadoCoop();
+  assert.equal(R.linhaDeCoop({ t: 'k', c: 'KeyW', d: 1 }, tudo, e), 'k 17 0 1');
+  assert.equal(R.linhaDeCoop({ t: 'k', c: 'ArrowUp', d: 0 }, tudo, e), 'k 72 1 0');
+  assert.equal(R.linhaDeCoop({ t: 'k', c: 'Space', d: 1 }, tudo, e), 'k 57 0 1');
+  assert.equal(R.linhaDeCoop({ t: 'k', c: 'MetaLeft', d: 1 }, tudo, e), null); // tecla Windows
+  assert.equal(R.linhaDeCoop({ t: 'k', c: 'PrintScreen', d: 1 }, tudo, e), null);
+  assert.equal(R.linhaDeCoop({ t: 'k', c: 'AltLeft', d: 1 }, tudo, e), 'k 56 0 1');
+  assert.equal(R.linhaDeCoop({ t: 'k', c: 'Tab', d: 1 }, tudo, e), null); // Alt+Tab
+  assert.equal(R.linhaDeCoop({ t: 'k', c: 'F4', d: 1 }, tudo, e), null); // Alt+F4
+  assert.equal(R.linhaDeCoop({ t: 'k', c: 'AltLeft', d: 0 }, tudo, e), 'k 56 0 0');
+  assert.equal(R.linhaDeCoop({ t: 'k', c: 'Tab', d: 1 }, tudo, e), 'k 15 0 1'); // sem Alt, Tab passa
+  R.linhaDeCoop({ t: 'k', c: 'ControlLeft', d: 1 }, tudo, e);
+  assert.equal(R.linhaDeCoop({ t: 'k', c: 'Escape', d: 1 }, tudo, e), null); // Ctrl+Esc
+  assert.equal(R.linhaDeCoop({ t: 'ma', x: 0.5, y: 1 }, tudo, e), 'ma 32768 65535');
+  assert.equal(R.linhaDeCoop({ t: 'ma', x: 2, y: -1 }, tudo, e), 'ma 65535 0');
+  assert.equal(R.linhaDeCoop({ t: 'ma', x: 'a', y: 0 }, tudo, e), null);
+  assert.equal(R.linhaDeCoop({ t: 'mr', dx: 5000, dy: -3 }, tudo, e), 'mr 2000 -3');
+  assert.equal(R.linhaDeCoop({ t: 'mb', b: 1, d: 1 }, tudo, e), 'mb 1 1');
+  assert.equal(R.linhaDeCoop({ t: 'mb', b: 9, d: 1 }, tudo, e), null);
+  assert.equal(R.linhaDeCoop({ t: 'mw', y: -120 }, tudo, e), 'mw -120 0');
+  assert.equal(R.linhaDeCoop({ t: 'gp', b: 0x1000 | 0x0400, lt: 0, rt: 255, lx: 40000, ly: -100, rx: 0, ry: 0 }, tudo, e), 'p 4096 0 255 32767 -100 0 0'); // sem o botão guia
+  assert.equal(R.linhaDeCoop({ t: 'gp', b: 1, lt: 0, rt: 0, lx: 0, ly: 0, rx: 0 }, tudo, e), null);
+  const soControle = R.permissoesCoop({ controle: true, teclado: 'sim', mouse: 1 });
+  assert.deepEqual(soControle, { controle: true, teclado: false, mouse: false });
+  assert.equal(R.linhaDeCoop({ t: 'k', c: 'KeyW', d: 1 }, soControle, e), null);
+  assert.equal(R.linhaDeCoop({ t: 'ma', x: 0.5, y: 0.5 }, soControle, e), null);
+  assert.equal(R.linhaDeCoop({ t: 'solta' }, soControle, e), 'solta');
+  assert.equal(R.linhaDeCoop(null, tudo, e), null);
+  assert.equal(R.TECLAS_COOP.KeyA[0], 0x1e);
+  assert.equal(R.TECLAS_COOP.KeyZ[0], 0x2c);
+  assert.equal(R.TECLAS_COOP.F10[0], 0x44);
+  assert.equal(R.TECLAS_COOP.Digit0[0], 0x0b);
+});
+
 console.log(`\n${n} grupos de testes passaram.`);

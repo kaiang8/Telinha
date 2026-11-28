@@ -47,6 +47,31 @@ jobs:
           cl /nologo /O2 /MT /EHsc /std:c++17 /W3 /utf-8 /DUNICODE /D_UNICODE nativo\som-programa.cpp /Fo:nativo\bin\ /Fe:nativo\bin\som-programa.exe /link ole32.lib oleaut32.lib mmdevapi.lib version.lib user32.lib dwmapi.lib || exit /b 1
           nativo\bin\som-programa.exe --versao || exit /b 1
 
+      - name: Compilar o ajudante do jogador 2 (C++)
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSDIR=%%i"
+          call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
+          if not exist nativo\bin mkdir nativo\bin
+          if not exist nativo\obj mkdir nativo\obj
+          rem com o controle virtual (ViGEmClient, código aberto); se não der, sai só com teclado e mouse
+          git clone --depth 1 https://github.com/nefarius/ViGEmClient.git nativo\vigem
+          if exist nativo\vigem\src\ViGEmClient.cpp (
+            cl /nologo /O2 /MT /EHsc /std:c++17 /W3 /utf-8 /DUNICODE /D_UNICODE /DCOM_VIGEM /Inativo\vigem\include nativo\controle-programa.cpp nativo\vigem\src\ViGEmClient.cpp /Fo:nativo\obj\ /Fe:nativo\bin\controle-programa.exe /link setupapi.lib user32.lib dwmapi.lib
+          )
+          if not exist nativo\bin\controle-programa.exe (
+            echo AVISO: compilando sem o controle virtual
+            cl /nologo /O2 /MT /EHsc /std:c++17 /W3 /utf-8 /DUNICODE /D_UNICODE nativo\controle-programa.cpp /Fo:nativo\obj\ /Fe:nativo\bin\controle-programa.exe /link user32.lib dwmapi.lib || exit /b 1
+          )
+          nativo\bin\controle-programa.exe --versao || exit /b 1
+
+      - name: Testar o ajudante do jogador 2 (comandos)
+        shell: pwsh
+        run: |
+          $saida = "alvo tela 0 0 100 100`nsolta`nsair`n" | & ./nativo/bin/controle-programa.exe
+          Write-Output $saida
+          if (-not ($saida -match 'pronto vigem=')) { throw 'o ajudante do jogador 2 não respondeu' }
+
       - name: Testar o ajudante de som (lista de programas)
         shell: pwsh
         run: |

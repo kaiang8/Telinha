@@ -79,6 +79,14 @@ contextBridge.exposeInMainWorld('carasETelas', {
     piscar: d.piscar === true,
   } : null),
   // Tema escolhido no site: o programa usa nas telas dele (carregando, seletor de tela)
+  // a partir da 1.4.8: jogador 2 na sala Jogatina (quem transmite recebe os comandos do outro)
+  coop: {
+    ligar: (p) => ipcRenderer.invoke('coop-ligar', { controle: p?.controle === true, teclado: p?.teclado === true, mouse: p?.mouse === true }),
+    permissoes: (p) => ipcRenderer.invoke('coop-permissoes', { controle: p?.controle === true, teclado: p?.teclado === true, mouse: p?.mouse === true }),
+    entrada: (lista) => { if (Array.isArray(lista) && lista.length) ipcRenderer.send('coop-entrada', lista.slice(0, 200)); },
+    desligar: () => ipcRenderer.invoke('coop-desligar'),
+    aoAviso: (fn) => { ipcRenderer.removeAllListeners('coop-aviso'); ipcRenderer.on('coop-aviso', (_e, t) => fn(String(t))); },
+  },
   // a partir da 1.4.7: lances (os últimos 30 s de uma transmissão) numa pasta do computador
   salvarLance: (d) => ipcRenderer.invoke('salvar-lance', d && typeof d === 'object'
     ? { dados: d.dados, quem: String(d.quem ?? '').slice(0, 64), tipo: String(d.tipo ?? '').slice(0, 60) } : null),

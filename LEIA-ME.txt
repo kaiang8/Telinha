@@ -784,6 +784,25 @@ DICAS
     cor de quem mandou (vêm do perfil na hora de mostrar). Ocupam mais
     ou menos metade do espaço de antes. As antigas foram convertidas
     sozinhas na primeira vez que o servidor ligou com esta versão.
+  - Jogador 2 (sala Jogatina): quem assiste uma transmissão na sala
+    Jogatina clica no botão do controle, embaixo da tela, e pede para
+    jogar. Quem transmite (só pelo programa para Windows 1.4.8 ou mais
+    novo) escolhe o que o jogador 2 pode usar: controle, teclado e/ou
+    mouse. Os comandos vão direto entre os dois computadores, pelo
+    mesmo caminho da imagem: não passam pelo servidor nem pelo Upstash.
+    Regras de segurança: o teclado e o mouse do jogador 2 só funcionam
+    com a janela compartilhada na frente; tecla Windows, Alt+Tab,
+    Alt+F4 e Ctrl+Esc nunca passam; se quem transmite mexer no mouse,
+    o do jogador 2 espera (prioridade); Alt+F12 tira o controle na hora
+    e Alt+F11 deixa jogar sem sair do jogo. Compartilhar só a janela do
+    jogo é mais seguro do que a tela inteira.
+    Controle: o controle do jogador 2 vira um controle de Xbox no
+    computador de quem transmite. Para isso, quem transmite instala uma
+    vez o ViGEmBus (gratuito): github.com/nefarius/ViGEmBus/releases.
+    Sem ele, teclado e mouse funcionam normalmente.
+    Atraso esperado: uns 40 a 80 ms com cabo de rede nos dois (mais no
+    Wi-Fi). Para ficar rápido: cabo, 1080p 60 fps e jogo em janela sem
+    bordas.
   - Arquivo no GitHub: uma vez por dia, os blocos de 500 mensagens de um
     canal que já têm mais de 1 ano (ou mais de 3 meses, se o espaço
     passar de 70%) vão para um repositório privado no GitHub e saem do

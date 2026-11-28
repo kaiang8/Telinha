@@ -209,7 +209,7 @@ function validarTraco(d) {
   return { tr: d.tr, c: d.c, p, fim: d.fim === true, nome };
 }
 // ---- aviso por cima do jogo: alguém entrou na sua sala, alguém te mencionou ----
-const TIPOS_DE_AVISO = new Set(['entrada', 'mencao', 'teste']);
+const TIPOS_DE_AVISO = new Set(['entrada', 'mencao', 'teste', 'coop']);
 function validarAviso(d) {
   if (!d || typeof d !== 'object' || !TIPOS_DE_AVISO.has(d.tipo)) return null;
   const limpo = (x, max) => (typeof x === 'string' ? x.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '');
@@ -341,6 +341,81 @@ function validarLance(d, quando) {
   return { dados, ext, base: nomeDoLance(d.quem, quando) };
 }
 
+// ---------- Jogatina: o que chega do jogador 2 vira comando para o controle-programa.exe ----------
+// Teclas pela posição física (KeyboardEvent.code), no código que o Windows usa (scancode, set 1).
+// A tecla Windows, Print Screen e Pause não passam; Alt+Tab, Alt+F4, Alt+Esc, Alt+Espaço e
+// Ctrl+Esc também não (o jogador 2 não sai do jogo nem mexe no resto do computador).
+const TECLAS_COOP = (() => {
+  const t = {};
+  'QWERTYUIOP'.split('').forEach((l, i) => { t[`Key${l}`] = [0x10 + i]; });
+  'ASDFGHJKL'.split('').forEach((l, i) => { t[`Key${l}`] = [0x1e + i]; });
+  'ZXCVBNM'.split('').forEach((l, i) => { t[`Key${l}`] = [0x2c + i]; });
+  '123456789'.split('').forEach((n, i) => { t[`Digit${n}`] = [0x02 + i]; });
+  for (let i = 1; i <= 10; i++) t[`F${i}`] = [0x3a + i];
+  Object.assign(t, {
+    Digit0: [0x0b], Minus: [0x0c], Equal: [0x0d], Backspace: [0x0e], Tab: [0x0f], BracketLeft: [0x1a], BracketRight: [0x1b],
+    Enter: [0x1c], ControlLeft: [0x1d], Semicolon: [0x27], Quote: [0x28], Backquote: [0x29], ShiftLeft: [0x2a], Backslash: [0x2b],
+    Comma: [0x33], Period: [0x34], Slash: [0x35], ShiftRight: [0x36], NumpadMultiply: [0x37], AltLeft: [0x38], Space: [0x39],
+    CapsLock: [0x3a], Escape: [0x01], F11: [0x57], F12: [0x58], IntlBackslash: [0x56], IntlRo: [0x73], NumpadComma: [0x7e],
+    Numpad7: [0x47], Numpad8: [0x48], Numpad9: [0x49], NumpadSubtract: [0x4a], Numpad4: [0x4b], Numpad5: [0x4c], Numpad6: [0x4d],
+    NumpadAdd: [0x4e], Numpad1: [0x4f], Numpad2: [0x50], Numpad3: [0x51], Numpad0: [0x52], NumpadDecimal: [0x53],
+    NumpadEnter: [0x1c, 1], ControlRight: [0x1d, 1], NumpadDivide: [0x35, 1], AltRight: [0x38, 1], Home: [0x47, 1], ArrowUp: [0x48, 1],
+    PageUp: [0x49, 1], ArrowLeft: [0x4b, 1], ArrowRight: [0x4d, 1], End: [0x4f, 1], ArrowDown: [0x50, 1], PageDown: [0x51, 1],
+    Insert: [0x52, 1], Delete: [0x53, 1],
+  });
+  return t;
+})();
+const BOTAO_GUIA = 0x0400; // abre a Xbox Game Bar de quem transmite: não passa
+const novoEstadoCoop = () => ({ alt: false, ctrl: false });
+const inteiro = (v, min, max) => (Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : null);
+// ev: { t: 'k', c, d } | { t: 'ma', x, y } | { t: 'mr', dx, dy } | { t: 'mb', b, d } | { t: 'mw', y, h } | { t: 'gp', ... } | { t: 'solta' }
+function linhaDeCoop(ev, perm, estado) {
+  if (!ev || typeof ev !== 'object' || !perm) return null;
+  if (ev.t === 'solta') { if (estado) { estado.alt = false; estado.ctrl = false; } return 'solta'; }
+  if (ev.t === 'k') {
+    if (!perm.teclado || typeof ev.c !== 'string') return null;
+    const k = TECLAS_COOP[ev.c];
+    if (!k) return null;
+    const desce = ev.d === 1 || ev.d === true;
+    if (estado) {
+      if (ev.c === 'AltLeft' || ev.c === 'AltRight') estado.alt = desce;
+      if (ev.c === 'ControlLeft' || ev.c === 'ControlRight') estado.ctrl = desce;
+      if (desce && estado.alt && ['Tab', 'F4', 'Escape', 'Space'].includes(ev.c)) return null;
+      if (desce && estado.ctrl && ev.c === 'Escape') return null;
+    }
+    return `k ${k[0]} ${k[1] ? 1 : 0} ${desce ? 1 : 0}`;
+  }
+  if (ev.t === 'ma' || ev.t === 'mr' || ev.t === 'mb' || ev.t === 'mw') {
+    if (!perm.mouse) return null;
+    if (ev.t === 'ma') {
+      const x = inteiro(ev.x * 65535, 0, 65535);
+      const y = inteiro(ev.y * 65535, 0, 65535);
+      return x == null || y == null ? null : `ma ${x} ${y}`;
+    }
+    if (ev.t === 'mr') {
+      const dx = inteiro(ev.dx, -2000, 2000);
+      const dy = inteiro(ev.dy, -2000, 2000);
+      return dx == null || dy == null || (!dx && !dy) ? null : `mr ${dx} ${dy}`;
+    }
+    if (ev.t === 'mb') {
+      const b = inteiro(ev.b, 0, 4);
+      return b == null || b !== ev.b ? null : `mb ${b} ${ev.d === 1 || ev.d === true ? 1 : 0}`;
+    }
+    const d = inteiro(ev.y, -1200, 1200);
+    return d ? `mw ${d} ${ev.h ? 1 : 0}` : null;
+  }
+  if (ev.t === 'gp') {
+    if (!perm.controle) return null;
+    const v = [inteiro(ev.b, 0, 0xffff), inteiro(ev.lt, 0, 255), inteiro(ev.rt, 0, 255),
+      inteiro(ev.lx, -32768, 32767), inteiro(ev.ly, -32768, 32767), inteiro(ev.rx, -32768, 32767), inteiro(ev.ry, -32768, 32767)];
+    if (v.some((x) => x == null)) return null;
+    v[0] &= ~BOTAO_GUIA;
+    return `p ${v.join(' ')}`;
+  }
+  return null;
+}
+const permissoesCoop = (p) => ({ controle: p?.controle === true, teclado: p?.teclado === true, mouse: p?.mouse === true });
+
 module.exports = {
   validarTraco, validarAviso, jogoAtual, fonteDaCaneta, acharMesmaFonte, formatosDosPerfis,
   teclaDoPtt, argumentosDoPtt,
@@ -348,4 +423,5 @@ module.exports = {
   SITE_PADRAO, origemDe, siteValido, podeNavegar, podeAbrirFora, requisicaoPermitida,
   teclaDoCodigo, aceleradorDe, validarAtalhos,
   nomeDoLance, validarLance, MAX_LANCE,
+  TECLAS_COOP, novoEstadoCoop, linhaDeCoop, permissoesCoop,
 };

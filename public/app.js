@@ -2424,6 +2424,8 @@
     $('#ajustesBtn').hidden = !(naSala && S.live);
     $('#sonsBtn').hidden = !naSala;
     $('#camBtn').hidden = !naSala || S.live || !S.sala;
+    atualizarBotaoCoopPalco();
+    if (!S.live && COOP.jogador) encerrarJogo('');
     if (!naSala) $('#sonsPanel').hidden = true;
     $('#canetaBtn').hidden = !(naSala && S.live);
     if (!S.live) $('#canetaPanel').hidden = true;
@@ -2495,6 +2497,7 @@
         <input type="range" min="0" max="2" step="0.05" value="1" data-act="vol" title="Volume desta transmissão (até 200%)">
         <span class="vol-pct">100%</span>
         <button class="icon-btn t-caneta" data-act="caneta" title="Caneta: desenhar na tela de quem transmite" hidden>${icon('caneta')}</button>
+        <button class="icon-btn t-coop" data-act="coop" hidden></button>
         <button class="icon-btn t-lance" data-act="lance" hidden></button>
         <button class="icon-btn t-lance-off" data-act="lance-off" title="Desligar o replay desta tela" aria-label="Desligar o replay desta tela" hidden>${icon('close')}</button>
         <button class="icon-btn" data-act="pip" title="Janela flutuante (picture-in-picture)">${icon('pip')}</button>
@@ -2695,6 +2698,421 @@
     });
   }
 
+  // ================= Jogatina: jogador 2 (jogar no computador de quem transmite) =================
+  // Tudo vai direto entre os dois computadores, em dois canais da própria transmissão ("ctl", que
+  // não perde nada, para teclas e cliques; "mov", que nunca espera, para o mouse e o controle):
+  // os comandos não passam pelo servidor. Quem transmite (no programa para Windows) decide o que o
+  // jogador 2 pode usar, tem prioridade no mouse e corta tudo com Alt+F12.
+  const salaCoop = (id) => !!id && (id === 'jogatina' || String(chan(id)?.name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase() === 'jogatina');
+  const COOP = {
+    jogador: null, // quem transmite: { uid, perm, pad }
+    pedidos: [], // quem transmite: quem pediu para jogar
+    padrao: { controle: true, teclado: true, mouse: false, ...(salvo.coopPadrao || {}) },
+    meu: null, // quem joga: { sid, c, perm, pad, focado, travado, rtt, teclas, botoes, ... }
+    pedindo: null,
+    fila: [],
+  };
+  const ATALHO_COOP_ACEITAR = { code: 'F11', alt: true };
+  const ATALHO_COOP_PARAR = { code: 'F12', alt: true };
+  const VIGEM_URL = 'https://github.com/nefarius/ViGEmBus/releases';
+  function canaisCoop(pc, aoMsg) {
+    const r = {};
+    try {
+      r.ctl = pc.createDataChannel('ctl', { negotiated: true, id: 8, ordered: true });
+      r.mov = pc.createDataChannel('mov', { negotiated: true, id: 9, ordered: false, maxRetransmits: 0 });
+      r.ctl.onmessage = (e) => aoMsg(e.data);
+      r.mov.onmessage = (e) => aoMsg(e.data);
+    } catch { /* navegador sem canal de dados: sem jogador 2 */ }
+    return r;
+  }
+  const mandarCoop = (ch, obj) => {
+    if (ch?.readyState !== 'open') return false;
+    try { ch.send(JSON.stringify(obj)); return true; } catch { return false; }
+  };
+  const lerCoop = (raw) => {
+    if (typeof raw !== 'string' || raw.length > 4000) return null;
+    try { const m = JSON.parse(raw); return m && typeof m === 'object' ? m : null; } catch { return null; }
+  };
+  const permCoop = (p) => ({ controle: p?.controle === true, teclado: p?.teclado === true, mouse: p?.mouse === true });
+
+  // ----- quem transmite -----
+  function coopNoHost(vid, c, raw) {
+    const m = lerCoop(raw);
+    if (!m) return;
+    if (m.t === 'ping') { mandarCoop(c.ctl, { t: 'pong', ts: m.ts }); return; }
+    if (m.t === 'pedir') { pedidoDeJogo(vid, c); return; }
+    if (m.t === 'sair') {
+      COOP.pedidos = COOP.pedidos.filter((x) => x !== vid);
+      if (COOP.jogador?.uid === vid) encerrarJogo(`${userById(vid)?.name || 'O jogador 2'} parou de jogar.`, false);
+      else { sincronizarAtalhos(); atualizarBotaoCoopPalco(); }
+      return;
+    }
+    if (COOP.jogador?.uid !== vid || !PROGRAMA?.coop) return;
+    const lista = Array.isArray(m.l) ? m.l.slice(0, 60) : [m];
+    const vazia = !COOP.fila.length;
+    COOP.fila.push(...lista);
+    if (vazia) queueMicrotask(() => PROGRAMA.coop.entrada(COOP.fila.splice(0)));
+  }
+  function permissoesCoopHtml(p) {
+    return `<div class="coop-perms">
+      <label class="av-op"><input type="checkbox" name="cpControle"${p.controle ? ' checked' : ''}> <span><b>Controle</b>: o controle dele vira um controle de Xbox no seu computador (o "jogador 2" do jogo)</span></label>
+      <label class="av-op"><input type="checkbox" name="cpTeclado"${p.teclado ? ' checked' : ''}> <span><b>Teclado</b>: só vale com o jogo na frente; tecla Windows, Alt+Tab e Alt+F4 não passam</span></label>
+      <label class="av-op"><input type="checkbox" name="cpMouse"${p.mouse ? ' checked' : ''}> <span><b>Mouse</b>: se você mexer no seu mouse, o dele espera (você tem prioridade)</span></label>
+    </div>`;
+  }
+  const permDoForm = (fd) => ({ controle: !!fd.get('cpControle'), teclado: !!fd.get('cpTeclado'), mouse: !!fd.get('cpMouse') });
+  function pedidoDeJogo(vid, c) {
+    const u = userById(vid);
+    const nome = u?.name || 'Alguém';
+    if (!S.live || !salaCoop(S.sala)) { mandarCoop(c.ctl, { t: 'nao', motivo: 'Só dá para jogar junto nas transmissões da sala Jogatina.' }); return; }
+    if (!PROGRAMA?.coop) { mandarCoop(c.ctl, { t: 'nao', motivo: `${S.myName} precisa transmitir pelo programa para Windows (versão 1.4.8 ou mais nova) para alguém jogar junto.` }); return; }
+    if (COOP.jogador && COOP.jogador.uid !== vid) { mandarCoop(c.ctl, { t: 'nao', motivo: `${userById(COOP.jogador.uid)?.name || 'Outra pessoa'} já é o jogador 2.` }); return; }
+    if (COOP.jogador?.uid === vid) { mandarCoop(c.ctl, { t: 'perm', ...COOP.jogador.perm, pad: COOP.jogador.pad }); return; } // reconectou
+    if (!COOP.pedidos.includes(vid)) COOP.pedidos.push(vid);
+    sincronizarAtalhos();
+    atualizarBotaoCoopPalco();
+    // cartão por cima do jogo (dá para aceitar sem sair dele)
+    PROGRAMA.aviso?.({ tipo: 'coop', nome, cor: u?.color || '#3db3f0', texto: 'quer jogar com você. Alt+F11 deixa, Alt+F12 recusa.', piscar: true })?.catch?.(() => {});
+    abrirModal({
+      titulo: `${nome} quer jogar com você`,
+      ok: 'Deixar jogar',
+      corpo: `<p>Escolha o que ${esc(nome)} pode usar no seu computador. Dá para mudar ou tirar a qualquer hora (botão "Jogador 2", ou Alt+F12).</p>
+        ${permissoesCoopHtml(COOP.padrao)}
+        <p class="cfg-dica">Também dá para responder sem sair do jogo: Alt+F11 deixa jogar (com estas mesmas escolhas), Alt+F12 recusa.</p>
+        <button type="button" class="btn sm ghost" data-coop-recusar="${esc(vid)}">Recusar</button>`,
+      aoConfirmar: (fd) => aceitarJogador(vid, permDoForm(fd)),
+    });
+  }
+  function recusarJogador(vid) {
+    COOP.pedidos = COOP.pedidos.filter((x) => x !== vid);
+    mandarCoop(S.out.get(vid)?.ctl, { t: 'nao', motivo: `${S.myName} não deixou agora.` });
+    sincronizarAtalhos();
+    atualizarBotaoCoopPalco();
+  }
+  async function aceitarJogador(vid, perm) {
+    const c = S.out.get(vid);
+    const nome = userById(vid)?.name || 'O jogador 2';
+    COOP.pedidos = COOP.pedidos.filter((x) => x !== vid);
+    COOP.padrao = perm;
+    salvar({ coopPadrao: perm });
+    if (!c) { toast(`${nome} parou de assistir.`); return; }
+    if (COOP.jogador && COOP.jogador.uid !== vid) encerrarJogo('', true);
+    let r = null;
+    try { r = await PROGRAMA.coop.ligar(perm); } catch { r = null; }
+    if (!r?.ok) {
+      mandarCoop(c.ctl, { t: 'nao', motivo: 'Não deu para ligar o jogador 2 agora.' });
+      toast(r?.motivo || 'Não consegui ligar o jogador 2.', 7000);
+      return;
+    }
+    COOP.jogador = { uid: vid, perm, pad: !!r.pad, vigem: !!r.vigem };
+    PROGRAMA.coop.aoAviso((t) => { if (t === 'prioridade' && COOP.jogador) mandarCoop(S.out.get(COOP.jogador.uid)?.ctl, { t: 'prioridade' }); });
+    mandarCoop(c.ctl, { t: 'perm', ...perm, pad: !!r.pad });
+    if (perm.controle && !r.pad) toast(r.vigem ? 'Não consegui criar o controle virtual agora. Teclado e mouse funcionam.' : 'Para o jogador 2 usar controle, instale o ViGEmBus uma vez (o link está no botão "Jogador 2"). Teclado e mouse funcionam.', 10000);
+    else if (r.alvo === 'tela') toast(`${nome} é o jogador 2. Você está mostrando a tela inteira: compartilhar só a janela do jogo é mais seguro. Alt+F12 corta na hora.`, 9000);
+    else toast(`${nome} é o jogador 2. Alt+F12 corta na hora.`, 6000);
+    sincronizarAtalhos();
+    aplicarOrcamento();
+    atualizarBotaoCoopPalco();
+  }
+  async function mudarPermissoesCoop(perm) {
+    if (!COOP.jogador) return;
+    const r = await PROGRAMA.coop.permissoes(perm).catch(() => null);
+    COOP.jogador.perm = perm;
+    if (r) COOP.jogador.pad = !!r.pad;
+    mandarCoop(S.out.get(COOP.jogador.uid)?.ctl, { t: 'perm', ...perm, pad: COOP.jogador.pad });
+    toast('Permissões do jogador 2 trocadas.');
+  }
+  function encerrarJogo(motivo, avisar = true) {
+    const j = COOP.jogador;
+    if (!j) return;
+    COOP.jogador = null;
+    if (avisar) mandarCoop(S.out.get(j.uid)?.ctl, { t: 'fim', motivo: 'Quem transmite tirou o controle.' });
+    PROGRAMA?.coop?.desligar().catch(() => {});
+    if (motivo) toast(motivo);
+    sincronizarAtalhos();
+    aplicarOrcamento();
+    atualizarBotaoCoopPalco();
+  }
+  function atalhoCoop(id) {
+    if (id === 'coop-aceitar' && COOP.pedidos.length) {
+      if (!$('#modal').hidden && $('#modalTitle').textContent.endsWith('quer jogar com você')) $('#modal').hidden = true;
+      aceitarJogador(COOP.pedidos[0], COOP.padrao);
+    } else if (id === 'coop-parar') {
+      if (COOP.jogador) encerrarJogo('Você tirou o controle do jogador 2.');
+      else if (COOP.pedidos.length) recusarJogador(COOP.pedidos[0]);
+    }
+  }
+  function atualizarBotaoCoopPalco() {
+    const b = $('#coopBtn');
+    if (!b) return;
+    const naSala = S.sala && S.view === S.sala;
+    b.hidden = !(naSala && S.live && salaCoop(S.sala));
+    const nome = COOP.jogador ? userById(COOP.jogador.uid)?.name || 'alguém' : '';
+    b.innerHTML = `${icon('controle')}<span class="rot">${COOP.jogador ? `Jogador 2: ${esc(nome)}` : COOP.pedidos.length ? `Jogador 2 (${COOP.pedidos.length} pedindo)` : 'Jogador 2'}</span>`;
+    b.title = 'Quem joga com você e o que pode usar';
+    b.classList.toggle('active', !!COOP.jogador);
+    b.classList.toggle('pedindo', !COOP.jogador && COOP.pedidos.length > 0);
+  }
+  function abrirPainelCoop() {
+    const j = COOP.jogador;
+    const nome = j ? userById(j.uid)?.name || 'alguém' : '';
+    const pedidos = COOP.pedidos.map((vid) => `<div class="coop-pedido"><span>${esc(userById(vid)?.name || 'Alguém')} quer jogar</span>
+      <button type="button" class="btn sm primary" data-coop-aceitar="${esc(vid)}">Deixar</button><button type="button" class="btn sm ghost" data-coop-recusar="${esc(vid)}">Recusar</button></div>`).join('');
+    abrirModal({
+      titulo: 'Jogador 2',
+      ok: j ? 'Salvar permissões' : 'Salvar',
+      corpo: `${j ? `<p><b>${esc(nome)}</b> está jogando com você.${j.perm.controle && !j.pad ? ' O controle virtual não está ligado (falta o ViGEmBus).' : ''}</p>` : '<p>Ninguém está jogando. Quem está assistindo pode clicar em <b>Pedir para jogar</b>, na barra de baixo da sua transmissão.</p>'}
+        ${pedidos}
+        <b>${j ? `O que ${esc(nome)} pode usar` : 'O que o jogador 2 pode usar (padrão)'}</b>
+        ${permissoesCoopHtml(j ? j.perm : COOP.padrao)}
+        ${j ? '<button type="button" class="btn sm danger" data-coop-cortar>Tirar o controle agora (Alt+F12)</button>' : ''}
+        <div class="cfg-dica coop-dicas">
+          <p><b>Para ficar rápido:</b> cabo de rede nos dois, compartilhe só a <b>janela do jogo</b> (é mais seguro também), jogo em janela sem bordas e 1080p · 60 fps em Configurações → Transmissão.</p>
+          <p><b>Controle:</b> para o jogador 2 usar controle, instale uma vez o ViGEmBus (driver de controle virtual, gratuito, o mesmo que outros programas de jogar à distância usam): <a href="${VIGEM_URL}" target="_blank" rel="noopener">${VIGEM_URL.replace('https://', '')}</a>. Depois feche e abra o programa.</p>
+          <p><b>Atalhos (funcionam com o jogo na frente):</b> Alt+F11 deixa quem pediu jogar; Alt+F12 tira o controle.</p>
+        </div>`,
+      aoConfirmar: async (fd) => {
+        const perm = permDoForm(fd);
+        if (COOP.jogador) await mudarPermissoesCoop(perm);
+        else { COOP.padrao = perm; salvar({ coopPadrao: perm }); }
+      },
+    });
+  }
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-coop-aceitar], [data-coop-recusar], [data-coop-cortar]');
+    if (!a) return;
+    $('#modal').hidden = true;
+    if (a.dataset.coopAceitar) aceitarJogador(a.dataset.coopAceitar, COOP.padrao);
+    else if (a.dataset.coopRecusar) recusarJogador(a.dataset.coopRecusar);
+    else encerrarJogo('Você tirou o controle do jogador 2.');
+  });
+
+  // ----- quem joga -----
+  function coopNoJogador(sid, c, raw) {
+    const m = lerCoop(raw);
+    if (!m) return;
+    const nome = userById(sid)?.name || 'Quem transmite';
+    if (m.t === 'pong') {
+      if (COOP.meu?.sid === sid && Number.isFinite(m.ts)) { COOP.meu.rtt = Math.max(0, performance.now() - m.ts); atualizarBarraCoop(); }
+    } else if (m.t === 'perm') {
+      comecarAJogar(sid, c, m);
+    } else if (m.t === 'nao') {
+      if (COOP.pedindo === sid) COOP.pedindo = null;
+      toast(String(m.motivo || `${nome} não deixou agora.`).slice(0, 200), 6000);
+      atualizarTile(sid);
+    } else if (m.t === 'fim') {
+      if (COOP.meu?.sid === sid) pararDeJogar(String(m.motivo || 'Seu controle acabou.').slice(0, 200), false);
+    } else if (m.t === 'prioridade' && COOP.meu?.sid === sid) {
+      COOP.meu.prioridadeAte = Date.now() + 1800;
+      atualizarBarraCoop();
+      setTimeout(atualizarBarraCoop, 1900);
+    }
+  }
+  function pedirParaJogar(sid) {
+    const c = S.inc.get(sid);
+    if (COOP.meu?.sid === sid) { pararDeJogar('Você parou de jogar.'); return; }
+    if (COOP.meu) { toast('Você já está jogando com outra pessoa.'); return; }
+    if (!mandarCoop(c?.ctl, { t: 'pedir' })) { toast('Espere a transmissão terminar de carregar.'); return; }
+    COOP.pedindo = sid;
+    toast(`Pedido enviado. Esperando ${userById(sid)?.name || 'quem transmite'} deixar…`, 6000);
+    atualizarTile(sid);
+  }
+  function comecarAJogar(sid, c, m) {
+    const perm = permCoop(m);
+    const antes = COOP.meu;
+    if (antes && antes.sid === sid) {
+      // só trocaram as permissões
+      if (!perm.teclado || !perm.mouse) soltarJogo();
+      antes.perm = perm;
+      antes.pad = !!m.pad;
+      if (perm.controle && !antes.raf) lerControle();
+      atualizarBarraCoop();
+      return;
+    }
+    if (antes) pararDeJogar('', true);
+    COOP.pedindo = null;
+    COOP.meu = { sid, c, perm, pad: !!m.pad, focado: false, travado: false, rtt: null, teclas: new Set(), botoes: new Set(), padUlt: '', padT: 0, raf: 0, ping: 0, ultMov: 0, prioridadeAte: 0 };
+    COOP.meu.ping = setInterval(() => mandarCoop(COOP.meu?.c.ctl, { t: 'ping', ts: performance.now() }), 1000);
+    if (perm.controle) lerControle();
+    const nome = userById(sid)?.name || 'Quem transmite';
+    toast(`${nome} deixou você jogar! ${perm.teclado || perm.mouse ? 'Clique na transmissão para mandar o teclado e o mouse para o jogo.' : 'Use o seu controle.'}`, 8000);
+    atualizarTile(sid);
+  }
+  function pararDeJogar(motivo, avisar = true) {
+    const m = COOP.meu;
+    if (!m) return;
+    soltarJogo();
+    if (avisar) mandarCoop(m.c.ctl, { t: 'sair' });
+    clearInterval(m.ping);
+    cancelAnimationFrame(m.raf);
+    if (document.pointerLockElement) document.exitPointerLock();
+    COOP.meu = null;
+    if (motivo) toast(motivo);
+    atualizarTile(m.sid);
+  }
+  const enviarJogo = (obj, rapido) => { const m = COOP.meu; if (m) mandarCoop(rapido ? m.c.mov : m.c.ctl, obj); };
+  function soltarJogo() {
+    const m = COOP.meu;
+    if (!m) return;
+    if (m.teclas.size || m.botoes.size) enviarJogo({ t: 'solta' });
+    m.teclas.clear();
+    m.botoes.clear();
+  }
+  const tileDoJogo = () => (COOP.meu ? S.tiles.get(COOP.meu.sid) : null);
+  // a parte do quadro que tem imagem (sem as faixas pretas)
+  function areaDoVideo(v) {
+    const r = v.getBoundingClientRect();
+    const vw = v.videoWidth || 16;
+    const vh = v.videoHeight || 9;
+    const s = Math.min(r.width / vw, r.height / vh);
+    return { x: r.left + (r.width - vw * s) / 2, y: r.top + (r.height - vh * s) / 2, w: vw * s, h: vh * s };
+  }
+  function mandarPosicao(e) {
+    const t = tileDoJogo();
+    if (!t) return;
+    const a = areaDoVideo(t.video);
+    const x = (e.clientX - a.x) / a.w;
+    const y = (e.clientY - a.y) / a.h;
+    if (x >= 0 && y >= 0 && x <= 1 && y <= 1) enviarJogo({ t: 'ma', x: Math.round(x * 1e4) / 1e4, y: Math.round(y * 1e4) / 1e4 }, true);
+  }
+  const BOTOES_COOP = { 0: 0, 1: 2, 2: 1, 3: 3, 4: 4 }; // do navegador para o Windows (esquerdo, direito, meio, voltar, avançar)
+  window.addEventListener('keydown', (e) => {
+    const m = COOP.meu;
+    if (!m || !m.focado || !m.perm.teclado) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (e.repeat || m.teclas.has(e.code)) return;
+    m.teclas.add(e.code);
+    enviarJogo({ t: 'k', c: e.code, d: 1 });
+  }, true);
+  window.addEventListener('keyup', (e) => {
+    const m = COOP.meu;
+    if (!m || !m.teclas.has(e.code)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    m.teclas.delete(e.code);
+    enviarJogo({ t: 'k', c: e.code, d: 0 });
+  }, true);
+  window.addEventListener('blur', () => { soltarJogo(); if (COOP.meu?.focado) { COOP.meu.focado = false; atualizarBarraCoop(); } });
+  document.addEventListener('pointerdown', (e) => {
+    const m = COOP.meu;
+    if (!m) return;
+    const t = tileDoJogo();
+    const dentro = t && e.target.closest('.tile') === t.el && !e.target.closest('.t-bottom, .t-top, .coop-barra, button');
+    if (!dentro) {
+      if (m.focado && !document.pointerLockElement) { m.focado = false; soltarJogo(); atualizarBarraCoop(); }
+      return;
+    }
+    if (!m.focado) { m.focado = true; atualizarBarraCoop(); }
+    if (!m.perm.mouse) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const b = BOTOES_COOP[e.button];
+    if (b == null) return;
+    if (!m.travado) mandarPosicao(e);
+    m.botoes.add(b);
+    enviarJogo({ t: 'mb', b, d: 1 });
+  }, true);
+  document.addEventListener('pointerup', (e) => {
+    const m = COOP.meu;
+    const b = BOTOES_COOP[e.button];
+    if (!m || b == null || !m.botoes.has(b)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    m.botoes.delete(b);
+    enviarJogo({ t: 'mb', b, d: 0 });
+  }, true);
+  document.addEventListener('click', (e) => { if (COOP.meu?.focado && COOP.meu.perm.mouse && tileDoJogo()?.el.contains(e.target) && !e.target.closest('.t-bottom, .t-top, .coop-barra, button')) e.stopPropagation(); }, true);
+  document.addEventListener('dblclick', (e) => { if (COOP.meu?.focado && tileDoJogo()?.el.contains(e.target)) e.stopPropagation(); }, true);
+  document.addEventListener('contextmenu', (e) => { if (COOP.meu?.focado && tileDoJogo()?.el.contains(e.target)) e.preventDefault(); }, true);
+  // movimento: "pointerrawupdate" chega assim que o mouse mexe, sem esperar o próximo quadro da tela
+  document.addEventListener('onpointerrawupdate' in window ? 'pointerrawupdate' : 'pointermove', (e) => {
+    const m = COOP.meu;
+    if (!m || !m.focado || !m.perm.mouse) return;
+    if (m.travado) {
+      if (e.movementX || e.movementY) enviarJogo({ t: 'mr', dx: e.movementX, dy: e.movementY }, true);
+      return;
+    }
+    const agora = performance.now();
+    if (agora - m.ultMov < 4) return;
+    m.ultMov = agora;
+    mandarPosicao(e);
+  }, { passive: true });
+  document.addEventListener('wheel', (e) => {
+    const m = COOP.meu;
+    if (!m || !m.focado || !m.perm.mouse || !tileDoJogo()?.el.contains(e.target)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const f = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1;
+    if (Math.abs(e.deltaY) >= 1) enviarJogo({ t: 'mw', y: Math.round(-e.deltaY * f * 1.2) });
+    if (Math.abs(e.deltaX) >= 1) enviarJogo({ t: 'mw', y: Math.round(e.deltaX * f * 1.2), h: 1 });
+  }, { passive: false, capture: true });
+  document.addEventListener('pointerlockchange', () => {
+    const m = COOP.meu;
+    if (!m) return;
+    m.travado = !!document.pointerLockElement;
+    if (m.travado) m.focado = true;
+    atualizarBarraCoop();
+  });
+  // controle: lê a cada quadro e manda quando muda (e de 50 em 50 ms enquanto algo está apertado)
+  const MAPA_CONTROLE = [[0, 0x1000], [1, 0x2000], [2, 0x4000], [3, 0x8000], [4, 0x0100], [5, 0x0200], [8, 0x0020], [9, 0x0010], [10, 0x0040], [11, 0x0080], [12, 0x0001], [13, 0x0002], [14, 0x0004], [15, 0x0008]];
+  function lerControle() {
+    const m = COOP.meu;
+    if (!m || !m.perm.controle) { if (m) m.raf = 0; return; }
+    m.raf = requestAnimationFrame(lerControle);
+    let gp = null;
+    try { gp = [...(navigator.getGamepads?.() || [])].find((g) => g && g.connected); } catch { gp = null; }
+    if (!gp) return;
+    let b = 0;
+    for (const [i, v] of MAPA_CONTROLE) if (gp.buttons[i]?.pressed) b |= v;
+    const eixo = (i, inverte) => {
+      const v = Number(gp.axes[i]) || 0;
+      return Math.abs(v) < 0.06 ? 0 : Math.round(Math.max(-1, Math.min(1, inverte ? -v : v)) * 32767);
+    };
+    const est = { t: 'gp', b, lt: Math.round((gp.buttons[6]?.value || 0) * 255), rt: Math.round((gp.buttons[7]?.value || 0) * 255), lx: eixo(0), ly: eixo(1, true), rx: eixo(2), ry: eixo(3, true) };
+    const chave = `${est.b},${est.lt},${est.rt},${est.lx},${est.ly},${est.rx},${est.ry}`;
+    const agora = performance.now();
+    if (chave !== m.padUlt || agora - m.padT > (chave === '0,0,0,0,0,0,0' ? 500 : 50)) {
+      m.padUlt = chave;
+      m.padT = agora;
+      enviarJogo(est, true);
+    }
+  }
+  function atualizarBarraCoop() {
+    const m = COOP.meu;
+    const t = m ? S.tiles.get(m.sid) : null;
+    for (const b of document.querySelectorAll('.coop-barra')) if (!t || !t.el.contains(b)) b.remove();
+    if (!t) return;
+    let barra = t.el.querySelector('.coop-barra');
+    if (!barra) {
+      barra = document.createElement('div');
+      barra.className = 'coop-barra';
+      t.el.appendChild(barra);
+    }
+    const usa = [m.perm.controle && (m.pad ? 'controle' : 'controle (falta o driver em quem transmite)'), m.perm.teclado && 'teclado', m.perm.mouse && 'mouse'].filter(Boolean).join(', ') || 'nada (esperando permissão)';
+    const dica = m.prioridadeAte > Date.now() ? 'quem transmite está usando o mouse: o seu espera'
+      : (m.perm.teclado || m.perm.mouse) && !m.focado ? 'clique na transmissão para jogar com teclado e mouse' : m.focado ? 'clique fora da transmissão para usar o teclado aqui' : '';
+    barra.innerHTML = `${icon('controle')}<span><b>Jogador 2</b> · ${esc(usa)}${m.rtt != null ? ` · ${Math.round(m.rtt)} ms` : ''}${dica ? `<br><small>${esc(dica)}</small>` : ''}</span>
+      ${m.perm.mouse ? `<button type="button" class="btn sm" data-act="coop-travar">${m.travado ? 'Soltar o mouse (Esc)' : 'Travar o mouse (jogos 3D)'}</button>` : ''}
+      <button type="button" class="btn sm danger" data-act="coop">Parar</button>`;
+    t.el.classList.toggle('coop-focado', !!m.focado);
+  }
+  function atualizarBotaoCoopTile(t) {
+    const b = t?.el.querySelector('[data-act=coop]:not(.btn)');
+    if (!b) return;
+    const pode = salaCoop(S.sala) && t.uid !== S.myId && !!S.inc.get(t.uid) && t.uid !== S.myId;
+    b.hidden = !pode;
+    if (!pode) return;
+    const jogando = COOP.meu?.sid === t.uid;
+    const titulo = jogando ? 'Parar de jogar' : COOP.pedindo === t.uid ? 'Pedido enviado (clique para pedir de novo)' : 'Pedir para jogar junto (jogador 2)';
+    b.title = titulo;
+    b.setAttribute('aria-label', titulo);
+    b.classList.toggle('ligado', jogando);
+    b.innerHTML = icon('controle');
+    if (jogando) atualizarBarraCoop();
+    else t.el.querySelector('.coop-barra')?.remove();
+  }
+
   // ================= Volume =================
   // O som de cada transmissão passa por um "ganho" do Web Audio: dá para ir de 0% a 200%.
   const volumes = salvo.volumes && typeof salvo.volumes === 'object' ? salvo.volumes : {};
@@ -2880,6 +3298,7 @@
     if (!self) ligarAudio(t, stream);
     conferirLance(t, stream);
     atualizarBotaoLance(t);
+    atualizarBotaoCoopTile(t);
     if (t.video.srcObject !== stream) {
       t.video.srcObject = stream;
       if (stream) tocarTile(t);
@@ -2960,6 +3379,13 @@
     if (act === 'caneta') return alternarCaneta(uid);
     if (act === 'cor') return escolherCor(Number(e.target.closest('[data-cor]').dataset.cor));
     if (act === 'sair-caneta') return sairDaCaneta();
+    if (act === 'coop') return COOP.meu?.sid === uid ? pararDeJogar('Você parou de jogar.') : pedirParaJogar(uid);
+    if (act === 'coop-travar') {
+      const t = S.tiles.get(uid);
+      if (document.pointerLockElement) document.exitPointerLock();
+      else t?.video.requestPointerLock?.({ unadjustedMovement: true })?.catch?.(() => t.video.requestPointerLock());
+      return;
+    }
     if (act === 'lance') return LANCE.porUid.has(uid) ? salvarLance(uid) : ligarLance(uid);
     if (act === 'lance-off') return desligarLance(uid, 'Replay desligado.');
     if (!act && tileEl.classList.contains('desenhando')) return; // clique de desenho não muda o destaque
@@ -3496,7 +3922,7 @@
     const vt = S.localStream.getVideoTracks()[0];
     const conf = vt?.getSettings?.() || {};
     const fonte = { w: conf.width || q.w, h: conf.height || q.h };
-    for (const c of S.out.values()) {
+    for (const [vidOut, c] of S.out) {
       let escala = 1;
       let fps = q.fps;
       if (q.hint === 'detail') fps = fatia < 0.8e6 ? 5 : fatia < 1.5e6 ? 10 : q.fps; // texto: mantém a nitidez, baixa os quadros
@@ -3518,6 +3944,9 @@
           e.maxFramerate = fps;
           e.scaleResolutionDownBy = escala;
           if (!c.semDeg) p.degradationPreference = deg;
+          const prio = COOP.jogador?.uid === vidOut ? 'high' : 'low';
+          e.priority = prio;
+          e.networkPriority = prio;
           try {
             await s.setParameters(p);
           } catch (err) {
@@ -3635,8 +4064,14 @@
       const info = pc.createDataChannel('info', { negotiated: true, id: 7, ordered: false, maxRetransmits: 0 });
       info.onmessage = (e) => { try { const d = JSON.parse(e.data); if (d && typeof d === 'object') c.deQuem = { ...d, t: Date.now() }; } catch { /* ignora */ } };
     } catch { /* navegador sem canal de dados: fica sem o motivo de quem transmite */ }
+    Object.assign(c, canaisCoop(pc, (raw) => coopNoJogador(sid, c, raw)));
     pc.ontrack = (e) => {
       if (S.inc.get(sid) !== c) return;
+      // Jogatina: a imagem aparece assim que chega (sem a espera que o navegador põe para alisar)
+      if (salaCoop(S.sala)) {
+        try { e.receiver.playoutDelayHint = 0; } catch { /* navegador sem isso */ }
+        try { if (e.track.kind === 'video') e.receiver.jitterBufferTarget = 0; } catch { /* navegador sem isso */ }
+      }
       if (e.streams[0]) c.stream = e.streams[0];
       else {
         c.stream ||= new MediaStream();
@@ -3700,6 +4135,8 @@
   function fecharOut(vid) {
     const c = S.out.get(vid);
     if (!c) return;
+    if (COOP.jogador?.uid === vid) encerrarJogo(`${userById(vid)?.name || 'O jogador 2'} saiu da transmissão.`, false);
+    if (COOP.pedidos.includes(vid)) { COOP.pedidos = COOP.pedidos.filter((x) => x !== vid); sincronizarAtalhos(); atualizarBotaoCoopPalco(); }
     c.pc.close();
     S.out.delete(vid);
     atualizarTile(S.myId);
@@ -3735,6 +4172,7 @@
     for (const t of fonte.getTracks()) pc.addTrack(t, fonte);
     // canal pequeno, direto entre os dois (não passa pelo servidor): diz para quem assiste por que a imagem caiu
     try { c.info = pc.createDataChannel('info', { negotiated: true, id: 7, ordered: false, maxRetransmits: 0 }); } catch { c.info = null; }
+    Object.assign(c, canaisCoop(pc, (raw) => coopNoHost(vid, c, raw)));
     const mime = await codecPara(dec); // formato que a sua placa manda e a placa de quem assiste toca
     c.codecPedido = mime ? nomeCodec(mime) : '';
     aplicarCodec(pc, mime);
@@ -7137,6 +7575,11 @@
   // ================= Botões fixos =================
   // ----- Novidades: o que mudou (por versão) e o que o Caras E Telas oferece -----
   const NV_MUDOU = [
+    { v: '1.4.8', data: '27/11', nome: 'Jogador 2', itens: [
+      { t: 'Jogue junto: na sala Jogatina, quem assiste clica no controle da transmissão e pede para ser o jogador 2. Dá para jogar com controle, teclado e mouse, direto entre os dois computadores.' },
+      { t: 'Quem transmite manda: escolhe o que o jogador 2 pode usar, tem prioridade no mouse e tira o controle na hora com Alt+F12 (Alt+F11 deixa jogar sem sair do jogo). Precisa transmitir pelo programa para Windows.' },
+      { t: 'Imagem mais rápida na Jogatina: a transmissão aparece assim que chega, sem a espera que o navegador põe para alisar o vídeo.' },
+    ] },
     { v: '1.4.7', data: '27/11', nome: 'Lances e disputas', itens: [
       { t: 'Tela mais organizada: todas as configurações numa janela só, com abas (a engrenagem embaixo, ao lado do seu nome). Microfone e fone ficam ali também.' },
       { t: 'Visual do perfil: fonte, efeito e cores do nome (até em degradê e animados), foto ou GIF no avatar, faixa e cores do cartão e molduras. Em Configurações → Visual do perfil.' },
@@ -7260,6 +7703,7 @@
     $('#ajustesBtn').innerHTML = `${icon('sliders')}<span class="rot">Transmissão</span>`;
     $('#ajustesBtn').addEventListener('click', () => abrirConfig('transmissao'));
     $('#camBtn').addEventListener('click', () => $('#vpCam').click());
+    $('#coopBtn').addEventListener('click', abrirPainelCoop);
     const up = $('#uploadSelect');
     up.innerHTML = UPLOADS.map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
     up.value = S.upload;
@@ -8687,6 +9131,8 @@
         ...(VOZ.cfg.atalhoSurdo ? [{ id: 'voz-surdo', ...VOZ.cfg.atalhoSurdo }] : []),
         { id: 'parar', ...ATALHO_PARAR },
         ...(LANCE.porUid.size ? [{ id: 'lance', ...ATALHO_LANCE }] : []), // só enquanto um replay está ligado
+        ...(COOP.pedidos.length ? [{ id: 'coop-aceitar', ...ATALHO_COOP_ACEITAR }] : []), // só com alguém pedindo para jogar
+        ...(COOP.jogador || COOP.pedidos.length ? [{ id: 'coop-parar', ...ATALHO_COOP_PARAR }] : []),
         ...SB.slots.filter((s) => s.atalho).map((s) => ({ id: s.id, ...s.atalho })),
       ];
       const assinatura = JSON.stringify(lista);
@@ -8707,6 +9153,7 @@
       if (id === 'voz-surdo') return alternarSurdoPorAtalho();
       if (id === 'parar') return pararTodos();
       if (id === 'lance') return salvarTodosOsLances();
+      if (id === 'coop-aceitar' || id === 'coop-parar') return atalhoCoop(id);
       if (SB.slots.some((s) => s.id === id)) tocarSom(id, 'atalho');
     });
   }

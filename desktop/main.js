@@ -11,6 +11,7 @@ const os = require('node:os');
 const fs = require('node:fs');
 const R = require('./regras');
 const ajudante = require('./ajudante');
+const coop = require('./coop');
 
 const EM_TESTE = !app.isPackaged; // rodando pelo código (não instalado)
 const ARG_TESTE = process.argv.find((a) => a.startsWith('--teste-rapido='));
@@ -663,6 +664,58 @@ ipcMain.handle('escolher-pasta-dos-lances', async (e) => {
 });
 ipcMain.handle('pasta-dos-lances', (e) => (pedidoConfiavel(e) ? { pasta: rotuloDaPasta(pastaDosLances()) } : null));
 
+// ---------- Jogatina: o jogador 2 joga no computador de quem transmite ----------
+// A página (de quem transmite) recebe os comandos do jogador 2 pelo canal direto e manda para cá.
+// Aqui passam de novo pelas regras (só o que foi permitido, sem tecla Windows nem Alt+Tab) e vão
+// para o controle-programa.exe. Quem transmite pode cortar tudo a qualquer hora.
+let coopPerm = null;
+let coopEstado = R.novoEstadoCoop();
+let coopFonte = null;
+coop.aoAviso((t) => { if (janela && !janela.isDestroyed()) janela.webContents.send('coop-aviso', t); });
+ipcMain.handle('coop-ligar', async (e, p) => {
+  if (!pedidoConfiavel(e)) return { ok: false };
+  if (process.platform !== 'win32') return { ok: false, motivo: 'O jogador 2 só funciona no Windows.' };
+  if (!fonteDaTela) return { ok: false, motivo: 'Compartilhe a janela do jogo (ou a tela) antes.' };
+  coopPerm = R.permissoesCoop(p);
+  coopEstado = R.novoEstadoCoop();
+  coopFonte = fonteDaTela;
+  return coop.ligar(fonteDaTela, coopPerm.controle);
+});
+ipcMain.handle('coop-permissoes', async (e, p) => {
+  if (!pedidoConfiavel(e) || !coopPerm) return { ok: false };
+  const antes = coopPerm;
+  coopPerm = R.permissoesCoop(p);
+  coop.enviar(['solta']); // o que estava apertado com a permissão antiga é solto
+  coopEstado = R.novoEstadoCoop();
+  let pad = antes.controle;
+  if (antes.controle !== coopPerm.controle) pad = await coop.controleVirtual(coopPerm.controle);
+  return { ok: true, pad };
+});
+ipcMain.on('coop-entrada', (e, lista) => {
+  if (!coopPerm || !Array.isArray(lista) || !pedidoConfiavel(e)) return;
+  const linhas = [];
+  if (fonteDaTela !== coopFonte) {
+    // trocou o que está sendo compartilhado: o jogador 2 acompanha (e nada fica apertado)
+    coopFonte = fonteDaTela;
+    linhas.push('solta');
+    const alvo = coop.linhaDoAlvo(fonteDaTela);
+    if (!alvo) { coop.enviar(linhas); return; }
+    linhas.push(alvo);
+  }
+  for (const ev of lista.slice(0, 200)) {
+    const l = R.linhaDeCoop(ev, coopPerm, coopEstado);
+    if (l) linhas.push(l);
+  }
+  coop.enviar(linhas);
+});
+ipcMain.handle('coop-desligar', (e) => {
+  if (!pedidoConfiavel(e)) return { ok: false };
+  coopPerm = null;
+  coop.desligar();
+  return { ok: true };
+});
+app.on('will-quit', () => coop.desligar());
+
 ipcMain.handle('jogos', (e, ligar) => {
   if (!pedidoConfiavel(e)) return { ok: false };
   JOGO.ligado = ligar === true;
@@ -1062,6 +1115,8 @@ async function testeRapido() {
     // lance: grava na pasta (no teste, uma pasta temporária) e recusa o que não é vídeo
     r.lance = await js(`(() => { const b = new Uint8Array(64); b.set([0, 0, 0, 32, 102, 116, 121, 112]); return window.carasETelas.salvarLance({ dados: b, quem: 'Teste <1>', tipo: 'video/mp4' }); })()`, true).catch((e) => ({ erro: String(e?.message || e) }));
     r.lanceRuim = await js(`window.carasETelas.salvarLance({ dados: new Uint8Array(64), quem: 'x', tipo: 'video/mp4' })`, true).catch((e) => ({ erro: String(e?.message || e) }));
+    r.coop = await js(`window.carasETelas.coop.ligar({ controle: true, teclado: true, mouse: false })`, true).catch((e) => ({ erro: String(e?.message || e) }));
+    await js(`window.carasETelas.coop.desligar()`, true).catch(() => {});
     r.lanceNoDisco = r.lance?.ok && fs.existsSync(path.join(pastaDosLances(), r.lance.arquivo)) ? fs.statSync(path.join(pastaDosLances(), r.lance.arquivo)).size : 0;
     fs.rmSync(pastaDosLances(), { recursive: true, force: true });
     // saídas de áudio: a lista aparece e dá para trocar
@@ -1140,6 +1195,7 @@ async function testeRapido() {
       && r.microfone === 'ok: audio' && r.camera === 'ok: video' && r.pttRuim?.ok === false
       && r.aviso?.mostrado === true && r.avisoRuim?.ok === false && r.jogos?.ok === true
       && r.lance?.ok === true && r.lanceNoDisco === 64 && r.lanceRuim?.ok === false
+      && (r.coop?.ok === true || typeof r.coop?.motivo === 'string')
       // a caneta nunca pode entrar na transmissão (se o teste enxerga a tela, a camada tem que estar fora)
       // a caneta tem que aparecer no monitor e nunca entrar na transmissão
       && (r.caneta?.controle !== 'aparece na captura' || (r.caneta.camadaNoMonitor === 'desenhada no monitor'

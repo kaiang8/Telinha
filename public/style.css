@@ -1812,3 +1812,23 @@ body.leve .nm, body.leve .mf-pisca, body.leve .mf-chama, body.leve .mf-flutua, b
 }
 
 .ap-falha { color: #d1242f; font-weight: 600; }
+
+/* ---------- Jogatina: jogador 2 ---------- */
+.coop-barra {
+  position: absolute; left: 10px; bottom: 58px; z-index: 6; display: flex; align-items: center; gap: 10px; max-width: calc(100% - 20px);
+  padding: 7px 10px; border-radius: 12px; background: rgba(14, 22, 34, .78); color: #fff; font-size: 13px; line-height: 1.35;
+  border: 1px solid rgba(255, 255, 255, .18); backdrop-filter: blur(8px);
+}
+.coop-barra svg.i { width: 20px; height: 20px; flex: none; color: #7fd1ff; }
+.coop-barra small { color: rgba(255, 255, 255, .75); }
+.coop-barra .btn { flex: none; }
+.tile.coop-focado { outline: 3px solid #3db3f0; outline-offset: -3px; cursor: crosshair; }
+.tile .icon-btn.t-coop.ligado { background: rgba(61, 179, 240, .6); border-color: rgba(150, 215, 255, .8); }
+.coop-perms { display: grid; gap: 8px; margin: 8px 0 12px; }
+.coop-perms .av-op { align-items: flex-start; }
+.coop-pedido { display: flex; align-items: center; gap: 8px; margin: 8px 0; padding: 8px 10px; border-radius: 10px; background: var(--hover); }
+.coop-pedido span { flex: 1; font-weight: 600; }
+.coop-dicas p { margin: 6px 0; }
+#coopBtn.pedindo { animation: coopPede 1.2s ease-in-out infinite; }
+@keyframes coopPede { 50% { box-shadow: 0 0 0 4px rgba(61, 179, 240, .45); } }
+body.leve #coopBtn.pedindo { animation: none; box-shadow: 0 0 0 3px rgba(61, 179, 240, .45); }
