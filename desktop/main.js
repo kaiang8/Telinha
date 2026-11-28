@@ -1066,7 +1066,9 @@ async function testarRetomadaDeJanela(js) {
 async function testeRapido() {
   const r = { versao: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome, site: SITE };
   const gravar = (codigo) => {
+    r.passo = 'fim';
     try { fs.writeFileSync(TESTE_RAPIDO, JSON.stringify(r, null, 2)); } catch (e) { console.error(e); }
+    coop.desligar();
     app.exit(codigo);
   };
   setTimeout(() => { r.erro = 'tempo esgotado'; gravar(2); }, 240000);
@@ -1075,7 +1077,9 @@ async function testeRapido() {
       if (janela && R.origemDe(janela.webContents.getURL()) === SITE_ORIGEM && !janela.webContents.isLoading()) break;
       await espera(500);
     }
-    const js = (codigo, gesto = false) => janela.webContents.executeJavaScript(codigo, gesto);
+    // anota o passo atual no arquivo do resultado: se algo travar, o teste mostra onde parou
+    const marcar = (passo) => { r.passo = passo; try { fs.writeFileSync(TESTE_RAPIDO, JSON.stringify(r, null, 2)); } catch { /* segue */ } };
+    const js = (codigo, gesto = false) => { marcar(codigo.slice(0, 90)); return janela.webContents.executeJavaScript(codigo, gesto); };
     await espera(1500);
     r.api = await js("typeof window.carasETelas === 'object' && window.carasETelas.programa === true");
     r.info = await js('window.carasETelas.info()');
