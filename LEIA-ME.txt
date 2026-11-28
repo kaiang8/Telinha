@@ -773,6 +773,33 @@ DICAS
     e ele aparece tampado até alguém clicar. Funciona também com links
     de imagem (a imagem fica borrada). Nos avisos, nas respostas e na
     busca aparece só [spoiler].
+  - Espaço guardado (painel de admin → Servidor): mostra quanto do
+    Upstash está ocupado (256 MB no plano grátis), separado em
+    mensagens, mensagens privadas, fotos e GIFs de perfil, sons de
+    entrada e o resto. Mede sozinho a cada 6 horas (ou no "Medir
+    agora"). Diferente do tráfego, não zera no mês. Passando de 70%, a
+    barra fica amarela. Se chegar a 100%, o Upstash grátis para de
+    aceitar mensagens novas, sem cobrar nada.
+  - Mensagens enxutas: cada mensagem é guardada sem o canal, o nome e a
+    cor de quem mandou (vêm do perfil na hora de mostrar). Ocupam mais
+    ou menos metade do espaço de antes. As antigas foram convertidas
+    sozinhas na primeira vez que o servidor ligou com esta versão.
+  - Arquivo no GitHub: uma vez por dia, os blocos de 500 mensagens de um
+    canal que já têm mais de 1 ano (ou mais de 3 meses, se o espaço
+    passar de 70%) vão para um repositório privado no GitHub e saem do
+    Upstash. Quem sobe o chat continua vendo tudo, só que as arquivadas
+    são só leitura (sem reagir, editar ou apagar) e a busca não chega
+    nelas. As 300 mais recentes de cada canal e as mensagens privadas
+    nunca vão para lá. O backup do painel de admin leva as que estão no
+    Upstash e anota onde as outras estão. Para ligar: (1) no GitHub,
+    crie um repositório privado (por exemplo caras-e-telas-arquivo); (2)
+    em Settings → Developer settings → Personal access tokens → Fine-
+    grained tokens, gere uma chave só para esse repositório, com a
+    permissão "Contents: Read and write"; (3) no Render, em Environment,
+    crie ARQUIVO_GITHUB_REPO = seu-usuario/caras-e-telas-arquivo e
+    ARQUIVO_GITHUB_TOKEN = a chave. Quando a chave vencer, o painel
+    avisa; é só gerar outra e trocar no Render. Nunca mande a chave para
+    ninguém.
   - Visual do perfil: em Configurações → Visual do perfil, cada um
     escolhe a fonte do nome (13 opções), o efeito (Sólido, Degradê,
     Neon, Contorno, 3D, Bala de goma, e os animados Brilho e Arco-íris),
@@ -783,7 +810,7 @@ DICAS
     hora; o nome, as cores e a moldura salvam no "Pronto", e a foto e a
     faixa já valem ao enviar. O nome estilizado aparece no chat, na
     lista de membros, nas salas e no cartão (clique no nome de alguém
-    para abrir). Limites: GIF de até 1 MB no avatar e 2 MB na faixa;
+    para abrir). Limites: GIF de até 1 MB no avatar e 3 MB na faixa;
     fotos viram WebP leve sozinhas. No chat e na lista, o GIF fica
     parado e só se mexe quando passam o mouse (no cartão, sempre); no
     modo leve, nada se mexe. As fontes vêm do Google Fonts, e cada
